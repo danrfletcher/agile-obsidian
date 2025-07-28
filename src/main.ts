@@ -3,16 +3,16 @@ import {
 	Editor,
 	MarkdownView,
 	Modal,
-	Notice,
 	Plugin,
 	PluginSettingTab,
 	Setting,
-	WorkspaceLeaf,
 	TFile,
+	WorkspaceLeaf,
 } from "obsidian";
 
 import { AgileObsidianSettings, DEFAULT_SETTINGS } from "./settings";
 import { AgileDashboardView, VIEW_TYPE_AGILE_DASHBOARD } from "./views/AgileDashboardView";
+import { TaskIndex } from "./index/TaskIndex";
 
 export default class AgileObsidian extends Plugin {
 	settings: AgileObsidianSettings;
@@ -91,6 +91,43 @@ export default class AgileObsidian extends Plugin {
 		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
 		this.registerInterval(
 			window.setInterval(() => console.log("setInterval"), 5 * 60 * 1000)
+		);
+
+		const agile = TaskIndex.getInstance(this.app);
+		await agile.buildIndex(); // Builds the index asynchronously
+		console.log(agile.getIndex());
+
+		this.registerEvent(
+			this.app.vault.on("modify", async (file) => {
+				if (file instanceof TFile && file.extension === "md") {
+					await agile.updateFile(file);
+				}
+			})
+		);
+
+		this.registerEvent(
+			this.app.vault.on("create", async (file) => {
+				if (file instanceof TFile && file.extension === "md") {
+					await agile.updateFile(file);
+				}
+			})
+		);
+
+		this.registerEvent(
+			this.app.vault.on("delete", (file) => {
+				if (file instanceof TFile && file.extension === "md") {
+					agile.removeFile(file.path);
+				}
+			})
+		);
+
+		this.registerEvent(
+			this.app.vault.on("rename", async (file, oldPath) => {
+				if (file instanceof TFile && file.extension === "md") {
+					agile.removeFile(oldPath);
+					await agile.updateFile(file);
+				}
+			})
 		);
 	}
 
