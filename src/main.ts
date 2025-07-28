@@ -7,22 +7,15 @@ import {
 	Plugin,
 	PluginSettingTab,
 	Setting,
-	ItemView,
 	WorkspaceLeaf,
+	TFile,
 } from "obsidian";
 
-interface MyPluginSettings {
-	mySetting: string;
-}
-
-const DEFAULT_SETTINGS: MyPluginSettings = {
-	mySetting: "default",
-};
-
-const VIEW_TYPE_AGILE_DASHBOARD = "agile-dashboard-view";
+import { AgileObsidianSettings, DEFAULT_SETTINGS } from "./settings";
+import { AgileDashboardView, VIEW_TYPE_AGILE_DASHBOARD } from "./views/AgileDashboardView";
 
 export default class AgileObsidian extends Plugin {
-	settings: MyPluginSettings;
+	settings: AgileObsidianSettings;
 
 	async onload() {
 		await this.loadSettings();
@@ -135,6 +128,8 @@ export default class AgileObsidian extends Plugin {
 			workspace.revealLeaf(leaf);
 		}
 	}
+
+	
 }
 
 class SampleModal extends Modal {
@@ -153,41 +148,10 @@ class SampleModal extends Modal {
 	}
 }
 
-class AgileDashboardView extends ItemView {
-	constructor(leaf: WorkspaceLeaf) {
-		super(leaf);
-	}
-
-	getViewType() {
-		return VIEW_TYPE_AGILE_DASHBOARD;
-	}
-
-	getDisplayText() {
-		return "Agile Dashboard";
-	}
-
-	getIcon() {
-		return "calendar-clock"; // Or any icon name from Obsidian's set
-	}
-
-	async onOpen() {
-		const container = this.containerEl.children[1]; // The view's content area
-		container.empty(); // Clear it to start blank
-		container.createEl("h2", {
-			text: "Agile Dashboard",
-		}); // Temporary placeholder
-		// Will add dashboard rendering here later
-	}
-
-	async onClose() {
-		// Cleanup if needed (e.g., remove event listeners later)
-	}
-}
-
 class SampleSettingTab extends PluginSettingTab {
-	plugin: MyPlugin;
+	plugin: AgileObsidian;
 
-	constructor(app: App, plugin: MyPlugin) {
+	constructor(app: App, plugin: AgileObsidian) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
