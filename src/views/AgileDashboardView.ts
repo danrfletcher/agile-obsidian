@@ -1,7 +1,9 @@
 import { ItemView, WorkspaceLeaf, TFile, TAbstractFile } from "obsidian";
-import { TaskIndex } from "../index/TaskIndex"; // Adjust path if needed
-import { TaskItem } from "../types/TaskItem"; // Adjust path if needed
+import { TaskIndex } from "../index/TaskIndex";
+import { TaskItem } from "../types/TaskItem";
 import { version } from "../utils/config";
+
+// Section processors
 import { processAndRenderObjectives } from "./sections/ObjectivesProcessor";
 import { processAndRenderTasks } from "./sections/TasksProcessor";
 import { processAndRenderStories } from "./sections/StoriesProcessor";
@@ -9,6 +11,7 @@ import { processAndRenderEpics } from "./sections/EpicsProcessor";
 import { processAndRenderInitiatives } from "./sections/InitiativesProcessor";
 import { processAndRenderResponsibilities } from "./sections/ResponsibilitiesProcessor";
 import { processAndRenderPriorities } from "./sections/PrioritiesProcessor";
+import AgileObsidianPlugin from "src/main";
 
 export const VIEW_TYPE_AGILE_DASHBOARD = "agile-dashboard-view";
 
@@ -16,16 +19,13 @@ export class AgileDashboardView extends ItemView {
 	private taskIndex: TaskIndex;
 	private viewSelect: HTMLSelectElement;
 	private projectStatusSelect: HTMLSelectElement;
+	private plugin: AgileObsidianPlugin; // New: Store the plugin instance for settings access
 
-	constructor(leaf: WorkspaceLeaf) {
+	constructor(leaf: WorkspaceLeaf, plugin: AgileObsidianPlugin) {
+		// Updated: Accept plugin
 		super(leaf);
-		const appWithPlugins = this.app as {
-			plugins?: { plugins: Record<string, unknown> };
-		};
-		const plugin = appWithPlugins.plugins?.plugins[
-			"agile-obsidian"
-		] as unknown;
-		this.taskIndex = (plugin as { taskIndex: TaskIndex }).taskIndex;
+		this.plugin = plugin; // New: Assign plugin
+		this.taskIndex = this.plugin.taskIndex; // Updated: Access taskIndex from plugin
 	}
 
 	getViewType() {
@@ -79,6 +79,15 @@ export class AgileDashboardView extends ItemView {
 		this.projectStatusSelect.addEventListener("change", () => {
 			this.updateView();
 		});
+
+		// New: Listen for settings changes to auto-refresh
+		this.registerEvent(
+			// @ts-ignore - Suppress type error for custom event (Obsidian typings don't support arbitrary events)
+			this.app.workspace.on("agile-settings-changed", () => {
+				console.log("Settings changed - refreshing dashboard"); // Debug log to confirm firing
+				this.updateView(); // Force re-render with new settings
+			})
+		);
 
 		// Initial render
 		await this.updateView();
@@ -174,62 +183,76 @@ export class AgileDashboardView extends ItemView {
 			}
 		});
 
-		// Call each section processor
-		processAndRenderObjectives(
-			container,
-			currentTasks,
-			status,
-			this.app,
-			taskMap,
-			childrenMap
-		);
-		processAndRenderTasks(
-			container,
-			currentTasks,
-			status,
-			this.app,
-			taskMap,
-			childrenMap
-		);
-		processAndRenderStories(
-			container,
-			currentTasks,
-			status,
-			this.app,
-			taskMap,
-			childrenMap
-		);
-		processAndRenderEpics(
-			container,
-			currentTasks,
-			status,
-			this.app,
-			taskMap,
-			childrenMap
-		);
-		processAndRenderInitiatives(
-			container,
-			currentTasks,
-			status,
-			this.app,
-			taskMap,
-			childrenMap
-		);
-		processAndRenderResponsibilities(
-			container,
-			currentTasks,
-			status,
-			this.app,
-			taskMap,
-			childrenMap
-		);
-		processAndRenderPriorities(
-			container,
-			currentTasks,
-			status,
-			this.app,
-			taskMap,
-			childrenMap
-		);
+		// Call each section processor conditionally based on settings
+		if (this.plugin.settings.showObjectives) {
+			processAndRenderObjectives(
+				container,
+				currentTasks,
+				status,
+				this.app,
+				taskMap,
+				childrenMap
+			);
+		}
+		if (this.plugin.settings.showTasks) {
+			processAndRenderTasks(
+				container,
+				currentTasks,
+				status,
+				this.app,
+				taskMap,
+				childrenMap
+			);
+		}
+		if (this.plugin.settings.showStories) {
+			processAndRenderStories(
+				container,
+				currentTasks,
+				status,
+				this.app,
+				taskMap,
+				childrenMap
+			);
+		}
+		if (this.plugin.settings.showEpics) {
+			processAndRenderEpics(
+				container,
+				currentTasks,
+				status,
+				this.app,
+				taskMap,
+				childrenMap
+			);
+		}
+		if (this.plugin.settings.showInitiatives) {
+			processAndRenderInitiatives(
+				container,
+				currentTasks,
+				status,
+				this.app,
+				taskMap,
+				childrenMap
+			);
+		}
+		if (this.plugin.settings.showResponsibilities) {
+			processAndRenderResponsibilities(
+				container,
+				currentTasks,
+				status,
+				this.app,
+				taskMap,
+				childrenMap
+			);
+		}
+		if (this.plugin.settings.showPriorities) {
+			processAndRenderPriorities(
+				container,
+				currentTasks,
+				status,
+				this.app,
+				taskMap,
+				childrenMap
+			);
+		}
 	}
 }

@@ -19,7 +19,7 @@ import {
 } from "./views/AgileDashboardView";
 import { TaskIndex } from "./index/TaskIndex";
 
-export default class AgileObsidian extends Plugin {
+export default class AgileObsidianPlugin extends Plugin {
 	settings: AgileObsidianSettings;
 	taskIndex: TaskIndex;
 
@@ -35,7 +35,7 @@ export default class AgileObsidian extends Plugin {
 
 		this.registerView(
 			VIEW_TYPE_AGILE_DASHBOARD,
-			(leaf) => new AgileDashboardView(leaf)
+			(leaf) => new AgileDashboardView(leaf, this) // Updated: Pass 'this' (the plugin instance) for settings access
 		);
 
 		// This creates an icon in the left ribbon.
@@ -152,6 +152,8 @@ export default class AgileObsidian extends Plugin {
 
 	async saveSettings() {
 		await this.saveData(this.settings);
+		// @ts-ignore - Suppress type error for custom event (Obsidian typings don't support arbitrary events)
+		this.app.workspace.trigger("agile-settings-changed");
 	}
 
 	async activateView() {
