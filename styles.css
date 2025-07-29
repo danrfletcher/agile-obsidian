@@ -1,8 +1,10 @@
-/*
+/* Task list items: more vertical space and readable line height */
+.task-list-item {
+  margin: 8px 0;
+}
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
-
-If your plugin does not need CSS, delete this file.
-
-*/
+.children,
+.contains-task-list {
+  margin-left: 0px;
+  padding-left: 18px;
+}
