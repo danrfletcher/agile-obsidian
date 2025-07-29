@@ -152,29 +152,6 @@ export const isSleeping = (task: TaskItem): boolean => {
 };
 
 /**
- * Checks if a task is an OKR based on specific markup like <mark><strong>🎯 ...</strong></mark> at the start.
- * Useful for identifying and processing OKR tasks separately - e.g. in OKR filtering and subtree building in projectView's "Objectives" section.
- * @param {TaskItem} task - The task to check.
- * @returns {boolean} True if it matches OKR pattern, false otherwise.
- */
-export const isOKR = (task: TaskItem): boolean => {
-	if (!task.text.includes("🎯")) return false;
-	const pattern = /<mark[^>]*><strong>🎯\s+.*?<\/strong><\/mark>/;
-	const leadingTextPattern = /^\s*<mark[^>]*><strong>🎯\s+/;
-	return pattern.test(task.text) && leadingTextPattern.test(task.text);
-};
-
-/**
- * Checks if a task is a recurring responsibility marked with 🔁 in a <mark> tag.
- * Useful for collecting recurring tasks in specific sections - e.g. in responsibilityTrees for the "Responsibilities" section in projectView.
- * @param {TaskItem} task - The task to check.
- * @returns {boolean} True if the recurring marker is present, false otherwise.
- */
-export const isRecurringResponsibility = (task: TaskItem): boolean => {
-	return /<mark[^>]*>\s*(<strong>)?🔁/.test(task.text);
-};
-
-/**
  * Checks if a task is assigned to the current member or the team via active tags.
  * Useful for inclusive assignment checks in recurring or team contexts - e.g. in collecting responsibilities or inferred assignments in projectView's "Responsibilities" section.
  * @param {TaskItem} task - The task to check.
@@ -185,4 +162,20 @@ export const isAssignedToMemberOrTeam = (task: TaskItem): boolean => {
 		activeForMember(task) ||
 		/class\s*=\s*"[^"]*\bactive-team\b[^"]*"/i.test(task.text)
 	);
+};
+
+/**
+ * Checks if a task is directly assigned to the current member, active, not completed, relevant today, and not cancelled.
+ * Useful for identifying actionable tasks in user-specific views - e.g. in projectView for prunedTasks or in TaskRenderer for snooze buttons.
+ * @param {TaskItem} task - The task to check.
+ * @param {boolean} [status=true] - True to check for active status, false for inactive.
+ * @returns {boolean} True if directly assigned, false otherwise.
+ */
+export const isDirectlyAssigned = (task: TaskItem, status = true): boolean => {
+    return (
+        activeForMember(task, status) &&
+        !task.completed &&
+        isRelevantToday(task) &&
+        !isCancelled(task)
+    );
 };

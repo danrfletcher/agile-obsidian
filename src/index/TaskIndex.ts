@@ -140,6 +140,9 @@ export class TaskIndex {
 			}
 		});
 
+		// Assign unique IDs *after* hierarchy is built
+		this.assignUniqueIds(rootItems, file.path);
+
 		// Store in index (only root lists/tasks)
 		this.index[file.path] = { lists: rootItems };
 	}
@@ -152,5 +155,36 @@ export class TaskIndex {
 	// Method to refresh the entire index (fallback)
 	public async refresh() {
 		await this.buildIndex();
+	}
+
+	public getAllTasks(): TaskItem[] {
+		const allTasks: TaskItem[] = [];
+		Object.values(this.index).forEach(({ lists }) => {
+			allTasks.push(...lists);
+			// Flatten children recursively if needed
+			const flattenChildren = (items: TaskItem[]) => {
+				items.forEach((item) => {
+					allTasks.push(item);
+					if (item.children) flattenChildren(item.children);
+				});
+			};
+			flattenChildren(lists);
+		});
+		return allTasks;
+	}
+
+	// Add unique IDs if not present (call in buildIndex or updateFile)
+	private assignUniqueIds(items: TaskItem[], filePath: string) {
+		const assign = (
+			item: TaskItem,
+			parentId: string | null | undefined
+		) => {
+			item._uniqueId = `${filePath}:${item.line}`;
+			item._parentId = parentId ?? null; // Use nullish coalescing for safety (defaults to null if undefined)
+			item.children.forEach((child) =>
+				assign(child, item._uniqueId ?? null)
+			); // Safe recursion
+		};
+		items.forEach((item) => assign(item, null));
 	}
 }

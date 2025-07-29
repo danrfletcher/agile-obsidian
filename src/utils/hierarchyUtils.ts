@@ -122,5 +122,30 @@ export const processTaskHierarchy = (
 	return kids.length ? { ...task, children: kids } : null;
 };
 
-// Add other pruners like pruneToTargets, trimUnassignedAncestors, etc., similarly adapted
-// (Omitted for brevity; implement as needed based on full code)
+/**
+ * Strips fake headers from a list of nodes, preserving only "Now" headers and flattening others.
+ * Useful for cleaning up task lists before processing - e.g. in initial task collection in projectView.
+ * @param {TaskItem[]} nodes - The nodes to process.
+ * @returns {TaskItem[]} The filtered and flattened nodes.
+ */
+export const stripFakeHeaders = (nodes: TaskItem[]): TaskItem[] => {
+    const out: TaskItem[] = [];
+    for (const node of nodes) {
+        const isNowHeader = node.task === false && /🚀\s*\*\*Now\*\*/.test(node.text);
+        if (isNowHeader) {
+            node.children.forEach((child) => {
+                if (node._parentId !== undefined) {
+                    child._parentId = node._parentId; // Safe access with check
+                }
+                child.parent = node.parent;
+            });
+            out.push(...stripFakeHeaders(node.children));
+        } else {
+            out.push({
+                ...node,
+                children: stripFakeHeaders(node.children),
+            });
+        }
+    }
+    return out;
+};

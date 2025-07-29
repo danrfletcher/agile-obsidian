@@ -29,5 +29,6 @@ export interface TaskItem {
 	scheduled?: string; // ISO date string
 	start?: string; // ISO date string
 	// Add this for hierarchyUtils errors (a unique ID per task, e.g., generated in TaskIndex)
-	_uniqueId?: string; // Optional unique identifier (e.g., filePath + line)
+	_uniqueId?: string | null; // Optional unique identifier (e.g., filePath + line), allow null for unassigned/roots
+	_parentId?: string | null; // Custom reference to parent's _uniqueId, allow null for roots
 }

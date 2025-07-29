@@ -16,9 +16,11 @@ import { TaskIndex } from "./index/TaskIndex";
 
 export default class AgileObsidian extends Plugin {
 	settings: AgileObsidianSettings;
+	taskIndex: TaskIndex;
 
 	async onload() {
-		await this.loadSettings();
+		this.taskIndex = TaskIndex.getInstance(this.app);
+		await this.taskIndex.buildIndex();
 
 		this.registerView(
 			VIEW_TYPE_AGILE_DASHBOARD,
@@ -165,8 +167,6 @@ export default class AgileObsidian extends Plugin {
 			workspace.revealLeaf(leaf);
 		}
 	}
-
-	
 }
 
 class SampleModal extends Modal {
