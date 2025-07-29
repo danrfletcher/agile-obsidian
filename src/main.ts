@@ -4,14 +4,19 @@ import {
 	MarkdownView,
 	Modal,
 	Plugin,
-	PluginSettingTab,
-	Setting,
 	TFile,
 	WorkspaceLeaf,
 } from "obsidian";
 
-import { AgileObsidianSettings, DEFAULT_SETTINGS } from "./settings";
-import { AgileDashboardView, VIEW_TYPE_AGILE_DASHBOARD } from "./views/AgileDashboardView";
+import {
+	AgileObsidianSettings,
+	AgileSettingTab,
+	DEFAULT_SETTINGS,
+} from "./settings";
+import {
+	AgileDashboardView,
+	VIEW_TYPE_AGILE_DASHBOARD,
+} from "./views/AgileDashboardView";
 import { TaskIndex } from "./index/TaskIndex";
 
 export default class AgileObsidian extends Plugin {
@@ -19,6 +24,12 @@ export default class AgileObsidian extends Plugin {
 	taskIndex: TaskIndex;
 
 	async onload() {
+		// Load settings early (must come before adding the tab)
+		await this.loadSettings();
+
+		// Add the settings tab
+		this.addSettingTab(new AgileSettingTab(this.app, this));
+
 		this.taskIndex = TaskIndex.getInstance(this.app);
 		await this.taskIndex.buildIndex();
 
@@ -81,9 +92,6 @@ export default class AgileObsidian extends Plugin {
 			},
 		});
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
-
 		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
 		// Using this function will automatically remove the event listener when this plugin is disabled.
 		this.registerDomEvent(document, "click", (evt: MouseEvent) => {
@@ -95,14 +103,13 @@ export default class AgileObsidian extends Plugin {
 			window.setInterval(() => console.log("setInterval"), 5 * 60 * 1000)
 		);
 
-		const agile = TaskIndex.getInstance(this.app);
-		await agile.buildIndex(); // Builds the index asynchronously
-		console.log(agile.getIndex());
+		// Removed duplicate TaskIndex buildIndex call (already done earlier)
+		console.log(this.taskIndex.getIndex());
 
 		this.registerEvent(
 			this.app.vault.on("modify", async (file) => {
 				if (file instanceof TFile && file.extension === "md") {
-					await agile.updateFile(file);
+					await this.taskIndex.updateFile(file);
 				}
 			})
 		);
@@ -110,7 +117,7 @@ export default class AgileObsidian extends Plugin {
 		this.registerEvent(
 			this.app.vault.on("create", async (file) => {
 				if (file instanceof TFile && file.extension === "md") {
-					await agile.updateFile(file);
+					await this.taskIndex.updateFile(file);
 				}
 			})
 		);
@@ -118,7 +125,7 @@ export default class AgileObsidian extends Plugin {
 		this.registerEvent(
 			this.app.vault.on("delete", (file) => {
 				if (file instanceof TFile && file.extension === "md") {
-					agile.removeFile(file.path);
+					this.taskIndex.removeFile(file.path);
 				}
 			})
 		);
@@ -126,8 +133,8 @@ export default class AgileObsidian extends Plugin {
 		this.registerEvent(
 			this.app.vault.on("rename", async (file, oldPath) => {
 				if (file instanceof TFile && file.extension === "md") {
-					agile.removeFile(oldPath);
-					await agile.updateFile(file);
+					this.taskIndex.removeFile(oldPath);
+					await this.taskIndex.updateFile(file);
 				}
 			})
 		);
@@ -182,33 +189,5 @@ class SampleModal extends Modal {
 	onClose() {
 		const { contentEl } = this;
 		contentEl.empty();
-	}
-}
-
-class SampleSettingTab extends PluginSettingTab {
-	plugin: AgileObsidian;
-
-	constructor(app: App, plugin: AgileObsidian) {
-		super(app, plugin);
-		this.plugin = plugin;
-	}
-
-	display(): void {
-		const { containerEl } = this;
-
-		containerEl.empty();
-
-		new Setting(containerEl)
-			.setName("Setting #1")
-			.setDesc("It's a secret")
-			.addText((text) =>
-				text
-					.setPlaceholder("Enter your secret")
-					.setValue(this.plugin.settings.mySetting)
-					.onChange(async (value) => {
-						this.plugin.settings.mySetting = value;
-						await this.plugin.saveSettings();
-					})
-			);
 	}
 }
