@@ -84,7 +84,6 @@ export class AgileDashboardView extends ItemView {
 		this.registerEvent(
 			// @ts-ignore - Suppress type error for custom event (Obsidian typings don't support arbitrary events)
 			this.app.workspace.on("agile-settings-changed", () => {
-				console.log("Settings changed - refreshing dashboard"); // Debug log to confirm firing
 				this.updateView(); // Force re-render with new settings
 			})
 		);

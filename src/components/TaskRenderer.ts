@@ -18,12 +18,13 @@ export function renderTaskTree(
   // Skip if no tasks
   if (tasks.length === 0) return;
 
-  // Create container (ul for lists, div for root to avoid top-level issues)
-  const taskContainer = isRoot
-    ? container.createEl("div", { cls: "agile-dashboard" })
-    : container.createEl("ul", {
-        cls: "agile-dashboard children contains-task-list",
-      }); // Add contains-task-list for Obsidian styling
+  // Create container: For roots, use a ul to wrap multiple top-level items; otherwise, ul for children
+  const taskList = container.createEl("ul", {
+    cls: "agile-dashboard contains-task-list" + (isRoot ? "" : " children"),
+    attr: {
+      style: "list-style-type: none; padding-left: " + (isRoot ? "0" : "20px") + ";" // Inline: No bullets, indent children (adjust 20px as needed)
+    }
+  });
 
   tasks.forEach((task) => {
     // Skip truly blank tasks
@@ -34,7 +35,13 @@ export function renderTaskTree(
     )
       return;
 
-    // Create a temporary div to hold the rendered markdown (we'll move its children)
+    // Create the li for this task explicitly (for better control)
+    const taskItemEl = taskList.createEl("li", { cls: "task-item" });
+    if (task.annotated) {
+      taskItemEl.addClass("annotated-task");
+    }
+
+    // Create a temporary div to hold the rendered markdown (we'll move its children into the li)
     const tempEl = document.createElement("div");
     const renderComponent = new Component();
     MarkdownRenderer.renderMarkdown(
@@ -45,29 +52,16 @@ export function renderTaskTree(
     );
     renderComponent.load();
 
-    // Append the rendered content directly to taskContainer (no extra li/checkbox)
+    // Move the rendered content into the li (e.g., the checkbox and text)
     while (tempEl.firstChild) {
-      const child = tempEl.firstChild;
-      taskContainer.appendChild(child);
-      // Apply classes to the generated <li> for styling
-      if (child instanceof HTMLElement && child.tagName === "LI") {
-        child.addClass("task-item");
-        // Handle annotations if needed
-        if (task.annotated) {
-          child.addClass("annotated-task");
-        }
-      }
+      taskItemEl.appendChild(tempEl.firstChild);
     }
 
-    // Recurse for children: Append a new ul under the last rendered li (if any)
+    // Recurse for children: Create a new ul directly inside this li
     if (task.children && task.children.length > 0) {
-      const lastLi = taskContainer.querySelector("li:last-child"); // Attach to the rendered li
-      const childrenContainer = (lastLi || taskContainer).createEl("ul", {
-        cls: "children contains-task-list",
-      });
       renderTaskTree(
         task.children,
-        childrenContainer,
+        taskItemEl, // Recurse into this li
         app,
         depth + 1,
         false,

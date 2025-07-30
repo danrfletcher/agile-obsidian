@@ -103,9 +103,6 @@ export default class AgileObsidianPlugin extends Plugin {
 			window.setInterval(() => console.log("setInterval"), 5 * 60 * 1000)
 		);
 
-		// Removed duplicate TaskIndex buildIndex call (already done earlier)
-		console.log(this.taskIndex.getIndex());
-
 		this.registerEvent(
 			this.app.vault.on("modify", async (file) => {
 				if (file instanceof TFile && file.extension === "md") {
