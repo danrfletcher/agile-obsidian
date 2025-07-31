@@ -11,18 +11,27 @@ export const deepClone = <T>(obj: T): T => {
  * @param {TaskItem} task - The starting task to climb from.
  * @param {(t: TaskItem) => boolean} [predicate] - A function that returns true for the desired ancestor (defaults to checking for root: t.parent < 0).
  * @param {Map<string, TaskItem>} taskMap - Map of unique task IDs to TaskItems for parent lookups.
- * @returns {TaskItem | null} The matching ancestor, or null if none found.
+ * @returns {TaskItem | null} The matching ancestor (or the task itself if it matches), or null if none found.
  */
 export const findAncestor = (
 	task: TaskItem,
-	predicate: (t: TaskItem) => boolean = (t) => t.parent < 0,
+	predicate: (t: TaskItem) => boolean = (t) => t.parent < 0, // Default predicate here
 	taskMap: Map<string, TaskItem>
 ): TaskItem | null => {
+	// Check the starting task first (handles roots/isolated tasks)
+	if (predicate(task)) {
+		return task;
+	}
+
+	// Traverse upwards
 	let current = task;
 	while (current._parentId && taskMap.has(current._parentId ?? "")) {
 		current = taskMap.get(current._parentId ?? "")!;
-		if (predicate(current)) return current;
+		if (predicate(current)) {
+			return current;
+		}
 	}
+
 	return null; // No match found
 };
 
@@ -104,26 +113,6 @@ export const buildHierarchyFromPath = (path: TaskItem[]): TaskItem | null => {
 		cursor = child;
 	}
 	return root;
-};
-
-/**
- * Prunes a task tree to include only paths leading to tasks in the assigned set.
- * Recursively processes children and retains nodes with relevant descendants.
- * Useful for filtering and structuring task trees by type - e.g. in processTaskType for pruning tasks, stories, or epics in projectView.
- * @param {TaskItem} task - The root task to process.
- * @param {Set<string>} assignedSet - Set of unique task IDs considered "assigned".
- * @returns {TaskItem | null} The pruned task subtree, or null if no relevant paths.
- */
-export const processTaskHierarchy = (
-	task: TaskItem,
-	assignedSet: Set<string>
-): TaskItem | null => {
-	if (!task) return null;
-	if (assignedSet.has(task._uniqueId ?? "")) return { ...task, children: [] }; // Fixed: no space, nullish coalescing
-	const kids = task.children
-		.map((t) => processTaskHierarchy(t, assignedSet))
-		.filter((t): t is TaskItem => t !== null); // Type guard to exclude null
-	return kids.length ? { ...task, children: kids } : null;
 };
 
 /**

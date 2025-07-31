@@ -50,3 +50,41 @@ export const isOKR = (task: TaskItem): boolean => {
 export const isRecurringResponsibility = (task: TaskItem): boolean => {
 	return /<mark[^>]*>\s*(<strong>)?🔁/.test(task.text);
 };
+
+/**
+ * Checks if a task is an initiative, either standard (marked with 🎖️) or a learning initiative.
+ * Useful for identifying and filtering initiatives in task hierarchies - e.g. in parentFinders for pruning or grouping in projectView sections like Initiatives or Tasks.
+ * @param {TaskItem} t - The task to check.
+ * @returns {boolean} True if it's an initiative, false otherwise.
+ */
+export const isInitiative = (t: TaskItem) =>
+	t && (t.text.includes("🎖️") || isLearningInitiative(t)); // Assume isLearningInitiative imported
+
+/**
+ * Checks if a task is an epic, either standard (marked with 🏆) or a learning epic.
+ * Useful for identifying and filtering epics in task hierarchies - e.g. in parentFinders for pruning or grouping in projectView sections like Epics or Tasks.
+ * @param {TaskItem} t - The task to check.
+ * @returns {boolean} True if it's an epic, false otherwise.
+ */
+export const isEpic = (t: TaskItem) =>
+	t && (t.text.includes("🏆") || isLearningEpic(t)); // Assume isLearningEpic imported
+export const isStory = (t: TaskItem) => t && t.text.includes("📝");
+
+/**
+ * Checks if a task is a basic task, excluding specific statuses and higher-level types like initiatives, epics, stories, or OKRs.
+ * Useful for filtering plain actionable tasks in views - e.g. in processAndRenderTasks or other sections in projectView.
+ * @param {TaskItem} task - The task to check.
+ * @returns {boolean} True if it's a basic task, false otherwise.
+ */
+export const isTask = (task: TaskItem): boolean => {
+	return (
+		task.status !== "O" &&
+		task.status !== "d" &&
+		task.status !== "A" &&
+		!isInitiative(task) &&
+		!isEpic(task) &&
+		!isStory(task) &&
+		!isOKR(task) &&
+		!isRecurringResponsibility(task)
+	);
+};

@@ -65,3 +65,24 @@ export const matchesDatePattern = (task: TaskItem): boolean => {
 	}
 	return false;
 };
+
+/**
+ * Determines if a task is relevant for today based on its start and scheduled dates.
+ * Excludes completed or cancelled tasks.
+ * Useful for filtering tasks that should appear in daily views - e.g. in projectView for objectives, tasks, or priorities.
+ * @param {TaskItem} task - The task to evaluate.
+ * @returns {boolean} True if relevant today, false otherwise.
+ */
+export const isRelevantToday = (task: TaskItem): boolean => {
+	const today = new Date();
+	today.setHours(0, 0, 0, 0);
+	// Assume task has optional due/scheduled/start properties (add to TaskItem if needed)
+	const start = task.start ? new Date(task.start) : null;
+	// Removed unused 'due' assignment; re-add if needed for logic
+	const scheduled = task.scheduled ? new Date(task.scheduled) : null;
+	if (task.completed || task.status === "-") return false;
+	return (
+		(!start && !scheduled) ||
+		((!start || start <= today) && (!scheduled || scheduled <= today))
+	);
+};
