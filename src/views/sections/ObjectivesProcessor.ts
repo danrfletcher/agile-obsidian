@@ -1,9 +1,10 @@
 import { App } from "obsidian";
-import { TaskItem } from "../../types/TaskItem";
+import { TaskItem, TaskParams } from "../../types/TaskItem";
 import {
 	activeForMember,
 	isCancelled,
-	isRelevantToday,
+	isInProgress,
+	isMarkedCompleted,
 	isSleeping,
 } from "../../utils/taskFilters";
 import { isOKR } from "../../utils/taskTypes";
@@ -16,18 +17,24 @@ export function processAndRenderObjectives(
 	status: boolean,
 	app: App,
 	taskMap: Map<string, TaskItem>,
-	childrenMap: Map<string, TaskItem[]>
+	childrenMap: Map<string, TaskItem[]>,
+	taskParams: TaskParams
 ) {
+	// Filter for task params
+	const { inProgress, completed, sleeping, cancelled } = taskParams;
+	const sectionTasks = currentTasks.filter((task) => {
+		return (
+			(inProgress && isInProgress(task, taskMap)) ||
+			(completed && isMarkedCompleted(task)) ||
+			(sleeping && isSleeping(task, taskMap)) ||
+			(cancelled && isCancelled(task))
+		);
+	});
+
+
 	// Fetch OKRs for current user
-	const assignedOKRs = currentTasks.filter(
-		(task) =>
-			isOKR(task) &&
-			activeForMember(task, status) &&
-			!task.completed &&
-			!isCancelled(task) &&
-			task.status !== "-" &&
-			isRelevantToday(task) &&
-			!isSleeping(task)
+	const assignedOKRs = sectionTasks.filter(
+		(task) => isOKR(task) && activeForMember(task, status)
 	);
 	const assignedOKRSet = new Set(assignedOKRs.map((t) => t._uniqueId ?? "")); // Guarded
 
