@@ -1,14 +1,15 @@
 import { App } from "obsidian";
-import { TaskItem } from "../../types/TaskItem"; // Adjust path
-import { renderTaskTree } from "../../components/TaskRenderer"; // Adjust path
+import { TaskItem, TaskParams } from "../../types/TaskItem";
+import { renderTaskTree } from "../../components/TaskRenderer";
 import {
 	activeForMember,
 	isCancelled,
-	isRelevantToday,
-    isSleeping,
-    teamMemberName,
-} from "../../utils/taskFilters"; // Adjust path
-import { isLearningEpic, isLearningInitiative } from "../../utils/taskTypes"; // Adjust path
+	isInProgress,
+	isMarkedCompleted,
+	isSleeping,
+} from "../../utils/taskFilters";
+import { isInitiative } from "../../utils/taskTypes";
+import { buildPrunedMergedTrees } from "../../utils/hierarchyUtils";
 
 export function processAndRenderInitiatives(
 	container: HTMLElement,
@@ -16,86 +17,73 @@ export function processAndRenderInitiatives(
 	status: boolean,
 	app: App,
 	taskMap: Map<string, TaskItem>,
-	childrenMap: Map<string, TaskItem[]>
+	childrenMap: Map<string, TaskItem[]>,
+	taskParams: TaskParams
 ) {
-	// Common type checks
-	const isInitiative = (t: TaskItem) =>
-		t && (t.text.includes("🎖️") || isLearningInitiative(t));
-	const isEpic = (t: TaskItem) =>
-		t && (t.text.includes("🏆") || isLearningEpic(t)); // Assume isLearningEpic imported
+	// Filter for task params
+	const { inProgress, completed, sleeping, cancelled } = taskParams;
+	const sectionTasks = currentTasks.filter((task) => {
+		return (
+			(inProgress && isInProgress(task, taskMap)) ||
+			(completed && isMarkedCompleted(task)) ||
+			(sleeping && isSleeping(task, taskMap)) ||
+			(cancelled && isCancelled(task))
+		);
+	});
 
-	// Categorize epic (from original)
-	const categorizeEpic = (epic: TaskItem) => {
-		if (
-			new RegExp(`class="(?:in)?active-(?!${teamMemberName})[^"]*"`).test(
-				epic.text
-			)
-		)
-			return "delegated";
-		if (epic.text.includes(">⛔")) return "blocked";
-		if (epic.text.includes(">⌛")) return "waiting";
-		if (epic.text.includes(">🕒")) return "pending";
-		if (epic.status === "/") return "inProgress";
-		if (epic.status === " ") return "todo";
-		return "other";
-	};
+	// Filter for any task directly assigned to the user
+	const directlyAssigned = sectionTasks.filter(
+		(task) => activeForMember(task, status) && isInitiative(task)
+	);
 
-	// Process own initiatives
-	const ownInitiatives = currentTasks
-		.filter((task) => task.text && isInitiative(task) && !isSleeping(task))
-		.map((initiative) => {
-			const epics = (
-				childrenMap.get(initiative._uniqueId ?? "") || []
-			).filter((ep) => isEpic(ep) && !ep.completed && !isCancelled(ep));
-			const buckets: { [key: string]: TaskItem[] } = {
-				inProgress: [],
-				todo: [],
-				blocked: [],
-				waiting: [],
-				pending: [],
-				delegated: [],
-				other: [],
-			};
-			epics
-				.filter((ep) => !isSleeping(ep))
-				.forEach((ep) => {
-					const cat = categorizeEpic(ep);
-					buckets[cat].push({ ...ep, children: [] });
-				});
-			const sorted: TaskItem[] = [];
-			[
-				"inProgress",
-				"todo",
-				"blocked",
-				"waiting",
-				"pending",
-				"delegated",
-				"other",
-			].forEach((cat) => {
-				if (buckets[cat].length) {
-					if (cat !== "todo") sorted.push(...buckets[cat]);
-				}
-			});
-			return { ...initiative, children: sorted };
-		})
-		.filter(
-			(task) =>
-				isInitiative(task) &&
-				activeForMember(task, status) &&
-				!task.completed &&
-				isRelevantToday(task)
-		)
-		.sort((a, b) => {
-			const aIsLearning = isLearningInitiative(a);
-			const bIsLearning = isLearningInitiative(b);
-			if (aIsLearning && !bIsLearning) return 1;
-			if (!aIsLearning && bIsLearning) return -1;
-			return 0;
-		});
+	// Simple callback: Keep child if status !== "I"
+	const statusFilterCallback = (task: TaskItem) =>
+		(task.status !== "I" && inProgress && isInProgress(task, taskMap)) ||
+		(completed && isMarkedCompleted(task)) ||
+		(sleeping && isSleeping(task, taskMap)) ||
+		(cancelled && isCancelled(task));
 
-	// Render
-	if (ownInitiatives.length > 0) {
+	// Build pruned merged trees from the filtered tasks (1 level deep, keep all children)
+	let prunedTasks = buildPrunedMergedTrees(
+		directlyAssigned,
+		taskMap,
+		undefined, // ancestorPredicate (defaults to root)
+		childrenMap, // Pass your childrenMap for lookups
+		{ depth: 1, filterCallback: statusFilterCallback } // childParams: 1 level deep, no filterCallback (defaults to keep all)
+	);
+
+	// Post-process: Sort and limit after building prunedTasks
+	prunedTasks = prunedTasks.map((initiative) => {
+		const filteredChildren = initiative.children || [];
+
+		// Separate into "/" and " " groups
+		const slashEpics = filteredChildren.filter(
+			(child) => child.status === "/"
+		);
+		const spaceEpics = filteredChildren.filter(
+			(child) => child.status === " "
+		);
+
+		// Sort each group (e.g., by position; adjust if needed)
+		slashEpics.sort(
+			(a, b) => a.position.start.line - b.position.start.line
+		);
+		spaceEpics.sort(
+			(a, b) => a.position.start.line - b.position.start.line
+		);
+
+		// If there are "/" epics (or any other displayed children), show only them; else, show the first " " as fallback
+		let limitedChildren = slashEpics;
+		if (limitedChildren.length === 0 && spaceEpics.length > 0) {
+			limitedChildren = spaceEpics.slice(0, 1);
+		}
+
+		return { ...initiative, children: limitedChildren };
+	});
+
+	// Render if there are tasks
+	if (prunedTasks.length > 0) {
 		container.createEl("h2", { text: "🎖️ Initiatives" });
-		renderTaskTree(ownInitiatives, container, app, 0, false, "initiatives");
+		renderTaskTree(prunedTasks, container, app, 0, false, "tasks");
 	}
 }

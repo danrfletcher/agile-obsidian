@@ -1,10 +1,15 @@
-import { App} from "obsidian";
-import { TaskItem } from "../../types/TaskItem"; // Adjust path
-import { renderTaskTree } from "../../components/TaskRenderer"; // Adjust path
-import { processTaskType } from "../TaskTypeProcessor"; // Adjust path
-import { isDirectlyAssigned, isSleeping } from "../../utils/taskFilters"; // Adjust path
-import { findAncestor } from "../../utils/hierarchyUtils"; // Adjust path
-import { getTaskType, isLearningEpic, isLearningInitiative } from "../../utils/taskTypes"; // Adjust path
+import { App } from "obsidian";
+import { TaskItem, TaskParams } from "../../types/TaskItem";
+import { renderTaskTree } from "../../components/TaskRenderer";
+import {
+	activeForMember,
+	isCancelled,
+	isInProgress,
+	isMarkedCompleted,
+	isSleeping,
+} from "../../utils/taskFilters";
+import { isStory } from "../../utils/taskTypes";
+import { buildPrunedMergedTrees } from "../../utils/hierarchyUtils";
 
 export function processAndRenderStories(
 	container: HTMLElement,
@@ -12,41 +17,31 @@ export function processAndRenderStories(
 	status: boolean,
 	app: App,
 	taskMap: Map<string, TaskItem>,
-	childrenMap: Map<string, TaskItem[]>
+	childrenMap: Map<string, TaskItem[]>,
+	taskParams: TaskParams
 ) {
-	// Common type checks
-	const isInitiative = (t: TaskItem) =>
-		t && (t.text.includes("🎖️") || isLearningInitiative(t));
-	const isEpic = (t: TaskItem) =>
-		t && (t.text.includes("🏆") || isLearningEpic(t));
+	// Filter for task params
+	const { inProgress, completed, sleeping, cancelled } = taskParams;
+	const sectionTasks = currentTasks.filter((task) => {
+		return (
+			(inProgress && isInProgress(task, taskMap)) ||
+			(completed && isMarkedCompleted(task)) ||
+			(sleeping && isSleeping(task, taskMap)) ||
+			(cancelled && isCancelled(task))
+		);
+	});
 
-	// Parent finders for stories
-	const parentFinders = [
-		{
-			finder: (t: TaskItem) => findAncestor(t, isInitiative),
-			label: "initiative",
-			typeCheck: isInitiative,
-		},
-		{
-			finder: (t: TaskItem) => findAncestor(t, isEpic),
-			label: "epic",
-			typeCheck: isEpic,
-		},
-	];
-
-	// Process stories
-	const prunedStories = processTaskType(
-		currentTasks,
-		(task: TaskItem) =>
-			isDirectlyAssigned(task) &&
-			!isSleeping(task) &&
-			getTaskType(task) === "story",
-		parentFinders
+	// Filter for any task directly assigned to the user
+	const directlyAssigned = sectionTasks.filter(
+		(task) => activeForMember(task, status) && isStory(task)
 	);
 
-	// Render
-	if (prunedStories.length > 0) {
+	// Build pruned merged trees from the filtered tasks
+	const prunedTasks = buildPrunedMergedTrees(directlyAssigned, taskMap);
+
+	// Render if there are tasks
+	if (prunedTasks.length > 0) {
 		container.createEl("h2", { text: "📝 Stories" });
-		renderTaskTree(prunedStories, container, app, 0, false, "stories");
+		renderTaskTree(prunedTasks, container, app, 0, false, "tasks");
 	}
 }
