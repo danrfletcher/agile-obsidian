@@ -32,3 +32,10 @@ export interface TaskItem {
 	_uniqueId?: string | null; // Optional unique identifier (e.g., filePath + line), allow null for unassigned/roots
 	_parentId?: string | null; // Custom reference to parent's _uniqueId, allow null for roots
 }
+
+export interface TaskParams {
+	inProgress: boolean;
+	completed: boolean;
+	sleeping: boolean;
+	cancelled: boolean;
+}
