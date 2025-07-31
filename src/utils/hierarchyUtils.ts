@@ -1,4 +1,5 @@
 import { TaskItem } from "../types/TaskItem";
+import { attachFilteredChildren } from "./childUtils";
 
 export const deepClone = <T>(obj: T): T => {
 	return JSON.parse(JSON.stringify(obj)); // structuredClone if available
@@ -194,48 +195,71 @@ export const mergeTaskTrees = (target: TaskItem, source: TaskItem): void => {
  * @param {TaskItem[]} tasks - The array of tasks to build pruned trees from.
  * @param {Map<string, TaskItem>} taskMap - Map of unique task IDs to TaskItems for parent lookups.
  * @param {(t: TaskItem) => boolean} [ancestorPredicate] - Optional predicate for findAncestor (defaults to root: t.parent < 0).
+ * @param {Map<string, TaskItem[]>} [childrenMap] - Optional map of task IDs to their direct children (required if using childParams for attachment).
+ * @param {{ depth: number; filterCallback?: (t: TaskItem) => boolean } | undefined} [childParams] - Optional params for attaching filtered children (defaults to depth 0: no children).
  * @returns {TaskItem[]} The array of merged, pruned trees (one per unique root).
  */
 export const buildPrunedMergedTrees = (
-	tasks: TaskItem[],
-	taskMap: Map<string, TaskItem>,
-	ancestorPredicate?: (t: TaskItem) => boolean
+    tasks: TaskItem[],
+    taskMap: Map<string, TaskItem>,
+    ancestorPredicate?: (t: TaskItem) => boolean,
+    childrenMap?: Map<string, TaskItem[]>,
+    childParams?: { depth: number; filterCallback?: (t: TaskItem) => boolean }
 ): TaskItem[] => {
-	const treesByRoot = new Map<string, TaskItem>();
+    const treesByRoot = new Map<string, TaskItem>();
 
-	tasks.forEach((linkedTask) => {
-		// Find root (using optional predicate)
-		const root = findAncestor(linkedTask, ancestorPredicate, taskMap);
-		if (!root || !root._uniqueId) {
-			console.warn(`No root for linkedTask: ${linkedTask._uniqueId}`);
-			return;
-		}
+    tasks.forEach((linkedTask) => {
+        // Find root (using optional predicate)
+        const root = findAncestor(linkedTask, ancestorPredicate, taskMap);
+        if (!root || !root._uniqueId) {
+            console.warn(`No root for linkedTask: ${linkedTask._uniqueId}`);
+            return;
+        }
 
-		// Get path and build pruned tree
-		const path = getPathToAncestor(linkedTask, root._uniqueId, taskMap);
-		if (path.length === 0) {
-			console.warn(`Empty path for linkedTask: ${linkedTask._uniqueId}`);
-			return;
-		}
-		const prunedTree = buildHierarchyFromPath(path);
-		if (!prunedTree) return;
+        // Get path and build pruned tree
+        const path = getPathToAncestor(linkedTask, root._uniqueId, taskMap);
+        if (path.length === 0) {
+            console.warn(`Empty path for linkedTask: ${linkedTask._uniqueId}`);
+            return;
+        }
+        const prunedTree = buildHierarchyFromPath(path);
+        if (!prunedTree) return;
 
-		// Group and merge
-		const rootId = root._uniqueId;
-		if (!treesByRoot.has(rootId)) {
-			treesByRoot.set(rootId, { ...root, children: [] }); // Init with pruned root (empty children)
-		}
-		const existingTree = treesByRoot.get(rootId)!;
-		mergeTaskTrees(existingTree, prunedTree);
-	});
+        // If childParams provided and childrenMap available, attach filtered children to the linkedTask node in prunedTree
+        if (childParams && childrenMap) {
+            // Find the node in prunedTree corresponding to the original linkedTask (usually the leaf)
+            const findLinkedNode = (node: TaskItem): TaskItem | null => {
+                if (node._uniqueId === linkedTask._uniqueId) return node;
+                for (const child of node.children) {
+                    const found = findLinkedNode(child);
+                    if (found) return found;
+                }
+                return null;
+            };
+            const linkedNode = findLinkedNode(prunedTree);
+            if (linkedNode) {
+                attachFilteredChildren(linkedNode, childParams.depth, childParams.filterCallback, childrenMap);
+            }
+        } else if (childParams) {
+            console.warn(`childrenMap is required when childParams is provided - skipping attachment for linkedTask: ${linkedTask._uniqueId}`);
+        }
 
-	// After merging all trees, strip list items from each root tree
-	let cleanedTrees = Array.from(treesByRoot.values());
-	cleanedTrees = cleanedTrees.map((tree) => {
-		// Wrap in array for stripping (since stripListItems takes an array of roots)
-		const cleaned = stripListItems([tree]);
-		return cleaned[0] || tree; // Return the first (and only) cleaned root, or original if empty
-	});
+        // Group and merge
+        const rootId = root._uniqueId;
+        if (!treesByRoot.has(rootId)) {
+            treesByRoot.set(rootId, { ...root, children: [] }); // Init with pruned root (empty children)
+        }
+        const existingTree = treesByRoot.get(rootId)!;
+        mergeTaskTrees(existingTree, prunedTree);
+    });
 
-	return cleanedTrees;
+    // After merging all trees, strip list items from each root tree
+    let cleanedTrees = Array.from(treesByRoot.values());
+    cleanedTrees = cleanedTrees.map((tree) => {
+        // Wrap in array for stripping (since stripListItems takes an array of roots)
+        const cleaned = stripListItems([tree]);
+        return cleaned[0] || tree; // Return the first (and only) cleaned root, or original if empty
+    });
+
+    return cleanedTrees;
 };
