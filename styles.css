@@ -3,8 +3,40 @@
   margin: 8px 0;
 }
 
-.children,
-.contains-task-list {
-  margin-left: 0px;
-  padding-left: 18px;
+/* Indentation is handled by Obsidian's default .contains-task-list styles */
+
+/* Keep inline controls (e.g., snooze) within the line height so they don't increase line spacing */
+.agile-dashboard .task-list-item button,
+.agile-dashboard .task-list-item .snooze-button,
+.agile-dashboard .task-list-item .agile-snooze-btn,
+.agile-dashboard .task-list-item .clickable-icon {
+  box-sizing: border-box;
+  height: 1em;
+  max-height: 1em;       /* cap total box height (includes border/padding) to 1em */
+  min-height: 0;
+  line-height: 1;        /* keep the control's internal line height tight */
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 0;
+  padding-right: 0;
+  font-size: 1em;        /* match surrounding text size */
+  display: inline-flex;  /* align icon/text without affecting line metrics */
+  align-items: center;
+  vertical-align: text-bottom;
+  margin-left: 0.35em;   /* small gap from task text */
+  background: transparent;  /* icon-only look */
+  border: none;             /* remove button border */
+  box-shadow: none;         /* remove any theme shadows */
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+/* Ensure any SVG icons inside the control scale to the text size */
+.agile-dashboard .task-list-item button svg,
+.agile-dashboard .task-list-item .snooze-button svg,
+.agile-dashboard .task-list-item .agile-snooze-btn svg,
+.agile-dashboard .task-list-item .clickable-icon svg {
+  width: 1em;
+  height: 1em;
 }

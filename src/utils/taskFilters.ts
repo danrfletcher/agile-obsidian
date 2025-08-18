@@ -1,7 +1,7 @@
 import { TaskItem } from "../types/TaskItem";
-import { overrideTeamMemberName } from "./config";
+import { name } from "./config";
 
-export const fullName = overrideTeamMemberName || "Default Name"; // Replace with dynamic if needed (e.g., from settings)
+export const fullName = name || "Default Name"; // Replace with dynamic if needed (e.g., from settings)
 export const teamMemberName = fullName.toLowerCase().split(" ").join("-");
 
 /**

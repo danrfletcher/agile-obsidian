@@ -90,7 +90,7 @@ export class TaskIndex {
 				fullyCompleted: checked, // Will update later based on children (only for tasks)
 				text,
 				visual: lineText.trim(), // Full line for visual
-				line: lineNum,
+				line: lineNum + 1,
 				lineCount:
 					item.position.end.line - item.position.start.line + 1,
 				position: item.position,
