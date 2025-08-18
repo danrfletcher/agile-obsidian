@@ -48,7 +48,7 @@ function shouldShowSnoozeButton(task: TaskItem, sectionType: string, userSlug: s
   return false;
 }
 
-// Build a YYYY-MM-DD string for tomorrow (local)
+ // Build a YYYY-MM-DD string for tomorrow (local)
 function getTomorrowISO(): string {
   const d = new Date();
   d.setDate(d.getDate() + 1);
@@ -56,6 +56,86 @@ function getTomorrowISO(): string {
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
+}
+
+function hideTaskAndCollapseAncestors(liEl: HTMLElement): void {
+  if (!liEl) return;
+
+  const hide = (el: HTMLElement) => {
+    el.style.display = "none";
+    el.setAttribute("aria-hidden", "true");
+  };
+
+  const isVisible = (el: HTMLElement) => {
+    if (!el) return false;
+    if (el.style.display === "none") return false;
+    const cs = getComputedStyle(el);
+    if (cs.visibility === "hidden" || cs.display === "none") return false;
+    return el.offsetParent !== null;
+  };
+
+  // Hide the affected task
+  hide(liEl);
+
+  // Walk up: if a parent LI's UL had only this one child (now hidden), hide the parent too
+  let current: HTMLElement | null = liEl;
+  while (current) {
+    const ul = current.parentElement as HTMLElement | null;
+    if (!ul || ul.tagName !== "UL") break;
+
+    const parentLi = ul.parentElement as HTMLElement | null;
+    if (!parentLi || parentLi.tagName !== "LI") break;
+
+    // Count direct LI children under this UL
+    const childLis = Array.from(ul.children).filter(
+      (n) => n instanceof HTMLElement && n.tagName === "LI"
+    ) as HTMLElement[];
+
+    // Visible children after hiding current
+    const visibleChildren = childLis.filter((li) => isVisible(li));
+
+    // If parent effectively had only this one child, hide it and continue upward
+    if (childLis.length === 1 || visibleChildren.length === 0) {
+      hide(parentLi);
+      current = parentLi;
+      continue;
+    }
+
+    break;
+  }
+
+  // After collapsing, if no visible tasks remain in the section, hide the section (including its header)
+  const findSectionRoot = (el: HTMLElement): HTMLElement | null => {
+    let cur: HTMLElement | null = el;
+    while (cur && cur.parentElement) {
+      const parent = cur.parentElement as HTMLElement;
+      if (parent.classList && parent.classList.contains("content-container")) {
+        return cur;
+      }
+      cur = parent;
+    }
+    return null;
+  };
+
+  const maybeHideAdjacentHeader = (el: HTMLElement) => {
+    const prev = el.previousElementSibling as HTMLElement | null;
+    if (prev && /^H[1-6]$/.test(prev.tagName)) {
+      hide(prev);
+    }
+  };
+
+  const sectionRoot = findSectionRoot(liEl);
+  if (sectionRoot) {
+    const visibleLis = Array.from(sectionRoot.querySelectorAll("li")).filter((node) =>
+      isVisible(node as HTMLElement)
+    );
+    if (visibleLis.length === 0) {
+      hide(sectionRoot);
+      // If the section root is a list directly under the content container and the header is a sibling,
+      // also hide that header so the section disappears completely.
+      maybeHideAdjacentHeader(sectionRoot);
+    }
+  }
 }
 
 // Create and wire the snooze button with click (tomorrow) and long-press (custom date) behavior
@@ -67,6 +147,7 @@ function createSnoozeButton(
   userSlug: string
 ): HTMLButtonElement {
   const btn = document.createElement("button");
+  btn.type = "button";
   btn.textContent = "💤";
   btn.classList.add("agile-snooze-btn");
   btn.title = "Click: snooze until tomorrow • Long-press: enter custom date";
@@ -75,6 +156,9 @@ function createSnoozeButton(
   btn.style.background = "none";
   btn.style.border = "none";
   btn.style.fontSize = "1em";
+
+  const uid = task._uniqueId || "";
+  const filePath = uid.split(":")[0] || "";
 
   let longPressTimer: number | null = null;
   let longPressed = false;
@@ -103,10 +187,26 @@ function createSnoozeButton(
       btn.style.display = "";
       if (!isValid) return;
       btn.textContent = "⏳";
+      if (filePath) {
+        window.dispatchEvent(
+          new CustomEvent("agile:prepare-optimistic-file-change", {
+            detail: { filePath },
+          })
+        );
+      }
       try {
         await snoozeTask(task, app, userSlug, val);
-      } finally {
-        // Leave hourglass; UI will refresh on file modify event if the view listens to it
+        if (uid && filePath) {
+          window.dispatchEvent(
+            new CustomEvent("agile:task-snoozed", {
+              detail: { uid, filePath, date: val },
+            })
+          );
+        }
+        hideTaskAndCollapseAncestors(liEl);
+      } catch (err) {
+        btn.textContent = "💤";
+        throw err;
       }
     };
 
@@ -137,13 +237,31 @@ function createSnoozeButton(
 
   // Click to snooze until tomorrow (ignore if this click concluded a long-press)
   btn.addEventListener("click", async (e) => {
+    e.preventDefault();
     e.stopPropagation();
     if (longPressed) return;
     btn.textContent = "⏳";
+    if (filePath) {
+      window.dispatchEvent(
+        new CustomEvent("agile:prepare-optimistic-file-change", {
+          detail: { filePath },
+        })
+      );
+    }
     try {
-      await snoozeTask(task, app, userSlug, getTomorrowISO());
-    } finally {
-      // Keep hourglass; view should re-render after file modify
+      const date = getTomorrowISO();
+      await snoozeTask(task, app, userSlug, date);
+      if (uid && filePath) {
+        window.dispatchEvent(
+          new CustomEvent("agile:task-snoozed", {
+            detail: { uid, filePath, date },
+          })
+        );
+      }
+      hideTaskAndCollapseAncestors(liEl);
+    } catch (err) {
+      btn.textContent = "💤";
+      throw err;
     }
   });
 
@@ -182,6 +300,11 @@ export function appendSnoozeButtonIfEligible(
   const userSlug = getTeamMemberSlug();
   if (!userSlug) return; // No user configured; skip
   if (!shouldShowSnoozeButton(task, sectionType, userSlug)) return;
+
+  const uid = task._uniqueId || "";
+  const filePath = uid.split(":")[0] || "";
+  if (uid) liEl.setAttribute("data-task-uid", uid);
+  if (filePath) liEl.setAttribute("data-file-path", filePath);
 
   const btn = createSnoozeButton(task, liEl, sectionType, app, userSlug);
   const anchor = findInlineAnchor(liEl);

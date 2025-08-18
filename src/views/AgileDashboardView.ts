@@ -21,6 +21,7 @@ export class AgileDashboardView extends ItemView {
 	private viewSelect: HTMLSelectElement;
 	private projectStatusSelect: HTMLSelectElement;
 	private plugin: AgileObsidianPlugin; // New: Store the plugin instance for settings access
+	private suppressedFiles = new Set<string>();
 
 	constructor(leaf: WorkspaceLeaf, plugin: AgileObsidianPlugin) {
 		// Updated: Accept plugin
@@ -89,6 +90,33 @@ export class AgileDashboardView extends ItemView {
 			})
 		);
 
+		// Listen for local optimistic updates to avoid full rerenders
+		this.registerDomEvent(
+			window,
+			"agile:prepare-optimistic-file-change",
+			(e: Event) => {
+				const ev = e as CustomEvent<{ filePath: string }>;
+				if (ev.detail?.filePath) {
+					this.suppressedFiles.add(ev.detail.filePath);
+				}
+			}
+		);
+		this.registerDomEvent(
+			window,
+			"agile:task-snoozed",
+			async (e: Event) => {
+				const ev = e as CustomEvent<{ uid: string; filePath: string }>;
+				const filePath = ev.detail?.filePath;
+				if (filePath) {
+					this.suppressedFiles.add(filePath);
+					const file = this.app.vault.getAbstractFileByPath(filePath);
+					if (file instanceof TFile) {
+						await this.taskIndex.updateFile(file);
+					}
+				}
+			}
+		);
+
 		// Initial render
 		await this.updateView();
 
@@ -97,6 +125,10 @@ export class AgileDashboardView extends ItemView {
 			this.app.vault.on("modify", async (file: TFile) => {
 				if (file.extension === "md") {
 					await this.taskIndex.updateFile(file);
+					if (this.suppressedFiles.has(file.path)) {
+						this.suppressedFiles.delete(file.path);
+						return; // Suppress full rerender; local DOM already updated
+					}
 					this.updateView();
 				}
 			})
@@ -136,12 +168,17 @@ export class AgileDashboardView extends ItemView {
 	}
 
 	private async updateView() {
-		const container = this.containerEl.children[1];
-		const contentContainer =
-			(container.querySelector(
+		const viewContainer = this.containerEl.children[1] as HTMLElement;
+		const existingContent =
+			(viewContainer.querySelector(
 				".content-container"
-			) as HTMLElement | null) ??
-			container.createEl("div", { cls: "content-container" });
+			) as HTMLElement | null);
+		const prevContainerScrollTop = viewContainer.scrollTop;
+		const prevContentScrollTop = existingContent?.scrollTop ?? 0;
+
+		const contentContainer =
+			existingContent ??
+			viewContainer.createEl("div", { cls: "content-container" });
 		contentContainer.empty(); // Clear previous content (keep controls)
 
 		const selectedView = this.viewSelect.value;
@@ -162,6 +199,10 @@ export class AgileDashboardView extends ItemView {
 				text: "✅ Completed (Coming Soon)",
 			});
 		}
+
+		// Restore scroll position after render
+		viewContainer.scrollTop = prevContainerScrollTop;
+		contentContainer.scrollTop = prevContentScrollTop;
 	}
 
 	private async projectView(container: HTMLElement, status = true) {
