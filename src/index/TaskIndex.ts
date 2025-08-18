@@ -160,8 +160,7 @@ export class TaskIndex {
 	public getAllTasks(): TaskItem[] {
 		const allTasks: TaskItem[] = [];
 		Object.values(this.index).forEach(({ lists }) => {
-			allTasks.push(...lists);
-			// Flatten children recursively if needed
+			// Flatten children recursively (includes roots)
 			const flattenChildren = (items: TaskItem[]) => {
 				items.forEach((item) => {
 					allTasks.push(item);
