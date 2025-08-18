@@ -1,7 +1,8 @@
 import { ItemView, WorkspaceLeaf, TFile, TAbstractFile } from "obsidian";
 import { TaskIndex } from "../index/TaskIndex";
 import { TaskItem } from "../types/TaskItem";
-import { version } from "../utils/config";
+import { version, name } from "../utils/config";
+import { cleanupExpiredSnoozes } from "../utils/snoozeUtils";
 
 // Section processors
 import { processAndRenderObjectives } from "./sections/ObjectivesProcessor";
@@ -9,8 +10,8 @@ import { processAndRenderTasks } from "./sections/TasksProcessor";
 import { processAndRenderStories } from "./sections/StoriesProcessor";
 import { processAndRenderEpics } from "./sections/EpicsProcessor";
 import { processAndRenderInitiatives } from "./sections/InitiativesProcessor";
-import { processAndRenderResponsibilities } from "./sections/ResponsibilitiesProcessor";
-import { processAndRenderPriorities } from "./sections/PrioritiesProcessor";
+//import { processAndRenderResponsibilities } from "./sections/ResponsibilitiesProcessor";
+//import { processAndRenderPriorities } from "./sections/PrioritiesProcessor";
 import AgileObsidianPlugin from "src/main";
 
 export const VIEW_TYPE_AGILE_DASHBOARD = "agile-dashboard-view";
@@ -147,7 +148,7 @@ export class AgileDashboardView extends ItemView {
 		const isActive = this.projectStatusSelect.value === "active";
 
 		if (selectedView === "projects") {
-			this.projectView(contentContainer, isActive);
+			await this.projectView(contentContainer, isActive);
 		} else if (selectedView === "deadlines") {
 			// Placeholder for deadlineView
 			console.log("Deadline view selected (not implemented yet)");
@@ -163,9 +164,22 @@ export class AgileDashboardView extends ItemView {
 		}
 	}
 
-	private projectView(container: HTMLElement, status = true) {
+	private async projectView(container: HTMLElement, status = true) {
 		// Get all tasks from index
-		const currentTasks = this.taskIndex.getAllTasks();
+		let currentTasks = this.taskIndex.getAllTasks();
+
+		// Clean up expired snoozes for current user before rendering
+		const changedFiles = await cleanupExpiredSnoozes(this.app, currentTasks, name);
+		if (changedFiles.size > 0) {
+			for (const path of changedFiles) {
+				const file = this.app.vault.getAbstractFileByPath(path);
+				if (file instanceof TFile) {
+					await this.taskIndex.updateFile(file);
+				}
+			}
+			// Re-fetch tasks after cleanup
+			currentTasks = this.taskIndex.getAllTasks();
+		}
 
 		// Build shared taskMap and childrenMap (from original)
 		const taskMap = new Map<string, TaskItem>();
@@ -182,6 +196,14 @@ export class AgileDashboardView extends ItemView {
 			}
 		});
 
+		// Get task params from UI & view
+		const taskParams = {
+			inProgress: true,
+			completed: false,
+			sleeping: false,
+			cancelled: false,
+		}
+
 		// Call each section processor conditionally based on settings
 		if (this.plugin.settings.showObjectives) {
 			processAndRenderObjectives(
@@ -190,7 +212,8 @@ export class AgileDashboardView extends ItemView {
 				status,
 				this.app,
 				taskMap,
-				childrenMap
+				childrenMap,
+				taskParams
 			);
 		}
 		if (this.plugin.settings.showTasks) {
@@ -200,7 +223,8 @@ export class AgileDashboardView extends ItemView {
 				status,
 				this.app,
 				taskMap,
-				childrenMap
+				childrenMap,
+				taskParams
 			);
 		}
 		if (this.plugin.settings.showStories) {
@@ -210,7 +234,8 @@ export class AgileDashboardView extends ItemView {
 				status,
 				this.app,
 				taskMap,
-				childrenMap
+				childrenMap,
+				taskParams
 			);
 		}
 		if (this.plugin.settings.showEpics) {
@@ -220,7 +245,8 @@ export class AgileDashboardView extends ItemView {
 				status,
 				this.app,
 				taskMap,
-				childrenMap
+				childrenMap,
+				taskParams
 			);
 		}
 		if (this.plugin.settings.showInitiatives) {
@@ -230,28 +256,29 @@ export class AgileDashboardView extends ItemView {
 				status,
 				this.app,
 				taskMap,
-				childrenMap
+				childrenMap,
+				taskParams
 			);
 		}
-		if (this.plugin.settings.showResponsibilities) {
-			processAndRenderResponsibilities(
-				container,
-				currentTasks,
-				status,
-				this.app,
-				taskMap,
-				childrenMap
-			);
-		}
-		if (this.plugin.settings.showPriorities) {
-			processAndRenderPriorities(
-				container,
-				currentTasks,
-				status,
-				this.app,
-				taskMap,
-				childrenMap
-			);
-		}
+		// if (this.plugin.settings.showResponsibilities) {
+		// 	processAndRenderResponsibilities(
+		// 		container,
+		// 		currentTasks,
+		// 		status,
+		// 		this.app,
+		// 		taskMap,
+		// 		childrenMap
+		// 	);
+		// }
+		// if (this.plugin.settings.showPriorities) {
+		// 	processAndRenderPriorities(
+		// 		container,
+		// 		currentTasks,
+		// 		status,
+		// 		this.app,
+		// 		taskMap,
+		// 		childrenMap
+		// 	);
+		// }
 	}
 }
