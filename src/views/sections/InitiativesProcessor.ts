@@ -20,6 +20,8 @@ export function processAndRenderInitiatives(
 	childrenMap: Map<string, TaskItem[]>,
 	taskParams: TaskParams
 ) {
+
+
 	// Filter for task params
 	const { inProgress, completed, sleeping, cancelled } = taskParams;
 	const sectionTasks = currentTasks.filter((task) => {
@@ -31,7 +33,7 @@ export function processAndRenderInitiatives(
 		);
 	});
 
-	// Filter for any task directly assigned to the user
+	// Filter for any task directly assigned to the user and that is an Initiative
 	const directlyAssigned = sectionTasks.filter(
 		(task) => activeForMember(task, status) && isInitiative(task)
 	);
@@ -43,18 +45,19 @@ export function processAndRenderInitiatives(
 		(sleeping && isSleeping(task, taskMap)) ||
 		(cancelled && isCancelled(task));
 
-	// Build pruned merged trees from the filtered tasks (1 level deep, keep all children)
+	// Build pruned merged trees from the filtered tasks (1 level deep, with status filter)
 	let prunedTasks = buildPrunedMergedTrees(
 		directlyAssigned,
 		taskMap,
 		undefined, // ancestorPredicate (defaults to root)
 		childrenMap, // Pass your childrenMap for lookups
-		{ depth: 1, filterCallback: statusFilterCallback } // childParams: 1 level deep, no filterCallback (defaults to keep all)
+		{ depth: 1, filterCallback: statusFilterCallback }
 	);
 
 	// Post-process: Sort and limit after building prunedTasks
 	prunedTasks = prunedTasks.map((initiative) => {
 		const filteredChildren = initiative.children || [];
+
 
 		// Separate into "/" and " " groups
 		const slashEpics = filteredChildren.filter(
@@ -78,8 +81,10 @@ export function processAndRenderInitiatives(
 			limitedChildren = spaceEpics.slice(0, 1);
 		}
 
+
 		return { ...initiative, children: limitedChildren };
 	});
+
 
 	// Render if there are tasks
 	if (prunedTasks.length > 0) {
