@@ -7,6 +7,36 @@ import {
 import { TaskItem } from "../types/TaskItem";
 import { appendSnoozeButtonIfEligible, hideTaskAndCollapseAncestors } from "./TaskButtons";
 
+// Helpers to control checkbox interactivity per section and hierarchy level
+function isLeaf(task: TaskItem): boolean {
+  return !task.children || task.children.length === 0;
+}
+
+function shouldEnableCheckbox(sectionType: string, depth: number, task: TaskItem, isRoot: boolean): boolean {
+  const s = (sectionType || "").toLowerCase();
+  const leaf = isLeaf(task);
+
+  // Initiatives: allow all levels
+  if (s.includes("initiative")) return true;
+
+  // Objectives: allow only the real top-level OKR (root of section) or lowest-level linked items.
+  if (s.includes("objective")) return (isRoot && depth === 0) || leaf;
+
+  // Tasks, Stories, Epics, Priorities, Responsibilities: only lowest-level (leaf) tasks
+  if (
+    s.includes("task") ||
+    s.includes("story") ||
+    s.includes("epic") ||
+    s.includes("priorit") ||
+    s.includes("responsibil")
+  ) {
+    return leaf;
+  }
+
+  // Default: allow
+  return true;
+}
+
 // Shared tree renderer (used by all sections)
 export function renderTaskTree(
   tasks: TaskItem[],
@@ -77,100 +107,109 @@ export function renderTaskTree(
     // Wire up checkbox click and long-press to update status
     const checkbox = taskItemEl.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
     if (checkbox) {
-      let pressTimer: number | null = null;
-      let longPressed = false;
-      const LONG_PRESS_MS = 500;
+      const interactive = shouldEnableCheckbox(sectionType, depth, task, isRoot);
+      if (!interactive) {
+        // Disable interaction (including label toggles) while preserving visual state
+        checkbox.disabled = true;
+        checkbox.tabIndex = -1;
+        checkbox.setAttribute("aria-disabled", "true");
+        (checkbox as HTMLElement).style.pointerEvents = "none";
+      } else {
+        let pressTimer: number | null = null;
+        let longPressed = false;
+        const LONG_PRESS_MS = 500;
 
-      let initialChecked = checkbox.checked;
-      let isUpdating = false;
+        let initialChecked = checkbox.checked;
+        let isUpdating = false;
 
-      const performUpdate = async (cancel: boolean, source: string) => {
-        if (isUpdating) {
-          console.log("[TaskRenderer] Update skipped (busy)", { source, taskId: task._uniqueId, status: (task as any).status });
-          return;
-        }
-        isUpdating = true;
-        try {
-          console.log("[TaskRenderer] performUpdate start", { source, cancel, taskId: task._uniqueId, beforeStatus: (task as any).status, line: task.line, file: task.link?.path });
-          const result = await handleStatusChange(task, taskItemEl, app, cancel);
-          console.log("[TaskRenderer] performUpdate result", { result });
-          if (result === "/") {
-            // Re-render just this task's inline content so the status icon updates
-            rerenderTaskInline(task, taskItemEl, app, sectionType, result);
-          } else if (result === "x") {
-            // Reflect checked UI for completed tasks (will be hidden shortly if applicable)
-            checkbox.checked = true;
-            initialChecked = true;
+        const performUpdate = async (cancel: boolean, source: string) => {
+          if (isUpdating) {
+            console.log("[TaskRenderer] Update skipped (busy)", { source, taskId: task._uniqueId, status: (task as any).status });
+            return;
           }
-        } catch (e) {
-          console.error("[TaskRenderer] performUpdate error", e);
-        } finally {
-          isUpdating = false;
-        }
-      };
+          isUpdating = true;
+          try {
+            console.log("[TaskRenderer] performUpdate start", { source, cancel, taskId: task._uniqueId, beforeStatus: (task as any).status, line: task.line, file: task.link?.path });
+            const result = await handleStatusChange(task, taskItemEl, app, cancel);
+            console.log("[TaskRenderer] performUpdate result", { result });
+            if (result === "/") {
+              // Re-render just this task's inline content so the status icon updates
+              rerenderTaskInline(task, taskItemEl, app, sectionType, result, isRoot, depth);
+            } else if (result === "x") {
+              // Reflect checked UI for completed tasks (will be hidden shortly if applicable)
+              checkbox.checked = true;
+              initialChecked = true;
+            }
+          } catch (e) {
+            console.error("[TaskRenderer] performUpdate error", e);
+          } finally {
+            isUpdating = false;
+          }
+        };
 
-      // Prevent native toggle; we control the state via note updates and optimistic UI.
-      checkbox.addEventListener("change", (ev) => {
-        ev.preventDefault();
-        // @ts-ignore
-        ev.stopImmediatePropagation?.();
-        checkbox.checked = initialChecked;
-        console.log("[TaskRenderer] change event (native toggle suppressed)", { taskId: task._uniqueId, initialChecked });
-      });
-
-      // Keyboard accessibility: Space/Enter toggles like click
-      checkbox.addEventListener("keydown", async (ev) => {
-        const key = (ev as KeyboardEvent).key;
-        if (key === " " || key === "Enter") {
+        // Prevent native toggle; we control the state via note updates and optimistic UI.
+        checkbox.addEventListener("change", (ev) => {
           ev.preventDefault();
-          console.log("[TaskRenderer] keydown toggle", { key, taskId: task._uniqueId });
-          await performUpdate(false, "keydown");
-        }
-      });
+          // @ts-ignore
+          ev.stopImmediatePropagation?.();
+          checkbox.checked = initialChecked;
+          console.log("[TaskRenderer] change event (native toggle suppressed)", { taskId: task._uniqueId, initialChecked });
+        });
 
-      const clearTimer = () => {
-        if (pressTimer !== null) {
-          window.clearTimeout(pressTimer);
-          pressTimer = null;
-        }
-      };
+        // Keyboard accessibility: Space/Enter toggles like click
+        checkbox.addEventListener("keydown", async (ev) => {
+          const key = (ev as KeyboardEvent).key;
+          if (key === " " || key === "Enter") {
+            ev.preventDefault();
+            console.log("[TaskRenderer] keydown toggle", { key, taskId: task._uniqueId });
+            await performUpdate(false, "keydown");
+          }
+        });
 
-      const onPressStart = (ev: Event) => {
-        console.log("[TaskRenderer] onPressStart", { taskId: task._uniqueId });
-        longPressed = false;
-        clearTimer();
-        pressTimer = window.setTimeout(async () => {
-          longPressed = true;
-          console.log("[TaskRenderer] long-press detected", { taskId: task._uniqueId });
-          // Long press => cancel
-          await performUpdate(true, "longpress");
-        }, LONG_PRESS_MS);
-      };
+        const clearTimer = () => {
+          if (pressTimer !== null) {
+            window.clearTimeout(pressTimer);
+            pressTimer = null;
+          }
+        };
 
-      const onPressEnd = () => {
-        console.log("[TaskRenderer] onPressEnd", { taskId: task._uniqueId });
-        clearTimer();
-      };
-
-      checkbox.addEventListener("mousedown", onPressStart);
-      checkbox.addEventListener("touchstart", onPressStart, { passive: true });
-      checkbox.addEventListener("mouseup", onPressEnd);
-      checkbox.addEventListener("mouseleave", onPressEnd);
-      checkbox.addEventListener("touchend", onPressEnd);
-      checkbox.addEventListener("touchcancel", onPressEnd);
-
-      checkbox.addEventListener("click", async (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        if (longPressed) {
-          // Already handled by long-press
-          console.log("[TaskRenderer] click suppressed due to long-press", { taskId: task._uniqueId });
+        const onPressStart = (ev: Event) => {
+          console.log("[TaskRenderer] onPressStart", { taskId: task._uniqueId });
           longPressed = false;
-          return;
-        }
-        console.log("[TaskRenderer] click toggle", { taskId: task._uniqueId });
-        await performUpdate(false, "click");
-      });
+          clearTimer();
+          pressTimer = window.setTimeout(async () => {
+            longPressed = true;
+            console.log("[TaskRenderer] long-press detected", { taskId: task._uniqueId });
+            // Long press => cancel
+            await performUpdate(true, "longpress");
+          }, LONG_PRESS_MS);
+        };
+
+        const onPressEnd = () => {
+          console.log("[TaskRenderer] onPressEnd", { taskId: task._uniqueId });
+          clearTimer();
+        };
+
+        checkbox.addEventListener("mousedown", onPressStart);
+        checkbox.addEventListener("touchstart", onPressStart, { passive: true });
+        checkbox.addEventListener("mouseup", onPressEnd);
+        checkbox.addEventListener("mouseleave", onPressEnd);
+        checkbox.addEventListener("touchend", onPressEnd);
+        checkbox.addEventListener("touchcancel", onPressEnd);
+
+        checkbox.addEventListener("click", async (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          if (longPressed) {
+            // Already handled by long-press
+            console.log("[TaskRenderer] click suppressed due to long-press", { taskId: task._uniqueId });
+            longPressed = false;
+            return;
+          }
+          console.log("[TaskRenderer] click toggle", { taskId: task._uniqueId });
+          await performUpdate(false, "click");
+        });
+      }
     }
 
     // Recurse for children: Create a new ul directly inside this li
@@ -196,7 +235,9 @@ function rerenderTaskInline(
   liEl: HTMLElement,
   app: App,
   sectionType: string,
-  newStatus: string
+  newStatus: string,
+  isRoot: boolean,
+  depth: number
 ): void {
   try {
     // Preserve existing child lists (subtasks)
@@ -306,119 +347,127 @@ function rerenderTaskInline(
       | null;
 
     if (checkbox) {
-      let pressTimer: number | null = null;
-      let longPressed = false;
-      const LONG_PRESS_MS = 500;
+      const interactive = shouldEnableCheckbox(sectionType, depth, task, isRoot);
+      if (!interactive) {
+        checkbox.disabled = true;
+        checkbox.tabIndex = -1;
+        checkbox.setAttribute("aria-disabled", "true");
+        (checkbox as HTMLElement).style.pointerEvents = "none";
+      } else {
+        let pressTimer: number | null = null;
+        let longPressed = false;
+        const LONG_PRESS_MS = 500;
 
-      let initialChecked = checkbox.checked;
-      let isUpdating = false;
+        let initialChecked = checkbox.checked;
+        let isUpdating = false;
 
-      const performUpdate = async (cancel: boolean, source: string) => {
-        if (isUpdating) {
-          console.log("[TaskRenderer] Update skipped (busy)", {
-            source,
-            taskId: task._uniqueId,
-            status: (task as any).status,
-          });
-          return;
-        }
-        isUpdating = true;
-        try {
-          console.log("[TaskRenderer] performUpdate start", {
-            source,
-            cancel,
-            taskId: task._uniqueId,
-            beforeStatus: (task as any).status,
-            line: task.line,
-            file: task.link?.path,
-          });
-          const result = await handleStatusChange(task, liEl, app, cancel);
-          console.log("[TaskRenderer] performUpdate result", { result });
-          if (result === "/") {
-            rerenderTaskInline(task, liEl, app, sectionType, result);
-          } else if (result === "x") {
-            checkbox.checked = true;
-            initialChecked = true;
+        const performUpdate = async (cancel: boolean, source: string) => {
+          if (isUpdating) {
+            console.log("[TaskRenderer] Update skipped (busy)", {
+              source,
+              taskId: task._uniqueId,
+              status: (task as any).status,
+            });
+            return;
           }
-        } catch (e) {
-          console.error("[TaskRenderer] performUpdate error", e);
-        } finally {
-          isUpdating = false;
-        }
-      };
+          isUpdating = true;
+          try {
+            console.log("[TaskRenderer] performUpdate start", {
+              source,
+              cancel,
+              taskId: task._uniqueId,
+              beforeStatus: (task as any).status,
+              line: task.line,
+              file: task.link?.path,
+            });
+            const result = await handleStatusChange(task, liEl, app, cancel);
+            console.log("[TaskRenderer] performUpdate result", { result });
+            if (result === "/") {
+              rerenderTaskInline(task, liEl, app, sectionType, result, isRoot, depth);
+            } else if (result === "x") {
+              checkbox.checked = true;
+              initialChecked = true;
+            }
+          } catch (e) {
+            console.error("[TaskRenderer] performUpdate error", e);
+          } finally {
+            isUpdating = false;
+          }
+        };
 
-      // Prevent native toggle; we control the state via note updates and optimistic UI.
-      checkbox.addEventListener("change", (ev) => {
-        ev.preventDefault();
-        // @ts-ignore
-        ev.stopImmediatePropagation?.();
-        checkbox.checked = initialChecked;
-        console.log("[TaskRenderer] change event (native toggle suppressed)", {
-          taskId: task._uniqueId,
-          initialChecked,
-        });
-      });
-
-      // Keyboard accessibility: Space/Enter toggles like click
-      checkbox.addEventListener("keydown", async (ev) => {
-        const key = (ev as KeyboardEvent).key;
-        if (key === " " || key === "Enter") {
+        // Prevent native toggle; we control the state via note updates and optimistic UI.
+        checkbox.addEventListener("change", (ev) => {
           ev.preventDefault();
-          console.log("[TaskRenderer] keydown toggle", {
-            key,
+          // @ts-ignore
+          ev.stopImmediatePropagation?.();
+          checkbox.checked = initialChecked;
+          console.log("[TaskRenderer] change event (native toggle suppressed)", {
             taskId: task._uniqueId,
+            initialChecked,
           });
-          await performUpdate(false, "keydown");
-        }
-      });
-
-      const clearTimer = () => {
-        if (pressTimer !== null) {
-          window.clearTimeout(pressTimer);
-          pressTimer = null;
-        }
-      };
-
-      const onPressStart = (ev: Event) => {
-        console.log("[TaskRenderer] onPressStart", {
-          taskId: task._uniqueId,
         });
-        longPressed = false;
-        clearTimer();
-        pressTimer = window.setTimeout(async () => {
-          longPressed = true;
-          console.log("[TaskRenderer] long-press detected", {
-            taskId: task._uniqueId,
-          });
-          await performUpdate(true, "longpress");
-        }, LONG_PRESS_MS);
-      };
 
-      const onPressEnd = () => {
-        console.log("[TaskRenderer] onPressEnd", { taskId: task._uniqueId });
-        clearTimer();
-      };
+        // Keyboard accessibility: Space/Enter toggles like click
+        checkbox.addEventListener("keydown", async (ev) => {
+          const key = (ev as KeyboardEvent).key;
+          if (key === " " || key === "Enter") {
+            ev.preventDefault();
+            console.log("[TaskRenderer] keydown toggle", {
+              key,
+              taskId: task._uniqueId,
+            });
+            await performUpdate(false, "keydown");
+          }
+        });
 
-      checkbox.addEventListener("mousedown", onPressStart);
-      checkbox.addEventListener("touchstart", onPressStart, { passive: true });
-      checkbox.addEventListener("mouseup", onPressEnd);
-      checkbox.addEventListener("mouseleave", onPressEnd);
-      checkbox.addEventListener("touchend", onPressEnd);
-      checkbox.addEventListener("touchcancel", onPressEnd);
+        const clearTimer = () => {
+          if (pressTimer !== null) {
+            window.clearTimeout(pressTimer);
+            pressTimer = null;
+          }
+        };
 
-      checkbox.addEventListener("click", async (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        if (longPressed) {
-          console.log("[TaskRenderer] click suppressed due to long-press", {
+        const onPressStart = (ev: Event) => {
+          console.log("[TaskRenderer] onPressStart", {
             taskId: task._uniqueId,
           });
           longPressed = false;
-          return;
-        }
-        console.log("[TaskRenderer] click toggle", { taskId: task._uniqueId });
-        await performUpdate(false, "click");
-      });
+          clearTimer();
+          pressTimer = window.setTimeout(async () => {
+            longPressed = true;
+            console.log("[TaskRenderer] long-press detected", {
+              taskId: task._uniqueId,
+            });
+            await performUpdate(true, "longpress");
+          }, LONG_PRESS_MS);
+        };
+
+        const onPressEnd = () => {
+          console.log("[TaskRenderer] onPressEnd", { taskId: task._uniqueId });
+          clearTimer();
+        };
+
+        checkbox.addEventListener("mousedown", onPressStart);
+        checkbox.addEventListener("touchstart", onPressStart, { passive: true });
+        checkbox.addEventListener("mouseup", onPressEnd);
+        checkbox.addEventListener("mouseleave", onPressEnd);
+        checkbox.addEventListener("touchend", onPressEnd);
+        checkbox.addEventListener("touchcancel", onPressEnd);
+
+        checkbox.addEventListener("click", async (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          if (longPressed) {
+            console.log("[TaskRenderer] click suppressed due to long-press", {
+              taskId: task._uniqueId,
+            });
+            longPressed = false;
+            return;
+          }
+          console.log("[TaskRenderer] click toggle", { taskId: task._uniqueId });
+          await performUpdate(false, "click");
+        });
+      }
     }
   } catch (e) {
     console.error("rerenderTaskInline failed", e);
