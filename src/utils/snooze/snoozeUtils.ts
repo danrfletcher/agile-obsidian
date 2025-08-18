@@ -1,5 +1,5 @@
 import { App, TFile } from "obsidian";
-import { TaskItem } from "../types/TaskItem";
+import { TaskItem } from "src/types/TaskItem";
 
 function escapeRegex(str: string): string {
 	return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

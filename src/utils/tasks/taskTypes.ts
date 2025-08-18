@@ -1,4 +1,4 @@
-import { TaskItem } from "../types/TaskItem";
+import { TaskItem } from "src/types/TaskItem";
 
 /**
  * Checks if a task is of a specific type based on its text content.

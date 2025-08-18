@@ -6,9 +6,9 @@ import {
 	isInProgress,
 	isMarkedCompleted,
 	isSleeping,
-} from "../../utils/taskFilters";
-import { isOKR } from "../../utils/taskTypes";
-import { buildPrunedMergedTrees } from "src/utils/hierarchyUtils";
+} from "../../utils/tasks/taskFilters";
+import { isOKR } from "../../utils/tasks/taskTypes";
+import { buildPrunedMergedTrees } from "src/utils/hierarchy/hierarchyUtils";
 import { renderTaskTree } from "src/components/TaskRenderer";
 
 export function processAndRenderObjectives(
@@ -30,7 +30,6 @@ export function processAndRenderObjectives(
 			(cancelled && isCancelled(task))
 		);
 	});
-
 
 	// Fetch OKRs for current user
 	const assignedOKRs = sectionTasks.filter(

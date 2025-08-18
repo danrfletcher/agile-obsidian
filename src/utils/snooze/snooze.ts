@@ -1,6 +1,6 @@
 import { App, TFile } from "obsidian";
-import { name } from "./config";
-import { TaskItem } from "../types/TaskItem";
+import { name } from "../config/config";
+import { TaskItem } from "../../types/TaskItem";
 
 // Slug used in "active-<slug>" and snooze spans
 export function getTeamMemberSlug(): string | null {
@@ -55,7 +55,6 @@ export async function snoozeTask(
 
 		await app.vault.modify(file, lines.join("\n"));
 	} catch (err) {
-		console.error("Error snoozing task:", err);
 		throw err;
 	}
 }

@@ -5,15 +5,15 @@ import {
 	activeForMember,
 	isCancelled,
 	isSleeping,
-} from "../../utils/taskFilters"; // Adjust path (added name)
+} from "../../utils/tasks/taskFilters"; // Adjust path (added name)
 import {
 	isRecurringResponsibility,
 	isLearningInitiative,
 	isLearningEpic,
-} from "../../utils/taskTypes"; // Adjust path
-import { isRelevantToday } from "../../utils/dateUtils";
-import { getTeamMemberSlug } from "../../utils/snooze";
-import { stripListItems } from "../../utils/hierarchyUtils";
+} from "../../utils/tasks/taskTypes"; // Adjust path
+import { isRelevantToday } from "../../utils/dates/dateUtils";
+import { getTeamMemberSlug } from "../../utils/snooze/snooze";
+import { stripListItems } from "../../utils/hierarchy/hierarchyUtils";
 
 function escapeRegex(str: string): string {
 	return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -95,10 +95,10 @@ export function processAndRenderPriorities(
 		const assignedToMe = userSlug
 			? new RegExp(`\\bactive-${escapeRegex(userSlug)}\\b`, "i").test(
 					node.text
-		) &&
-			!new RegExp(`\\binactive-${escapeRegex(userSlug)}\\b`, "i").test(
+			) &&
+				!new RegExp(`\\binactive-${escapeRegex(userSlug)}\\b`, "i").test(
 					node.text
-		)
+			)
 			: true;
 
 		const isInherited = inherited || assignedToMe;
@@ -126,13 +126,19 @@ export function processAndRenderPriorities(
 				).test(tree.text);
 			return isMe || (tree.children?.length ?? 0) > 0; // Safe default
 		});
-	console.log("⚡ ~ priorityTasks:", priorityTasks);
 
 	const strippedPriorityTasks = stripListItems(priorityTasks);
 
 	// Render
 	if (strippedPriorityTasks.length > 0) {
 		container.createEl("h2", { text: "📂 Priorities" });
-		renderTaskTree(strippedPriorityTasks, container, app, 0, false, "priorities");
+		renderTaskTree(
+			strippedPriorityTasks,
+			container,
+			app,
+			0,
+			false,
+			"priorities"
+		);
 	}
 }

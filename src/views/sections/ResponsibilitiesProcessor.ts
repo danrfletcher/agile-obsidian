@@ -6,20 +6,20 @@ import {
 	isAssignedToAnyUser,
 	activeForMember,
 	isSleeping,
-    isCancelled,
-} from "../../utils/taskFilters"; // Adjust path
+	isCancelled,
+} from "src/utils/tasks/taskFilters"; // Adjust path
 import {
 	getTopAncestor,
 	getPathToAncestor,
 	buildHierarchyFromPath,
 	buildFullSubtree,
-} from "../../utils/hierarchyUtils"; // Adjust path
+} from "../../utils/hierarchy/hierarchyUtils"; // Adjust path
 import {
 	isRecurringResponsibility,
 	isLearningInitiative,
 	isLearningEpic,
-} from "../../utils/taskTypes"; // Adjust path
-import { matchesDatePattern, isRelevantToday } from "../../utils/dateUtils"; // Adjust path
+} from "src/utils/tasks/taskTypes"; // Adjust path
+import { matchesDatePattern, isRelevantToday } from "src/utils/dates/dateUtils"; // Adjust path
 
 export function processAndRenderResponsibilities(
 	container: HTMLElement,
@@ -111,7 +111,9 @@ export function processAndRenderResponsibilities(
 		const effectiveUnder = isUnderTarget || thisIsTarget;
 
 		const prunedChildren = (node.children || [])
-			.map((child: TaskItem) => pruneToTargets(child, targetIds, effectiveUnder))
+			.map((child: TaskItem) =>
+				pruneToTargets(child, targetIds, effectiveUnder)
+			)
 			.filter((c): c is TaskItem => c !== null);
 
 		if (effectiveUnder || prunedChildren.length > 0) {
@@ -149,7 +151,9 @@ export function processAndRenderResponsibilities(
 	const priorityTrees = priorityRoots.map((t) => buildFullSubtree(t));
 
 	let allRecurring: TaskItem[] = [];
-	priorityTrees.forEach((tree: TaskItem) => collectRecurring(tree, allRecurring));
+	priorityTrees.forEach((tree: TaskItem) =>
+		collectRecurring(tree, allRecurring)
+	);
 
 	allRecurring = allRecurring.filter(
 		(task) => !/🗓️/.test(task.text) || matchesDatePattern(task)

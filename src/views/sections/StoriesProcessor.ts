@@ -7,9 +7,9 @@ import {
 	isInProgress,
 	isMarkedCompleted,
 	isSleeping,
-} from "../../utils/taskFilters";
-import { isStory } from "../../utils/taskTypes";
-import { buildPrunedMergedTrees } from "../../utils/hierarchyUtils";
+} from "src/utils/tasks/taskFilters";
+import { isStory } from "src/utils/tasks/taskTypes";
+import { buildPrunedMergedTrees } from "../../utils/hierarchy/hierarchyUtils";
 
 export function processAndRenderStories(
 	container: HTMLElement,

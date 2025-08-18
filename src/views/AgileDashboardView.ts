@@ -1,8 +1,8 @@
 import { ItemView, WorkspaceLeaf, TFile, TAbstractFile } from "obsidian";
 import { TaskIndex } from "../index/TaskIndex";
 import { TaskItem } from "../types/TaskItem";
-import { version, name } from "../utils/config";
-import { cleanupExpiredSnoozes } from "../utils/snoozeUtils";
+import { version, name } from "../utils/config/config";
+import { cleanupExpiredSnoozes } from "../utils/snooze/snoozeUtils";
 
 // Section processors
 import { processAndRenderObjectives } from "./sections/ObjectivesProcessor";
@@ -10,9 +10,9 @@ import { processAndRenderTasks } from "./sections/TasksProcessor";
 import { processAndRenderStories } from "./sections/StoriesProcessor";
 import { processAndRenderEpics } from "./sections/EpicsProcessor";
 import { processAndRenderInitiatives } from "./sections/InitiativesProcessor";
-//import { processAndRenderResponsibilities } from "./sections/ResponsibilitiesProcessor";
-//import { processAndRenderPriorities } from "./sections/PrioritiesProcessor";
-import AgileObsidianPlugin from "src/main";
+import { processAndRenderResponsibilities } from "./sections/ResponsibilitiesProcessor";
+import { processAndRenderPriorities } from "./sections/PrioritiesProcessor";
+import type AgileObsidianPlugin from "../main";
 
 export const VIEW_TYPE_AGILE_DASHBOARD = "agile-dashboard-view";
 
@@ -93,7 +93,7 @@ export class AgileDashboardView extends ItemView {
 		// Listen for local optimistic updates to avoid full rerenders
 		this.registerDomEvent(
 			window,
-			"agile:prepare-optimistic-file-change",
+			"agile:prepare-optimistic-file-change" as any,
 			(e: Event) => {
 				const ev = e as CustomEvent<{ filePath: string }>;
 				if (ev.detail?.filePath) {
@@ -103,7 +103,7 @@ export class AgileDashboardView extends ItemView {
 		);
 		this.registerDomEvent(
 			window,
-			"agile:task-snoozed",
+			"agile:task-snoozed" as any,
 			async (e: Event) => {
 				const ev = e as CustomEvent<{ uid: string; filePath: string }>;
 				const filePath = ev.detail?.filePath;
@@ -169,10 +169,9 @@ export class AgileDashboardView extends ItemView {
 
 	private async updateView() {
 		const viewContainer = this.containerEl.children[1] as HTMLElement;
-		const existingContent =
-			(viewContainer.querySelector(
-				".content-container"
-			) as HTMLElement | null);
+		const existingContent = viewContainer.querySelector(
+			".content-container"
+		) as HTMLElement | null;
 		const prevContainerScrollTop = viewContainer.scrollTop;
 		const prevContentScrollTop = existingContent?.scrollTop ?? 0;
 
@@ -188,13 +187,11 @@ export class AgileDashboardView extends ItemView {
 			await this.projectView(contentContainer, isActive);
 		} else if (selectedView === "deadlines") {
 			// Placeholder for deadlineView
-			console.log("Deadline view selected (not implemented yet)");
 			contentContainer.createEl("h2", {
 				text: "❗ Deadlines (Coming Soon)",
 			});
 		} else if (selectedView === "completed") {
 			// Placeholder for completedView
-			console.log("Completed view selected (not implemented yet)");
 			contentContainer.createEl("h2", {
 				text: "✅ Completed (Coming Soon)",
 			});
@@ -210,7 +207,11 @@ export class AgileDashboardView extends ItemView {
 		let currentTasks = this.taskIndex.getAllTasks();
 
 		// Clean up expired snoozes for current user before rendering
-		const changedFiles = await cleanupExpiredSnoozes(this.app, currentTasks, name);
+		const changedFiles = await cleanupExpiredSnoozes(
+			this.app,
+			currentTasks,
+			name
+		);
 		if (changedFiles.size > 0) {
 			for (const path of changedFiles) {
 				const file = this.app.vault.getAbstractFileByPath(path);
@@ -243,7 +244,7 @@ export class AgileDashboardView extends ItemView {
 			completed: false,
 			sleeping: false,
 			cancelled: false,
-		}
+		};
 
 		// Call each section processor conditionally based on settings
 		if (this.plugin.settings.showObjectives) {
@@ -301,25 +302,27 @@ export class AgileDashboardView extends ItemView {
 				taskParams
 			);
 		}
-		// if (this.plugin.settings.showResponsibilities) {
-		// 	processAndRenderResponsibilities(
-		// 		container,
-		// 		currentTasks,
-		// 		status,
-		// 		this.app,
-		// 		taskMap,
-		// 		childrenMap
-		// 	);
-		// }
-		// if (this.plugin.settings.showPriorities) {
-		// 	processAndRenderPriorities(
-		// 		container,
-		// 		currentTasks,
-		// 		status,
-		// 		this.app,
-		// 		taskMap,
-		// 		childrenMap
-		// 	);
-		// }
+		if (this.plugin.settings.showResponsibilities) {
+			processAndRenderResponsibilities(
+				container,
+				currentTasks,
+				status,
+				this.app,
+				taskMap,
+				childrenMap,
+				taskParams
+			);
+		}
+		if (this.plugin.settings.showPriorities) {
+			processAndRenderPriorities(
+				container,
+				currentTasks,
+				status,
+				this.app,
+				taskMap,
+				childrenMap,
+				taskParams
+			);
+		}
 	}
 }

@@ -1,5 +1,5 @@
-import { TaskItem } from "../types/TaskItem";
-import { name } from "./config";
+import { TaskItem } from "src/types/TaskItem";
+import { name } from "../config/config";
 
 export const fullName = name || "Default Name"; // Replace with dynamic if needed (e.g., from settings)
 export const teamMemberName = fullName.toLowerCase().split(" ").join("-");
@@ -51,7 +51,10 @@ export const isInProgress = (
  * @param {Map<string, TaskItem>} taskMap - Map of unique task IDs to TaskItems for parent lookups.
  * @returns {boolean} True if snoozed (date in future or indefinite), false otherwise.
  */
-export const isSleeping = (task: TaskItem, taskMap: Map<string, TaskItem>): boolean => {
+export const isSleeping = (
+	task: TaskItem,
+	taskMap: Map<string, TaskItem>
+): boolean => {
 	if (!task || typeof task.text !== "string") {
 		return false;
 	}
@@ -150,17 +153,20 @@ export const isSleeping = (task: TaskItem, taskMap: Map<string, TaskItem>): bool
  * @returns {boolean} True if it matches the criteria, false otherwise.
  */
 export const activeForMember = (task: TaskItem, active = true): boolean => {
-    const activePattern = new RegExp(`active-${teamMemberName}(?![\\w-])`, "i");
-    const inactivePattern = new RegExp(`inactive-${teamMemberName}(?![\\w-])`, "i");
+	const activePattern = new RegExp(`active-${teamMemberName}(?![\\w-])`, "i");
+	const inactivePattern = new RegExp(
+		`inactive-${teamMemberName}(?![\\w-])`,
+		"i"
+	);
 
-    const hasActive = activePattern.test(task.text);
-    const hasInactive = inactivePattern.test(task.text);
+	const hasActive = activePattern.test(task.text);
+	const hasInactive = inactivePattern.test(task.text);
 
-    if (active) {
-        return hasActive && !hasInactive
-    } else {
-        return hasInactive
-    }
+	if (active) {
+		return hasActive && !hasInactive;
+	} else {
+		return hasInactive;
+	}
 };
 
 /**

@@ -7,9 +7,9 @@ import {
 	isInProgress,
 	isMarkedCompleted,
 	isSleeping,
-} from "../../utils/taskFilters";
-import { isInitiative } from "../../utils/taskTypes";
-import { buildPrunedMergedTrees } from "../../utils/hierarchyUtils";
+} from "../../utils/tasks/taskFilters";
+import { isInitiative } from "../../utils/tasks/taskTypes";
+import { buildPrunedMergedTrees } from "../../utils/hierarchy/hierarchyUtils";
 
 export function processAndRenderInitiatives(
 	container: HTMLElement,
@@ -20,8 +20,6 @@ export function processAndRenderInitiatives(
 	childrenMap: Map<string, TaskItem[]>,
 	taskParams: TaskParams
 ) {
-
-
 	// Filter for task params
 	const { inProgress, completed, sleeping, cancelled } = taskParams;
 	const sectionTasks = currentTasks.filter((task) => {
@@ -58,7 +56,6 @@ export function processAndRenderInitiatives(
 	prunedTasks = prunedTasks.map((initiative) => {
 		const filteredChildren = initiative.children || [];
 
-
 		// Separate into "/" and " " groups
 		const slashEpics = filteredChildren.filter(
 			(child) => child.status === "/"
@@ -81,10 +78,8 @@ export function processAndRenderInitiatives(
 			limitedChildren = spaceEpics.slice(0, 1);
 		}
 
-
 		return { ...initiative, children: limitedChildren };
 	});
-
 
 	// Render if there are tasks
 	if (prunedTasks.length > 0) {
