@@ -55,7 +55,7 @@ function getTomorrowISO(): string {
 	return `${yyyy}-${mm}-${dd}`;
 }
 
-function hideTaskAndCollapseAncestors(liEl: HTMLElement): void {
+export function hideTaskAndCollapseAncestors(liEl: HTMLElement): void {
 	if (!liEl) return;
 
 	const hide = (el: HTMLElement) => {

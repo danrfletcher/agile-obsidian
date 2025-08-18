@@ -5,7 +5,7 @@ import {
   TFile,
 } from "obsidian";
 import { TaskItem } from "../types/TaskItem";
-import { appendSnoozeButtonIfEligible } from "./TaskButtons";
+import { appendSnoozeButtonIfEligible, hideTaskAndCollapseAncestors } from "./TaskButtons";
 
 // Shared tree renderer (used by all sections)
 export function renderTaskTree(
@@ -74,6 +74,102 @@ export function renderTaskTree(
       console.error("Failed to attach snooze button", e);
     }
 
+    // Wire up checkbox click and long-press to update status
+    const checkbox = taskItemEl.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
+    if (checkbox) {
+      let pressTimer: number | null = null;
+      let longPressed = false;
+      const LONG_PRESS_MS = 500;
+
+      let initialChecked = checkbox.checked;
+      let isUpdating = false;
+
+      const performUpdate = async (cancel: boolean, source: string) => {
+        if (isUpdating) {
+          console.log("[TaskRenderer] Update skipped (busy)", { source, taskId: task._uniqueId, status: (task as any).status });
+          return;
+        }
+        isUpdating = true;
+        try {
+          console.log("[TaskRenderer] performUpdate start", { source, cancel, taskId: task._uniqueId, beforeStatus: (task as any).status, line: task.line, file: task.link?.path });
+          const result = await handleStatusChange(task, taskItemEl, app, cancel);
+          console.log("[TaskRenderer] performUpdate result", { result });
+          if (result) {
+            const checkedNow = result === "x";
+            checkbox.checked = checkedNow;
+            initialChecked = checkedNow;
+          }
+        } catch (e) {
+          console.error("[TaskRenderer] performUpdate error", e);
+        } finally {
+          isUpdating = false;
+        }
+      };
+
+      // Prevent native toggle; we control the state via note updates and optimistic UI.
+      checkbox.addEventListener("change", (ev) => {
+        ev.preventDefault();
+        // @ts-ignore
+        ev.stopImmediatePropagation?.();
+        checkbox.checked = initialChecked;
+        console.log("[TaskRenderer] change event (native toggle suppressed)", { taskId: task._uniqueId, initialChecked });
+      });
+
+      // Keyboard accessibility: Space/Enter toggles like click
+      checkbox.addEventListener("keydown", async (ev) => {
+        const key = (ev as KeyboardEvent).key;
+        if (key === " " || key === "Enter") {
+          ev.preventDefault();
+          console.log("[TaskRenderer] keydown toggle", { key, taskId: task._uniqueId });
+          await performUpdate(false, "keydown");
+        }
+      });
+
+      const clearTimer = () => {
+        if (pressTimer !== null) {
+          window.clearTimeout(pressTimer);
+          pressTimer = null;
+        }
+      };
+
+      const onPressStart = (ev: Event) => {
+        console.log("[TaskRenderer] onPressStart", { taskId: task._uniqueId });
+        longPressed = false;
+        clearTimer();
+        pressTimer = window.setTimeout(async () => {
+          longPressed = true;
+          console.log("[TaskRenderer] long-press detected", { taskId: task._uniqueId });
+          // Long press => cancel
+          await performUpdate(true, "longpress");
+        }, LONG_PRESS_MS);
+      };
+
+      const onPressEnd = () => {
+        console.log("[TaskRenderer] onPressEnd", { taskId: task._uniqueId });
+        clearTimer();
+      };
+
+      checkbox.addEventListener("mousedown", onPressStart);
+      checkbox.addEventListener("touchstart", onPressStart, { passive: true });
+      checkbox.addEventListener("mouseup", onPressEnd);
+      checkbox.addEventListener("mouseleave", onPressEnd);
+      checkbox.addEventListener("touchend", onPressEnd);
+      checkbox.addEventListener("touchcancel", onPressEnd);
+
+      checkbox.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (longPressed) {
+          // Already handled by long-press
+          console.log("[TaskRenderer] click suppressed due to long-press", { taskId: task._uniqueId });
+          longPressed = false;
+          return;
+        }
+        console.log("[TaskRenderer] click toggle", { taskId: task._uniqueId });
+        await performUpdate(false, "click");
+      });
+    }
+
     // Recurse for children: Create a new ul directly inside this li
     if (task.children && task.children.length > 0) {
       renderTaskTree(
@@ -91,55 +187,221 @@ export function renderTaskTree(
 // Shared status change handler (used by sections that need checkboxes/interactivity)
 export const handleStatusChange = async (
   task: TaskItem,
+  liEl: HTMLElement,
   app: App,
   isCancel = false
-): Promise<void> => {
+): Promise<string | null> => {
   try {
-    const currentStatus = task.status || " ";
-    let newStatus = currentStatus;
+    const filePath = task.link?.path;
+    if (!filePath) throw new Error("Missing task.link.path");
 
-    if (isCancel) {
-      newStatus = "-";
-    } else {
-      if (currentStatus === " ") newStatus = "/";
-      else if (currentStatus === "/" || currentStatus === "d")
-        newStatus = "x";
-      else return;
-    }
+    const file = app.vault.getAbstractFileByPath(filePath) as TFile;
+    if (!file) throw new Error(`File not found: ${filePath}`);
 
-    const file = app.vault.getAbstractFileByPath(task.link.path) as TFile;
-    if (!file) throw new Error(`File not found: ${task.link.path}`);
+    console.log("[TaskRenderer] handleStatusChange begin", { taskId: task._uniqueId, isCancel, taskStatus: (task as any).status, line: task.line, filePath });
+
+    // Let the dashboard know we're doing an optimistic file change so it can suppress full refresh
+    window.dispatchEvent(
+      new CustomEvent("agile:prepare-optimistic-file-change", {
+        detail: { filePath },
+      })
+    );
 
     const content = await app.vault.read(file);
-    const escapedTaskText = task.text.replace(
-      /[.*+?^${}()|[\]\\]/g,
-      "\\$&"
+    const lines = content.split(/\r?\n/);
+
+    console.log("[TaskRenderer] file read", { lines: lines.length });
+
+    // Determine current status and correct line index for this task
+    let effectiveStatus = (task.status ?? " ").trim() || " ";
+    let targetLineIndex = -1;
+
+    const parseStatusFromLine = (line: string): string | null => {
+      const m = line.match(/^\s*[-*]\s*\[\s*(.)\s*\]/);
+      return m ? m[1] : null;
+    };
+
+    // Normalizer to compare task text with file line text, ignoring completion/cancel markers and extra spaces
+    const normalize = (s: string) =>
+      (s || "")
+        .replace(/\s*(✅|❌)\s+\d{4}-\d{2}-\d{2}\b/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    const getLineRestNormalized = (line: string): string | null => {
+      const m = line.match(/^\s*[-*]\s*\[\s*.\s*\]\s*(.*)$/);
+      return m ? normalize(m[1]) : null;
+    };
+
+    const targetTextNorm = normalize((task.text || task.visual || "").trim());
+
+    // 1) Try to use the reported line index (and neighbors) but validate by text
+    const baseIdx = typeof task.line === "number" ? task.line : -1;
+    const candidates = [baseIdx, baseIdx - 1, baseIdx + 1].filter(
+      (i) => i >= 0 && i < lines.length
     );
 
-    const taskLineRegex = new RegExp(
-      `^(\\s*[-*]\\s*)\\[\\s*${currentStatus}\\s*\\]\\s*(${escapedTaskText})\\s*$`,
-      "gm"
-    );
-
-    const newContent = content.replace(
-      taskLineRegex,
-      (match, prefix, textPart) => {
-        let updatedLine = `${prefix}[${newStatus}] ${textPart}`;
-        if (newStatus === "x" && !isCancel) {
-          const today = new Date().toISOString().split("T")[0];
-          const completionMarker = ` ✅ ${today}`;
-          if (!/\s$/.test(updatedLine)) updatedLine += " ";
-          updatedLine += completionMarker;
-        }
-        return updatedLine;
+    for (const i of candidates) {
+      const rest = getLineRestNormalized(lines[i]);
+      if (!rest) continue;
+      if (
+        rest === targetTextNorm ||
+        rest.startsWith(targetTextNorm) ||
+        targetTextNorm.startsWith(rest)
+      ) {
+        targetLineIndex = i;
+        const parsed = parseStatusFromLine(lines[i]);
+        if (parsed) effectiveStatus = parsed;
+        break;
       }
-    );
+    }
 
-    if (newContent === content)
-      throw new Error("No matching task line found");
+    // 2) If still not found, scan the file for an exact normalized match, then a startsWith match
+    if (targetLineIndex === -1 && targetTextNorm) {
+      for (let i = 0; i < lines.length; i++) {
+        const rest = getLineRestNormalized(lines[i]);
+        if (rest && rest === targetTextNorm) {
+          targetLineIndex = i;
+          const parsed = parseStatusFromLine(lines[i]);
+          if (parsed) effectiveStatus = parsed;
+          break;
+        }
+      }
+      if (targetLineIndex === -1) {
+        for (let i = 0; i < lines.length; i++) {
+          const rest = getLineRestNormalized(lines[i]);
+          if (rest && rest.startsWith(targetTextNorm)) {
+            targetLineIndex = i;
+            const parsed = parseStatusFromLine(lines[i]);
+            if (parsed) effectiveStatus = parsed;
+            break;
+          }
+        }
+      }
+    }
+
+    console.log("[TaskRenderer] status inference", { effectiveStatus, targetLineIndex });
+
+    const newStatus = isCancel ? "-" : effectiveStatus === "/" ? "x" : "/";
+
+    const today = new Date();
+    const yyyy = String(today.getFullYear());
+    const mm = String(today.getMonth() + 1).padStart(2, "0");
+    const dd = String(today.getDate()).padStart(2, "0");
+    const dateStr = `${yyyy}-${mm}-${dd}`;
+
+    const updateLine = (line: string): string => {
+      const m = line.match(/^(\s*[-*]\s*\[\s*)(.)(\s*\]\s*)(.*)$/);
+      if (!m) return line;
+
+      const prefix = m[1];
+      const bracketSuffix = m[3];
+      let rest = m[4] ?? "";
+
+      // Remove any existing completion/cancel markers to avoid duplicates
+      rest = rest.replace(/\s*(✅|❌)\s+\d{4}-\d{2}-\d{2}\b/g, "").trimEnd();
+
+      let updated = `${prefix}${newStatus}${bracketSuffix}${rest ? " " + rest : ""}`;
+
+      if (newStatus === "x") {
+        updated += ` ✅ ${dateStr}`;
+      } else if (newStatus === "-") {
+        updated += ` ❌ ${dateStr}`;
+      }
+
+      return updated;
+    };
+
+    let newContent: string | null = null;
+
+    const tryReplaceAtIndex = (idx: number) => {
+      if (idx < 0 || idx >= lines.length) return false;
+      const originalLine = lines[idx];
+      const replaced = updateLine(originalLine);
+      if (replaced !== originalLine) {
+        lines[idx] = replaced;
+        newContent = lines.join("\n");
+        return true;
+      }
+      return false;
+    };
+
+    // 1) Try by known line index
+    if (targetLineIndex !== -1) {
+      tryReplaceAtIndex(targetLineIndex);
+    }
+
+    // 2) If not replaced, search for the best-matching task line by normalized text
+    if (newContent == null) {
+      const targetText =
+        normalize((task.text || task.visual || "").trim());
+
+      if (targetText) {
+        // First pass: exact normalized match
+        for (let i = 0; i < lines.length; i++) {
+          const m = lines[i].match(/^\s*[-*]\s*\[\s*.\s*\]\s*(.*)$/);
+          if (!m) continue;
+          const rest = normalize(m[1]);
+          if (rest === targetText) {
+            if (tryReplaceAtIndex(i)) break;
+          }
+        }
+
+        // Second pass: startsWith normalized match
+        if (newContent == null) {
+          for (let i = 0; i < lines.length; i++) {
+            const m = lines[i].match(/^\s*[-*]\s*\[\s*.\s*\]\s*(.*)$/);
+            if (!m) continue;
+            const rest = normalize(m[1]);
+            if (rest.startsWith(targetText)) {
+              if (tryReplaceAtIndex(i)) break;
+            }
+          }
+        }
+      }
+    }
+
+    // 3) As a last resort, if we still didn't modify, try a loose regex replace:
+    if (newContent == null) {
+      const escaped = (task.text || "").trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      if (escaped) {
+        const re = new RegExp(
+          `^(\\s*[-*]\\s*\\[\\s*).(\\s*\\]\\s*)${escaped}(.*)$`,
+          "m"
+        );
+        newContent = content.replace(re, (match) => updateLine(match));
+        if (newContent === content) {
+          newContent = null; // no-op; ensure we fail below
+        }
+      }
+    }
+
+    if (!newContent || newContent === content) {
+      console.log("[TaskRenderer] no changes produced", { newContentIsNull: !newContent, sameAsOriginal: newContent === content });
+      throw new Error("Unable to update task line");
+    }
+
+    console.log("[TaskRenderer] modifying file", { newStatus });
 
     await app.vault.modify(file, newContent);
+
+    console.log("[TaskRenderer] file modified successfully", { newStatus });
+
+    // Update in-memory task to keep subsequent toggles working without reload
+    (task as any).status = newStatus;
+
+    // Optimistic UI: if task completed or cancelled, hide node and collapse ancestors/section if needed
+    if (newStatus === "x" || newStatus === "-") {
+      try {
+        hideTaskAndCollapseAncestors(liEl);
+      } catch (e) {
+        console.warn("Failed to optimistically hide/collapse", e);
+      }
+    }
+
+    return newStatus;
   } catch (error) {
     console.error("Error updating task status:", error);
+    return null;
   }
 };
