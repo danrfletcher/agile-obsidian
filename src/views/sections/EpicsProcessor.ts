@@ -42,6 +42,6 @@ export function processAndRenderEpics(
     // Render if there are tasks
     if (prunedTasks.length > 0) {
         container.createEl("h2", { text: "🏆 Epics" });
-        renderTaskTree(prunedTasks, container, app, 0, false, "tasks");
+        renderTaskTree(prunedTasks, container, app, 0, false, "epics");
     }
 }
