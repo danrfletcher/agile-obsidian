@@ -4,9 +4,9 @@ import { TaskItem } from "../types/TaskItem";
 
 // Slug used in "active-<slug>" and snooze spans
 export function getTeamMemberSlug(): string | null {
-	const name = name;
-	if (!name || typeof name !== "string") return null;
-	return name.trim().toLowerCase().replace(/\s+/g, "-");
+	const raw = name;
+	if (!raw || typeof raw !== "string") return null;
+	return raw.trim().toLowerCase().replace(/\s+/g, "-");
 }
 
 // Update one exact line in a note to add/replace a snooze marker for the given user
