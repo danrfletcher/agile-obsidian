@@ -94,10 +94,13 @@ export function renderTaskTree(
           console.log("[TaskRenderer] performUpdate start", { source, cancel, taskId: task._uniqueId, beforeStatus: (task as any).status, line: task.line, file: task.link?.path });
           const result = await handleStatusChange(task, taskItemEl, app, cancel);
           console.log("[TaskRenderer] performUpdate result", { result });
-          if (result) {
-            const checkedNow = result === "x";
-            checkbox.checked = checkedNow;
-            initialChecked = checkedNow;
+          if (result === "/") {
+            // Re-render just this task's inline content so the status icon updates
+            rerenderTaskInline(task, taskItemEl, app, sectionType, result);
+          } else if (result === "x") {
+            // Reflect checked UI for completed tasks (will be hidden shortly if applicable)
+            checkbox.checked = true;
+            initialChecked = true;
           }
         } catch (e) {
           console.error("[TaskRenderer] performUpdate error", e);
@@ -182,6 +185,244 @@ export function renderTaskTree(
       );
     }
   });
+}
+
+/**
+ * Re-render only the inline content (checkbox + line text) for a task's <li> to refresh status icon,
+ * preserving any nested child <ul>, then reattach snooze button and re-wire interactions.
+ */
+function rerenderTaskInline(
+  task: TaskItem,
+  liEl: HTMLElement,
+  app: App,
+  sectionType: string,
+  newStatus: string
+): void {
+  try {
+    // Preserve existing child lists (subtasks)
+    const childLists = Array.from(
+      liEl.querySelectorAll(":scope > ul")
+    ) as HTMLElement[];
+
+    // Build updated markdown line for this task
+    let lineMd = (task.visual || task.text || "").trim();
+
+    // Update or inject the task status marker
+    if (/^\s*[-*]\s*\[\s*.\s*\]/.test(lineMd)) {
+      lineMd = lineMd.replace(
+        /^(\s*[-*]\s*\[\s*)(.)(\s*\])/,
+        `$1${newStatus}$3`
+      );
+    } else {
+      lineMd = `- [${newStatus}] ${lineMd}`;
+    }
+
+    // Remove any completion/cancel markers for non-terminal statuses like "/"
+    if (newStatus === "/") {
+      lineMd = lineMd
+        .replace(/\s*(✅|❌)\s+\d{4}-\d{2}-\d{2}\b/g, "")
+        .trimEnd();
+    }
+
+    // Clear current inline content
+    liEl.innerHTML = "";
+
+    // Render updated line using Obsidian's renderer
+    const tempEl = document.createElement("div");
+    const renderComponent = new Component();
+    MarkdownRenderer.renderMarkdown(
+      lineMd,
+      tempEl,
+      task.link?.path || "",
+      renderComponent
+    );
+    renderComponent.load();
+
+    // Extract the generated LI contents (UL > LI) and sync attributes so CSS status icons stay correct
+    const firstEl = tempEl.firstElementChild as HTMLElement | null;
+    if (
+      firstEl?.tagName.toLowerCase() === "ul" &&
+      firstEl.children.length === 1 &&
+      (firstEl.firstElementChild as HTMLElement | null)?.tagName.toLowerCase() ===
+        "li"
+    ) {
+      const sourceLi = firstEl.firstElementChild as HTMLElement;
+
+      // Preserve custom class if present
+      const hadAnnotated = liEl.classList.contains("annotated-task");
+
+      // Sync key attributes/classes from sourceLi onto our existing LI
+      const dataTask = sourceLi.getAttribute("data-task");
+      if (dataTask !== null) liEl.setAttribute("data-task", dataTask);
+      else liEl.removeAttribute("data-task");
+
+      const role = sourceLi.getAttribute("role");
+      if (role !== null) liEl.setAttribute("role", role);
+      else liEl.removeAttribute("role");
+
+      const ariaChecked = sourceLi.getAttribute("aria-checked");
+      if (ariaChecked !== null) liEl.setAttribute("aria-checked", ariaChecked);
+      else liEl.removeAttribute("aria-checked");
+
+      // Replace class list with the freshly rendered one
+      liEl.className = sourceLi.className;
+      if (hadAnnotated) liEl.classList.add("annotated-task");
+
+      // Move over the newly rendered inline content
+      while (sourceLi.firstChild) {
+        liEl.appendChild(sourceLi.firstChild);
+      }
+    } else {
+      // Fallback: move all rendered nodes and best-effort attribute updates
+      while (tempEl.firstChild) {
+        liEl.appendChild(tempEl.firstChild);
+      }
+      // Ensure attributes reflect the new status so CSS can render correctly
+      liEl.classList.add("task-list-item");
+      if (newStatus === "x") liEl.classList.add("is-checked");
+      else liEl.classList.remove("is-checked");
+      liEl.setAttribute("data-task", newStatus);
+    }
+
+    // Ensure checkbox element carries the correct data-task for CSS snippets
+    const inputEl = liEl.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
+    if (inputEl) {
+      inputEl.setAttribute("data-task", newStatus);
+    }
+
+    // Re-attach preserved child lists (subtasks)
+    childLists.forEach((ul) => liEl.appendChild(ul));
+
+    // Re-attach snooze button if eligible
+    try {
+      appendSnoozeButtonIfEligible(task, liEl, sectionType, app);
+    } catch (e) {
+      console.error("Failed to reattach snooze button after rerender", e);
+    }
+
+    // Re-wire checkbox interactions for the newly rendered checkbox
+    const checkbox = liEl.querySelector('input[type="checkbox"]') as
+      | HTMLInputElement
+      | null;
+
+    if (checkbox) {
+      let pressTimer: number | null = null;
+      let longPressed = false;
+      const LONG_PRESS_MS = 500;
+
+      let initialChecked = checkbox.checked;
+      let isUpdating = false;
+
+      const performUpdate = async (cancel: boolean, source: string) => {
+        if (isUpdating) {
+          console.log("[TaskRenderer] Update skipped (busy)", {
+            source,
+            taskId: task._uniqueId,
+            status: (task as any).status,
+          });
+          return;
+        }
+        isUpdating = true;
+        try {
+          console.log("[TaskRenderer] performUpdate start", {
+            source,
+            cancel,
+            taskId: task._uniqueId,
+            beforeStatus: (task as any).status,
+            line: task.line,
+            file: task.link?.path,
+          });
+          const result = await handleStatusChange(task, liEl, app, cancel);
+          console.log("[TaskRenderer] performUpdate result", { result });
+          if (result === "/") {
+            rerenderTaskInline(task, liEl, app, sectionType, result);
+          } else if (result === "x") {
+            checkbox.checked = true;
+            initialChecked = true;
+          }
+        } catch (e) {
+          console.error("[TaskRenderer] performUpdate error", e);
+        } finally {
+          isUpdating = false;
+        }
+      };
+
+      // Prevent native toggle; we control the state via note updates and optimistic UI.
+      checkbox.addEventListener("change", (ev) => {
+        ev.preventDefault();
+        // @ts-ignore
+        ev.stopImmediatePropagation?.();
+        checkbox.checked = initialChecked;
+        console.log("[TaskRenderer] change event (native toggle suppressed)", {
+          taskId: task._uniqueId,
+          initialChecked,
+        });
+      });
+
+      // Keyboard accessibility: Space/Enter toggles like click
+      checkbox.addEventListener("keydown", async (ev) => {
+        const key = (ev as KeyboardEvent).key;
+        if (key === " " || key === "Enter") {
+          ev.preventDefault();
+          console.log("[TaskRenderer] keydown toggle", {
+            key,
+            taskId: task._uniqueId,
+          });
+          await performUpdate(false, "keydown");
+        }
+      });
+
+      const clearTimer = () => {
+        if (pressTimer !== null) {
+          window.clearTimeout(pressTimer);
+          pressTimer = null;
+        }
+      };
+
+      const onPressStart = (ev: Event) => {
+        console.log("[TaskRenderer] onPressStart", {
+          taskId: task._uniqueId,
+        });
+        longPressed = false;
+        clearTimer();
+        pressTimer = window.setTimeout(async () => {
+          longPressed = true;
+          console.log("[TaskRenderer] long-press detected", {
+            taskId: task._uniqueId,
+          });
+          await performUpdate(true, "longpress");
+        }, LONG_PRESS_MS);
+      };
+
+      const onPressEnd = () => {
+        console.log("[TaskRenderer] onPressEnd", { taskId: task._uniqueId });
+        clearTimer();
+      };
+
+      checkbox.addEventListener("mousedown", onPressStart);
+      checkbox.addEventListener("touchstart", onPressStart, { passive: true });
+      checkbox.addEventListener("mouseup", onPressEnd);
+      checkbox.addEventListener("mouseleave", onPressEnd);
+      checkbox.addEventListener("touchend", onPressEnd);
+      checkbox.addEventListener("touchcancel", onPressEnd);
+
+      checkbox.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (longPressed) {
+          console.log("[TaskRenderer] click suppressed due to long-press", {
+            taskId: task._uniqueId,
+          });
+          longPressed = false;
+          return;
+        }
+        console.log("[TaskRenderer] click toggle", { taskId: task._uniqueId });
+        await performUpdate(false, "click");
+      });
+    }
+  } catch (e) {
+    console.error("rerenderTaskInline failed", e);
+  }
 }
 
 // Shared status change handler (used by sections that need checkboxes/interactivity)
