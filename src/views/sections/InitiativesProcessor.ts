@@ -84,6 +84,6 @@ export function processAndRenderInitiatives(
 	// Render if there are tasks
 	if (prunedTasks.length > 0) {
 		container.createEl("h2", { text: "🎖️ Initiatives" });
-		renderTaskTree(prunedTasks, container, app, 0, false, "tasks");
+		renderTaskTree(prunedTasks, container, app, 0, false, "initiatives");
 	}
 }
