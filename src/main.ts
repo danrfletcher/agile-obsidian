@@ -19,11 +19,18 @@ import {
 } from "./views/AgileDashboardView";
 import { TaskIndex } from "./index/TaskIndex";
 import checkboxCss from "./styles/checkboxes.css";
+import {
+	isUncheckedTaskLine,
+	resolveTeamForPath,
+	hasAnyTeamMemberAssignment,
+	aliasToName,
+} from "./utils/commands/commandUtils";
 
 export default class AgileObsidianPlugin extends Plugin {
 	settings: AgileObsidianSettings;
 	taskIndex: TaskIndex;
 	private checkboxStyleEl?: HTMLStyleElement;
+	private dynamicCommandIds: Set<string> = new Set();
 
 	private async injectCheckboxStyles(): Promise<void> {
 		try {
@@ -41,6 +48,217 @@ export default class AgileObsidianPlugin extends Plugin {
 		} catch (e) {
 			// no-op
 		}
+	}
+
+	
+
+	private unregisterDynamicCommands(): void {
+		try {
+			// @ts-ignore - commands API not in public types
+			const cmds = this.app.commands;
+			for (const id of this.dynamicCommandIds) {
+				try {
+					// @ts-ignore
+					cmds.removeCommand(id);
+				} catch {}
+			}
+		} finally {
+			this.dynamicCommandIds.clear();
+		}
+	}
+
+	private rebuildDynamicCommands(): void {
+		this.unregisterDynamicCommands();
+
+		const teams: any[] = (this.settings as any)?.teams ?? [];
+		if (!teams || teams.length === 0) return;
+
+		for (const team of teams) {
+			this.addAssignCommandsForTeam(team);
+			this.addDelegateCommandsForTeam(team);
+		}
+	}
+
+	private addAssignCommandsForTeam(team: any): void {
+		const teamName: string = team.name;
+		const members: any[] = (team.members ?? []).filter((m: any) => {
+			const a = (m.alias || "").toLowerCase();
+			return a && !a.endsWith("-ext") && !a.endsWith("-team") && !a.endsWith("-int");
+		});
+
+		// "to me" if identity set and is part of this team
+		const meAlias = ((this.settings as any)?.currentUserAlias || "").trim();
+		const meMember = members.find((m) => (m.alias || "").trim() === meAlias);
+		if (meMember) {
+			this.createAssignCommand(teamName, meMember.alias, meMember.name, "active", true);
+			this.createAssignCommand(teamName, meMember.alias, meMember.name, "inactive", true);
+		}
+
+		// For other members
+		for (const m of members) {
+			const isMe = meAlias && m.alias === meAlias;
+			// Skip duplicates: already handled above for "me"
+			if (isMe) continue;
+			this.createAssignCommand(teamName, m.alias, m.name, "active", false);
+			this.createAssignCommand(teamName, m.alias, m.name, "inactive", false);
+		}
+	}
+
+	private addDelegateCommandsForTeam(team: any): void {
+		const teamName: string = team.name;
+
+		// Internal Teams (-team)
+		for (const m of team.members ?? []) {
+			const alias = (m.alias || "").toLowerCase();
+			if (alias.endsWith("-team")) {
+				this.createDelegateCommand(teamName, m.alias, m.name, "team", "active");
+				this.createDelegateCommand(teamName, m.alias, m.name, "team", "inactive");
+			}
+		}
+
+		// Internal Team Members (-int)
+		for (const m of team.members ?? []) {
+			const alias = (m.alias || "").toLowerCase();
+			if (alias.endsWith("-int")) {
+				this.createDelegateCommand(teamName, m.alias, m.name, "internal", "active");
+				this.createDelegateCommand(teamName, m.alias, m.name, "internal", "inactive");
+			}
+		}
+
+		// External Delegates (-ext)
+		for (const m of team.members ?? []) {
+			const alias = (m.alias || "").toLowerCase();
+			if (alias.endsWith("-ext")) {
+				this.createDelegateCommand(teamName, m.alias, m.name, "external", "active");
+				this.createDelegateCommand(teamName, m.alias, m.name, "external", "inactive");
+			}
+		}
+	}
+
+	private createAssignCommand(
+		teamName: string,
+		memberAlias: string,
+		memberName: string,
+		variant: "active" | "inactive",
+		isMe: boolean
+	) {
+		const id = `${this.manifest.id}:assign:${teamName}:${memberAlias}:${variant}`;
+		const title =
+			isMe
+				? `/Assign: to me (${variant})`
+				: `/Assign: to ${memberName} (${variant})`;
+
+		const bg = variant === "active" ? "#BBFABBA6" : "#CACFD9A6";
+		const newMark = `<mark class="${variant}-${memberAlias}" style="background: ${bg};"><strong>👋 ${memberName}</strong></mark>`;
+		// Any existing assignment mark (👋) – irrespective of alias – should be overwritten
+		const reExistingAssignment =
+			/(?:\s+)?<mark\s+class="(?:active|inactive)-[a-z0-9-]+"[^>]*>\s*<strong>👋[\s\S]*?<\/strong>\s*<\/mark>/i;
+
+		// @ts-ignore - types for id not strictly enforced
+		this.addCommand({
+			id,
+			name: title,
+			editorCheckCallback: (checking: boolean, editor: Editor, view: MarkdownView) => {
+				const filePath = view?.file?.path ?? null;
+				if (!filePath) return false;
+				const team = resolveTeamForPath(filePath, (this.settings as any)?.teams ?? []);
+				if (!team || team.name !== teamName) return false;
+
+				const pos = editor.getCursor();
+				const line = editor.getLine(pos.line);
+				if (!isUncheckedTaskLine(line)) return false;
+
+				if (checking) return true;
+
+				let updated = line.replace(/\s+$/, "");
+				if (reExistingAssignment.test(updated)) {
+					// Replace existing assignment in place, normalize to single leading space
+					updated = updated.replace(reExistingAssignment, ` ${newMark}`);
+				} else {
+					const spacer = updated.endsWith(" ") ? "" : " ";
+					updated = `${updated}${spacer}${newMark}`;
+				}
+				updated = updated.replace(/\s{2,}/g, " ");
+
+				editor.replaceRange(
+					updated,
+					{ line: pos.line, ch: 0 },
+					{ line: pos.line, ch: line.length }
+				);
+
+				return true;
+			},
+		});
+
+		this.dynamicCommandIds.add(id);
+	}
+
+	private createDelegateCommand(
+		teamName: string,
+		targetAlias: string,
+		targetName: string,
+		targetType: "team" | "internal" | "external",
+		variant: "active" | "inactive"
+	) {
+		const id = `${this.manifest.id}:delegate:${teamName}:${targetType}:${targetAlias}:${variant}`;
+
+		const emoji = targetType === "team" ? "🤝" : targetType === "internal" ? "👥" : "👤";
+		const title = `/Delegate: to ${targetName} (${variant})`;
+
+		const bg =
+			variant === "active"
+				? targetType === "team"
+					? "#008080"
+					: targetType === "internal"
+					? "#687D70"
+					: "#FA9684"
+				: "#CACFD9A6";
+
+		const newMark = `→ <mark class="${variant}-${targetAlias}" style="background: ${bg};"><strong><a href="">${emoji} ${targetName}</a></strong></mark>`;
+		// Any existing delegation (arrow + mark containing an anchor) – irrespective of alias – should be overwritten
+		const reExistingDelegation =
+			/(?:\s*→\s*)?<mark\s+class="(?:active|inactive)-[a-z0-9-]+"[^>]*>[\s\S]*?<a\b[^>]*>[\s\S]*?<\/a>[\s\S]*?<\/mark>/i;
+
+		// @ts-ignore - types for id not strictly enforced
+		this.addCommand({
+			id,
+			name: title,
+			editorCheckCallback: (checking: boolean, editor: Editor, view: MarkdownView) => {
+				const filePath = view?.file?.path ?? null;
+				if (!filePath) return false;
+				const team = resolveTeamForPath(filePath, (this.settings as any)?.teams ?? []);
+				if (!team || team.name !== teamName) return false;
+
+				const pos = editor.getCursor();
+				const line = editor.getLine(pos.line);
+				if (!isUncheckedTaskLine(line)) return false;
+
+				// Only after an assignment to a team member exists
+				if (!hasAnyTeamMemberAssignment(line, team)) return false;
+
+				if (checking) return true;
+
+				let updated = line.replace(/\s+$/, "");
+				if (reExistingDelegation.test(updated)) {
+					// Replace existing delegation (including optional arrow) with a single spaced arrow + mark
+					updated = updated.replace(reExistingDelegation, ` ${newMark}`);
+				} else {
+					const spacer = updated.endsWith(" ") ? "" : " ";
+					updated = `${updated}${spacer}${newMark}`;
+				}
+				updated = updated.replace(/\s{2,}/g, " ");
+
+				editor.replaceRange(
+					updated,
+					{ line: pos.line, ch: 0 },
+					{ line: pos.line, ch: line.length }
+				);
+
+				return true;
+			},
+		});
+
+		this.dynamicCommandIds.add(id);
 	}
 
 	async onload() {
@@ -157,9 +375,21 @@ export default class AgileObsidianPlugin extends Plugin {
 				}
 			})
 		);
+
+		// Initial dynamic command set
+		this.rebuildDynamicCommands();
+
+		// Rebuild dynamic commands whenever settings change
+		this.registerEvent(
+			// @ts-ignore - custom event name
+			this.app.workspace.on("agile-settings-changed", () => {
+				this.rebuildDynamicCommands();
+			})
+		);
 	}
 
 	onunload() {
+		this.unregisterDynamicCommands();
 		if (this.checkboxStyleEl && this.checkboxStyleEl.parentNode) {
 			this.checkboxStyleEl.parentNode.removeChild(this.checkboxStyleEl);
 			this.checkboxStyleEl = undefined;
@@ -178,7 +408,7 @@ export default class AgileObsidianPlugin extends Plugin {
 	}
 
 	public async applyCheckboxStylesSetting(): Promise<void> {
-		if (this.settings?.useBundledCheckboxes) {
+		if ((this.settings as any)?.useBundledCheckboxes) {
 			await this.injectCheckboxStyles();
 		} else {
 			this.removeCheckboxStyles();
@@ -227,42 +457,12 @@ export default class AgileObsidianPlugin extends Plugin {
 			// Build detected teams with empty member maps
 			const detectedTeams = new Map<
 				string,
-				{ rootPath: string; members: Map<string, { name: string; type: "member" | "external" }> }
+				{ rootPath: string; members: Map<string, { name: string; type: "member" | "external" | "team" }> }
 			>();
 			for (const [name, rootPath] of teamRootByName.entries()) {
 				detectedTeams.set(name, { rootPath, members: new Map() });
 			}
 
-			// Helper: convert alias to display name (handles double hyphen in alias as name hyphen)
-			const aliasToName = (alias: string): string => {
-				let normalized = alias;
-				const lower = alias.toLowerCase();
-				if (lower.endsWith("-ext")) normalized = alias.slice(0, -4);
-				else if (lower.endsWith("-team")) normalized = alias.slice(0, -5);
-				else if (lower.endsWith("-int")) normalized = alias.slice(0, -4);
-				const m = /^([a-z0-9-]+)-([0-9][a-z0-9]{5})$/i.exec(normalized);
-				const base = (m ? m[1] : normalized).toLowerCase();
-
-				// Parse into tokens, where '-' separates tokens, and '--' inserts a literal hyphen
-				const tokens: string[] = [""];
-				for (let i = 0; i < base.length; i++) {
-					const ch = base[i];
-					if (ch === "-") {
-						if (i + 1 < base.length && base[i + 1] === "-") {
-							// literal hyphen inside the current token
-							tokens[tokens.length - 1] += "-";
-							i++; // skip the second '-'
-						} else {
-							// token separator
-							tokens.push("");
-						}
-					} else {
-						tokens[tokens.length - 1] += ch;
-					}
-				}
-				const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
-				return tokens.filter(Boolean).map(cap).join(" ");
-			};
 
 			// Scan all files within each team's root folder to detect members
 			const allFiles = this.app.vault.getAllLoadedFiles();
@@ -296,7 +496,7 @@ export default class AgileObsidianPlugin extends Plugin {
 			// Merge with existing settings:
 			// - Keep existing teams that were not detected (user-added)
 			// - For detected teams, REPLACE members with the freshly detected set (so removals are reflected)
-			const existing = this.settings.teams ?? [];
+			const existing = (this.settings as any).teams ?? [];
 			const mergedMap = new Map<
 				string,
 				{ rootPath: string; members: Map<string, { name: string; type: "member" | "external" | "team" }> }
@@ -362,7 +562,7 @@ export default class AgileObsidianPlugin extends Plugin {
 				}
 			}
 
-			this.settings.teams = Array.from(mergedMap.entries())
+			(this.settings as any).teams = Array.from(mergedMap.entries())
 				.map(([name, v]) => ({
 					name,
 					rootPath: v.rootPath,
@@ -386,10 +586,10 @@ export default class AgileObsidianPlugin extends Plugin {
 				.sort((a, b) => a.name.localeCompare(b.name));
 
 			await this.saveSettings();
-			return this.settings.teams.length;
+			return ((this.settings as any).teams as any[]).length;
 		} catch {
 			// Silent on startup
-			return this.settings?.teams?.length ?? 0;
+			return ((this.settings as any)?.teams?.length ?? 0);
 		}
 	}
 
