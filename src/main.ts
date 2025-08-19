@@ -46,7 +46,7 @@ export default class AgileObsidianPlugin extends Plugin {
 	async onload() {
 		// Load settings early (must come before adding the tab)
 		await this.loadSettings();
-		await this.injectCheckboxStyles();
+		await this.applyCheckboxStylesSetting();
 
 		// Add the settings tab
 		this.addSettingTab(new AgileSettingTab(this.app, this));
@@ -162,6 +162,25 @@ export default class AgileObsidianPlugin extends Plugin {
 		if (this.checkboxStyleEl && this.checkboxStyleEl.parentNode) {
 			this.checkboxStyleEl.parentNode.removeChild(this.checkboxStyleEl);
 			this.checkboxStyleEl = undefined;
+		}
+	}
+
+	private removeCheckboxStyles(): void {
+		try {
+			document
+				.querySelectorAll(`style[data-agile-checkbox-styles="${this.manifest.id}"]`)
+				.forEach((el) => el.parentElement?.removeChild(el));
+			this.checkboxStyleEl = undefined;
+		} catch (e) {
+			// no-op
+		}
+	}
+
+	public async applyCheckboxStylesSetting(): Promise<void> {
+		if (this.settings?.useBundledCheckboxes) {
+			await this.injectCheckboxStyles();
+		} else {
+			this.removeCheckboxStyles();
 		}
 	}
 

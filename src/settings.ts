@@ -9,6 +9,7 @@ export interface AgileObsidianSettings {
 	showInitiatives: boolean;
 	showResponsibilities: boolean;
 	showPriorities: boolean;
+	useBundledCheckboxes: boolean;
 }
 
 export const DEFAULT_SETTINGS: AgileObsidianSettings = {
@@ -19,6 +20,7 @@ export const DEFAULT_SETTINGS: AgileObsidianSettings = {
 	showInitiatives: true,
 	showResponsibilities: true,
 	showPriorities: true,
+	useBundledCheckboxes: true,
 };
 
 export class AgileSettingTab extends PluginSettingTab {
@@ -114,5 +116,23 @@ export class AgileSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				})
 		);
+
+		// Appearance
+		containerEl.createEl("h3", { text: "Appearance" });
+
+		new Setting(containerEl)
+			.setName('Custom Task Styles')
+			.setDesc(
+				'This plugin uses custom task styles including a customized version of SlRvb’s "Checkboxes" (from the ITS Theme) for checkbox icons. Turn this on to use the bundled styles; turn it off if you prefer your own theme/snippet for custom task styles and checkboxes.'
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.useBundledCheckboxes)
+					.onChange(async (value) => {
+						this.plugin.settings.useBundledCheckboxes = value;
+						await this.plugin.saveSettings();
+						await this.plugin.applyCheckboxStylesSetting();
+					})
+			);
 	}
 }
