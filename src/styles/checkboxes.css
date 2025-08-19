@@ -1,0 +1,130 @@
+/* Lightweight Custom Checkboxes for Obsidian Plugin */
+/* Supports status: "/" (In Progress), "A" (Answer), "-" (Cancelled), "O" (Outline) */
+
+:root {
+  --checkbox-size: 1em;
+  --checkbox-color: var(--interactive-accent);
+  --checkbox-color-hover: var(--interactive-accent-hover);
+}
+
+/* Base checkbox styling reset for custom statuses (/, A, -, O) */
+.lightweight-checkboxes [data-task="/"] > input[type=checkbox],
+.lightweight-checkboxes [data-task="A"] > input[type=checkbox],
+.lightweight-checkboxes [data-task="-"] > input[type=checkbox],
+.lightweight-checkboxes [data-task="O"] > input[type=checkbox] {
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: transparent !important;
+  border: 0;
+  box-shadow: none;
+  transform: none;
+  filter: none;
+  font-family: inherit;
+  font-size: inherit;
+  position: relative;
+  cursor: pointer;
+}
+
+/* Icon styling for custom checkboxes */
+.lightweight-checkboxes [data-task="/"] > input[type=checkbox]:checked::after,
+.lightweight-checkboxes [data-task="A"] > input[type=checkbox]:checked::after,
+.lightweight-checkboxes [data-task="-"] > input[type=checkbox]:checked::after,
+.lightweight-checkboxes [data-task="O"] > input[type=checkbox]:checked::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--checkbox-size);
+  height: var(--checkbox-size);
+  /* Masks for cross-browser */
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+/* In Progress "/" */
+.lightweight-checkboxes [data-task="/"] > input[type=checkbox]:checked {
+  --checkbox-color: var(--color-orange);
+  --checkbox-color-hover: var(--color-orange);
+}
+.lightweight-checkboxes [data-task="/"] > input[type=checkbox]:checked::after {
+  background-color: var(--color-orange);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10V2z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10V2z'/%3E%3C/svg%3E");
+}
+
+/* Answer "A" */
+.lightweight-checkboxes [data-task="A"] > input[type=checkbox]:checked {
+  --checkbox-color: var(--color-green);
+  --checkbox-color-hover: var(--color-green);
+}
+.lightweight-checkboxes [data-task="A"] > input[type=checkbox]:checked::after {
+  background-color: var(--color-green);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'/%3E%3C/svg%3E");
+}
+
+/* Cancelled "-" */
+.lightweight-checkboxes [data-task="-"] > input[type=checkbox]:checked {
+  --checkbox-color: var(--color-red);
+  --checkbox-color-hover: var(--color-red);
+}
+.lightweight-checkboxes [data-task="-"] > input[type=checkbox]:checked::after {
+  background-color: var(--color-red);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z'/%3E%3C/svg%3E");
+}
+
+/* Outline "O" */
+.lightweight-checkboxes [data-task="O"] > input[type=checkbox]:checked {
+  --checkbox-color: var(--color-blue);
+  --checkbox-color-hover: var(--color-blue);
+}
+.lightweight-checkboxes [data-task="O"] > input[type=checkbox]:checked::after {
+  background-color: var(--color-blue);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z'/%3E%3C/svg%3E");
+}
+
+/* Text styling for non-empty task status */
+.lightweight-checkboxes [data-task]:not([data-task=" "]) {
+  color: var(--text-faint);
+}
+
+/* Strikethrough for cancelled tasks when enabled */
+.lightweight-checkboxes.checkbox-strikethrough [data-task="-"] {
+  text-decoration: line-through;
+}
+
+/* Settings page legend styling (optional) */
+.checkbox-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.legend-item code {
+  background: var(--background-modifier-border);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: var(--font-monospace);
+}
+
+/* Fallback colors for themes that don't define color variables */
+.lightweight-checkboxes {
+  --color-orange: #ff8c00;
+  --color-green: #28a745;
+  --color-red: #dc3545;
+  --color-blue: #007bff;
+}

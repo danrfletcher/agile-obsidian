@@ -22,10 +22,33 @@ import { TaskIndex } from "./index/TaskIndex";
 export default class AgileObsidianPlugin extends Plugin {
 	settings: AgileObsidianSettings;
 	taskIndex: TaskIndex;
+	private checkboxStyleEl?: HTMLStyleElement;
+
+	private async injectCheckboxStyles(): Promise<void> {
+		try {
+			const vaultRelativePath = `.obsidian/plugins/${this.manifest.id}/styles/checkboxes.css`;
+			const cssText = await this.app.vault.adapter.read(vaultRelativePath);
+
+			// Remove any existing style we added (hot reload safety)
+			document
+				.querySelectorAll(`style[data-agile-checkbox-styles="${this.manifest.id}"]`)
+				.forEach((el) => el.parentElement?.removeChild(el));
+
+			const styleEl = document.createElement("style");
+			styleEl.setAttribute("data-agile-checkbox-styles", this.manifest.id);
+			styleEl.textContent = cssText;
+
+			document.head.appendChild(styleEl);
+			this.checkboxStyleEl = styleEl;
+		} catch (e) {
+			// no-op
+		}
+	}
 
 	async onload() {
 		// Load settings early (must come before adding the tab)
 		await this.loadSettings();
+		await this.injectCheckboxStyles();
 
 		// Add the settings tab
 		this.addSettingTab(new AgileSettingTab(this.app, this));
@@ -137,7 +160,12 @@ export default class AgileObsidianPlugin extends Plugin {
 		);
 	}
 
-	onunload() {}
+	onunload() {
+		if (this.checkboxStyleEl && this.checkboxStyleEl.parentNode) {
+			this.checkboxStyleEl.parentNode.removeChild(this.checkboxStyleEl);
+			this.checkboxStyleEl = undefined;
+		}
+	}
 
 	async loadSettings() {
 		this.settings = Object.assign(
