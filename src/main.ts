@@ -47,6 +47,7 @@ export default class AgileObsidianPlugin extends Plugin {
 		// Load settings early (must come before adding the tab)
 		await this.loadSettings();
 		await this.applyCheckboxStylesSetting();
+		await this.detectAndUpdateTeams();
 
 		// Add the settings tab
 		this.addSettingTab(new AgileSettingTab(this.app, this));
@@ -181,6 +182,172 @@ export default class AgileObsidianPlugin extends Plugin {
 			await this.injectCheckboxStyles();
 		} else {
 			this.removeCheckboxStyles();
+		}
+	}
+
+	public async detectAndUpdateTeams(): Promise<number> {
+		try {
+			const files = this.app.vault.getMarkdownFiles();
+			const teamRootByName = new Map<string, string>();
+
+			for (const f of files) {
+				const base = f.basename;
+				const m = /^(.*)\s+(Initiatives|Priorities)$/.exec(base);
+				if (!m) continue;
+
+				const teamName = m[1].trim();
+				const segments = f.path.split("/");
+				const idx = segments.findIndex((seg) => seg === teamName);
+
+				// Valid team if any folder in the path matches the team name exactly
+				if (idx !== -1) {
+					const rootPath = segments.slice(0, idx + 1).join("/");
+					const prev = teamRootByName.get(teamName);
+					// Prefer the shortest root if multiple are found
+					if (!prev || rootPath.length < prev.length) {
+						teamRootByName.set(teamName, rootPath);
+					}
+				}
+			}
+
+			// Build detected teams with empty member maps
+			const detectedTeams = new Map<
+				string,
+				{ rootPath: string; members: Map<string, { name: string; type: "member" | "external" }> }
+			>();
+			for (const [name, rootPath] of teamRootByName.entries()) {
+				detectedTeams.set(name, { rootPath, members: new Map() });
+			}
+
+			// Helper: convert alias to display name (handles double hyphen in alias as name hyphen)
+			const aliasToName = (alias: string): string => {
+				let normalized = alias;
+				const lower = alias.toLowerCase();
+				if (lower.endsWith("-ext")) normalized = alias.slice(0, -4);
+				else if (lower.endsWith("-team")) normalized = alias.slice(0, -5);
+				else if (lower.endsWith("-int")) normalized = alias.slice(0, -4);
+				const m = /^([a-z0-9-]+)-([0-9][a-z0-9]{5})$/i.exec(normalized);
+				const base = (m ? m[1] : normalized).toLowerCase();
+
+				// Parse into tokens, where '-' separates tokens, and '--' inserts a literal hyphen
+				const tokens: string[] = [""];
+				for (let i = 0; i < base.length; i++) {
+					const ch = base[i];
+					if (ch === "-") {
+						if (i + 1 < base.length && base[i + 1] === "-") {
+							// literal hyphen inside the current token
+							tokens[tokens.length - 1] += "-";
+							i++; // skip the second '-'
+						} else {
+							// token separator
+							tokens.push("");
+						}
+					} else {
+						tokens[tokens.length - 1] += ch;
+					}
+				}
+				const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+				return tokens.filter(Boolean).map(cap).join(" ");
+			};
+
+			// Scan all files within each team's root folder to detect members
+			const allFiles = this.app.vault.getAllLoadedFiles();
+			for (const [teamName, info] of detectedTeams.entries()) {
+				const root = info.rootPath;
+				for (const af of allFiles) {
+					if (af instanceof TFile && af.extension === "md" && (af.path === root || af.path.startsWith(root + "/"))) {
+						const content = await this.app.vault.cachedRead(af);
+						const re = /\b(?:active|inactive)-([a-z0-9-]+)\b/gi;
+						let m: RegExpExecArray | null;
+						while ((m = re.exec(content)) !== null) {
+							const alias = m[1];
+							// Exclude special assignment "active-team"/"inactive-team" — not a real member
+							if (alias.toLowerCase() === "team") continue;
+
+							const name = aliasToName(alias);
+							const lower = alias.toLowerCase();
+							const isExternal = lower.endsWith("-ext");
+							const isTeam = lower.endsWith("-team");
+							if (!info.members.has(alias)) {
+								info.members.set(alias, {
+									name,
+									type: isExternal ? "external" : isTeam ? "team" : "member",
+								});
+							}
+						}
+					}
+				}
+			}
+
+			// Merge with existing settings:
+			// - Keep existing teams that were not detected (user-added)
+			// - For detected teams, REPLACE members with the freshly detected set (so removals are reflected)
+			const existing = this.settings.teams ?? [];
+			const mergedMap = new Map<
+				string,
+				{ rootPath: string; members: Map<string, { name: string; type: "member" | "external" | "team" }> }
+			>();
+
+			// Seed with detected teams (authoritative member sets)
+			for (const [name, info] of detectedTeams.entries()) {
+				mergedMap.set(name, { rootPath: info.rootPath, members: new Map(info.members) });
+			}
+
+			// Fold in existing teams
+			for (const t of existing) {
+				if (!mergedMap.has(t.name)) {
+					// Preserve user-created teams not found by detection
+					const mm = new Map<string, { name: string; type: "member" | "external" | "team" }>();
+					// @ts-ignore backward compatibility
+					const existingMembers = (t as any).members as { alias: string; name: string; type?: "member" | "external" | "team" }[] | undefined;
+					if (existingMembers) {
+						for (const m of existingMembers) {
+							const lower = m.alias?.toLowerCase?.() ?? "";
+							const type =
+								(m as any).type ??
+								(lower.endsWith("-ext") ? "external" : lower.endsWith("-team") ? "team" : "member");
+							mm.set(m.alias, { name: m.name, type });
+						}
+					}
+					mergedMap.set(t.name, { rootPath: t.rootPath, members: mm });
+				} else {
+					// Detected team: keep detected members, but prefer any customized rootPath from existing
+					const entry = mergedMap.get(t.name)!;
+					if (t.rootPath && t.rootPath !== entry.rootPath) {
+						entry.rootPath = t.rootPath;
+					}
+					// Do NOT merge members here; detected set remains the source of truth
+				}
+			}
+
+			this.settings.teams = Array.from(mergedMap.entries())
+				.map(([name, v]) => ({
+					name,
+					rootPath: v.rootPath,
+					members: Array.from(v.members.entries())
+						.map(([alias, meta]) => ({ alias, name: meta.name, type: meta.type }))
+						.sort((a, b) => {
+							const typeFrom = (m: { alias: string; type?: string }) =>
+								(m as any).type ??
+								(m.alias.toLowerCase().endsWith("-ext")
+									? "external"
+									: m.alias.toLowerCase().endsWith("-team")
+									? "team"
+									: "member");
+							const rank = (t: string) => (t === "member" ? 0 : t === "team" ? 1 : 2);
+							const ra = rank(typeFrom(a) as string);
+							const rb = rank(typeFrom(b) as string);
+							if (ra !== rb) return ra - rb;
+							return a.name.localeCompare(b.name);
+						}),
+				}))
+				.sort((a, b) => a.name.localeCompare(b.name));
+
+			await this.saveSettings();
+			return this.settings.teams.length;
+		} catch {
+			// Silent on startup
+			return this.settings?.teams?.length ?? 0;
 		}
 	}
 
