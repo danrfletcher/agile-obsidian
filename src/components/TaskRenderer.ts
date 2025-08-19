@@ -101,7 +101,6 @@ export function renderTaskTree(
     try {
       appendSnoozeButtonIfEligible(task, taskItemEl, sectionType, app);
     } catch (e) {
-      console.error("Failed to attach snooze button", e);
     }
 
     // Wire up checkbox click and long-press to update status
@@ -124,14 +123,11 @@ export function renderTaskTree(
 
         const performUpdate = async (cancel: boolean, source: string) => {
           if (isUpdating) {
-            console.log("[TaskRenderer] Update skipped (busy)", { source, taskId: task._uniqueId, status: (task as any).status });
             return;
           }
           isUpdating = true;
           try {
-            console.log("[TaskRenderer] performUpdate start", { source, cancel, taskId: task._uniqueId, beforeStatus: (task as any).status, line: task.line, file: task.link?.path });
             const result = await handleStatusChange(task, taskItemEl, app, cancel);
-            console.log("[TaskRenderer] performUpdate result", { result });
             if (result === "/") {
               // Re-render just this task's inline content so the status icon updates
               rerenderTaskInline(task, taskItemEl, app, sectionType, result, isRoot, depth);
@@ -141,7 +137,6 @@ export function renderTaskTree(
               initialChecked = true;
             }
           } catch (e) {
-            console.error("[TaskRenderer] performUpdate error", e);
           } finally {
             isUpdating = false;
           }
@@ -153,7 +148,6 @@ export function renderTaskTree(
           // @ts-ignore
           ev.stopImmediatePropagation?.();
           checkbox.checked = initialChecked;
-          console.log("[TaskRenderer] change event (native toggle suppressed)", { taskId: task._uniqueId, initialChecked });
         });
 
         // Keyboard accessibility: Space/Enter toggles like click
@@ -161,7 +155,6 @@ export function renderTaskTree(
           const key = (ev as KeyboardEvent).key;
           if (key === " " || key === "Enter") {
             ev.preventDefault();
-            console.log("[TaskRenderer] keydown toggle", { key, taskId: task._uniqueId });
             await performUpdate(false, "keydown");
           }
         });
@@ -174,19 +167,16 @@ export function renderTaskTree(
         };
 
         const onPressStart = (ev: Event) => {
-          console.log("[TaskRenderer] onPressStart", { taskId: task._uniqueId });
           longPressed = false;
           clearTimer();
           pressTimer = window.setTimeout(async () => {
             longPressed = true;
-            console.log("[TaskRenderer] long-press detected", { taskId: task._uniqueId });
             // Long press => cancel
             await performUpdate(true, "longpress");
           }, LONG_PRESS_MS);
         };
 
         const onPressEnd = () => {
-          console.log("[TaskRenderer] onPressEnd", { taskId: task._uniqueId });
           clearTimer();
         };
 
@@ -202,11 +192,9 @@ export function renderTaskTree(
           ev.stopPropagation();
           if (longPressed) {
             // Already handled by long-press
-            console.log("[TaskRenderer] click suppressed due to long-press", { taskId: task._uniqueId });
             longPressed = false;
             return;
           }
-          console.log("[TaskRenderer] click toggle", { taskId: task._uniqueId });
           await performUpdate(false, "click");
         });
       }
@@ -338,7 +326,6 @@ function rerenderTaskInline(
     try {
       appendSnoozeButtonIfEligible(task, liEl, sectionType, app);
     } catch (e) {
-      console.error("Failed to reattach snooze button after rerender", e);
     }
 
     // Re-wire checkbox interactions for the newly rendered checkbox
@@ -363,25 +350,11 @@ function rerenderTaskInline(
 
         const performUpdate = async (cancel: boolean, source: string) => {
           if (isUpdating) {
-            console.log("[TaskRenderer] Update skipped (busy)", {
-              source,
-              taskId: task._uniqueId,
-              status: (task as any).status,
-            });
             return;
           }
           isUpdating = true;
           try {
-            console.log("[TaskRenderer] performUpdate start", {
-              source,
-              cancel,
-              taskId: task._uniqueId,
-              beforeStatus: (task as any).status,
-              line: task.line,
-              file: task.link?.path,
-            });
             const result = await handleStatusChange(task, liEl, app, cancel);
-            console.log("[TaskRenderer] performUpdate result", { result });
             if (result === "/") {
               rerenderTaskInline(task, liEl, app, sectionType, result, isRoot, depth);
             } else if (result === "x") {
@@ -389,7 +362,6 @@ function rerenderTaskInline(
               initialChecked = true;
             }
           } catch (e) {
-            console.error("[TaskRenderer] performUpdate error", e);
           } finally {
             isUpdating = false;
           }
@@ -401,10 +373,6 @@ function rerenderTaskInline(
           // @ts-ignore
           ev.stopImmediatePropagation?.();
           checkbox.checked = initialChecked;
-          console.log("[TaskRenderer] change event (native toggle suppressed)", {
-            taskId: task._uniqueId,
-            initialChecked,
-          });
         });
 
         // Keyboard accessibility: Space/Enter toggles like click
@@ -412,10 +380,6 @@ function rerenderTaskInline(
           const key = (ev as KeyboardEvent).key;
           if (key === " " || key === "Enter") {
             ev.preventDefault();
-            console.log("[TaskRenderer] keydown toggle", {
-              key,
-              taskId: task._uniqueId,
-            });
             await performUpdate(false, "keydown");
           }
         });
@@ -428,22 +392,15 @@ function rerenderTaskInline(
         };
 
         const onPressStart = (ev: Event) => {
-          console.log("[TaskRenderer] onPressStart", {
-            taskId: task._uniqueId,
-          });
           longPressed = false;
           clearTimer();
           pressTimer = window.setTimeout(async () => {
             longPressed = true;
-            console.log("[TaskRenderer] long-press detected", {
-              taskId: task._uniqueId,
-            });
             await performUpdate(true, "longpress");
           }, LONG_PRESS_MS);
         };
 
         const onPressEnd = () => {
-          console.log("[TaskRenderer] onPressEnd", { taskId: task._uniqueId });
           clearTimer();
         };
 
@@ -458,19 +415,14 @@ function rerenderTaskInline(
           ev.preventDefault();
           ev.stopPropagation();
           if (longPressed) {
-            console.log("[TaskRenderer] click suppressed due to long-press", {
-              taskId: task._uniqueId,
-            });
             longPressed = false;
             return;
           }
-          console.log("[TaskRenderer] click toggle", { taskId: task._uniqueId });
           await performUpdate(false, "click");
         });
       }
     }
   } catch (e) {
-    console.error("rerenderTaskInline failed", e);
   }
 }
 
@@ -488,7 +440,6 @@ export const handleStatusChange = async (
     const file = app.vault.getAbstractFileByPath(filePath) as TFile;
     if (!file) throw new Error(`File not found: ${filePath}`);
 
-    console.log("[TaskRenderer] handleStatusChange begin", { taskId: task._uniqueId, isCancel, taskStatus: (task as any).status, line: task.line, filePath });
 
     // Let the dashboard know we're doing an optimistic file change so it can suppress full refresh
     window.dispatchEvent(
@@ -500,7 +451,6 @@ export const handleStatusChange = async (
     const content = await app.vault.read(file);
     const lines = content.split(/\r?\n/);
 
-    console.log("[TaskRenderer] file read", { lines: lines.length });
 
     // Determine current status and correct line index for this task
     let effectiveStatus = (task.status ?? " ").trim() || " ";
@@ -570,7 +520,6 @@ export const handleStatusChange = async (
       }
     }
 
-    console.log("[TaskRenderer] status inference", { effectiveStatus, targetLineIndex });
 
     const newStatus = isCancel ? "-" : effectiveStatus === "/" ? "x" : "/";
 
@@ -667,15 +616,12 @@ export const handleStatusChange = async (
     }
 
     if (!newContent || newContent === content) {
-      console.log("[TaskRenderer] no changes produced", { newContentIsNull: !newContent, sameAsOriginal: newContent === content });
       throw new Error("Unable to update task line");
     }
 
-    console.log("[TaskRenderer] modifying file", { newStatus });
 
     await app.vault.modify(file, newContent);
 
-    console.log("[TaskRenderer] file modified successfully", { newStatus });
 
     // Update in-memory task to keep subsequent toggles working without reload
     (task as any).status = newStatus;
@@ -685,13 +631,11 @@ export const handleStatusChange = async (
       try {
         hideTaskAndCollapseAncestors(liEl);
       } catch (e) {
-        console.warn("Failed to optimistically hide/collapse", e);
       }
     }
 
     return newStatus;
   } catch (error) {
-    console.error("Error updating task status:", error);
     return null;
   }
 };
