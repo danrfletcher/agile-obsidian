@@ -18,6 +18,7 @@ import {
 	VIEW_TYPE_AGILE_DASHBOARD,
 } from "./views/AgileDashboardView";
 import { TaskIndex } from "./index/TaskIndex";
+import checkboxCss from "./styles/checkboxes.css";
 
 export default class AgileObsidianPlugin extends Plugin {
 	settings: AgileObsidianSettings;
@@ -26,9 +27,6 @@ export default class AgileObsidianPlugin extends Plugin {
 
 	private async injectCheckboxStyles(): Promise<void> {
 		try {
-			const vaultRelativePath = `.obsidian/plugins/${this.manifest.id}/styles/checkboxes.css`;
-			const cssText = await this.app.vault.adapter.read(vaultRelativePath);
-
 			// Remove any existing style we added (hot reload safety)
 			document
 				.querySelectorAll(`style[data-agile-checkbox-styles="${this.manifest.id}"]`)
@@ -36,7 +34,7 @@ export default class AgileObsidianPlugin extends Plugin {
 
 			const styleEl = document.createElement("style");
 			styleEl.setAttribute("data-agile-checkbox-styles", this.manifest.id);
-			styleEl.textContent = cssText;
+			styleEl.textContent = checkboxCss;
 
 			document.head.appendChild(styleEl);
 			this.checkboxStyleEl = styleEl;
