@@ -210,6 +210,20 @@ export default class AgileObsidianPlugin extends Plugin {
 				}
 			}
 
+			// Remove parent directories that only serve as containers (keep only deepest team roots)
+			{
+				const entries = Array.from(teamRootByName.entries());
+				for (const [nameA, rootA] of entries) {
+					for (const [, rootB] of entries) {
+						if (rootA !== rootB && rootB.startsWith(rootA + "/")) {
+							// If another team root is nested under this root, drop the parent/rootA
+							teamRootByName.delete(nameA);
+							break;
+						}
+					}
+				}
+			}
+
 			// Build detected teams with empty member maps
 			const detectedTeams = new Map<
 				string,
@@ -293,13 +307,41 @@ export default class AgileObsidianPlugin extends Plugin {
 				mergedMap.set(name, { rootPath: info.rootPath, members: new Map(info.members) });
 			}
 
-			// Fold in existing teams
+			// Fold in existing teams (but drop container parents without marker files)
+			const hasTeamMarkers = (name: string, rootPath: string): boolean => {
+				const a = `${name} Initiatives`;
+				const b = `${name} Priorities`;
+				const normalizedRoot = (rootPath || "").replace(/\/+$/g, "");
+				for (const f of files) {
+					if (
+						(f.basename === a || f.basename === b) &&
+						(f.path === normalizedRoot || f.path.startsWith(normalizedRoot + "/"))
+					) {
+						return true;
+					}
+				}
+				return false;
+			};
+
 			for (const t of existing) {
 				if (!mergedMap.has(t.name)) {
+					// If this existing team is simply a parent/container of any detected team
+					// and does NOT have its own marker files, exclude it.
+					const normalizedRoot = (t.rootPath || "").replace(/\/+$/g, "");
+					const isParentOfDetected = Array.from(mergedMap.values()).some(
+						(v) => v.rootPath !== normalizedRoot && v.rootPath.startsWith(normalizedRoot + "/")
+					);
+					if (isParentOfDetected && !hasTeamMarkers(t.name, normalizedRoot)) {
+						// Skip adding this container parent
+						continue;
+					}
+
 					// Preserve user-created teams not found by detection
 					const mm = new Map<string, { name: string; type: "member" | "external" | "team" }>();
 					// @ts-ignore backward compatibility
-					const existingMembers = (t as any).members as { alias: string; name: string; type?: "member" | "external" | "team" }[] | undefined;
+					const existingMembers = (t as any).members as
+						| { alias: string; name: string; type?: "member" | "external" | "team" }[]
+						| undefined;
 					if (existingMembers) {
 						for (const m of existingMembers) {
 							const lower = m.alias?.toLowerCase?.() ?? "";
