@@ -1,8 +1,9 @@
 import { ItemView, WorkspaceLeaf, TFile, TAbstractFile } from "obsidian";
 import { TaskIndex } from "../index/TaskIndex";
 import { TaskItem } from "../types/TaskItem";
-import { version, name } from "../utils/config/config";
+import manifest from "../../manifest.json";
 import { cleanupExpiredSnoozes } from "../utils/snooze/snoozeUtils";
+import { getCurrentUserDisplayName } from "../settings";
 
 // Section processors
 import { processAndRenderObjectives } from "./sections/ObjectivesProcessor";
@@ -55,7 +56,7 @@ export class AgileDashboardView extends ItemView {
 
 		const versionText = controlsContainer.createEl("p");
 		const strongText = versionText.createEl("strong");
-		strongText.textContent = `Agile Obsidian v${version}`;
+		strongText.textContent = `Agile Obsidian v${manifest.version}`;
 
 		this.viewSelect = controlsContainer.createEl("select", {
 			attr: { style: "margin-right: 10px;" },
@@ -289,7 +290,7 @@ export class AgileDashboardView extends ItemView {
 		const changedFiles = await cleanupExpiredSnoozes(
 			this.app,
 			currentTasks,
-			name
+			getCurrentUserDisplayName(this.plugin.settings)
 		);
 		if (changedFiles.size > 0) {
 			for (const path of changedFiles) {

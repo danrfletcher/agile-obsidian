@@ -1,10 +1,9 @@
 import { App, TFile } from "obsidian";
-import { name } from "../config/config";
 import { TaskItem } from "../../types/TaskItem";
 
 // Slug used in "active-<slug>" and snooze spans
-export function getTeamMemberSlug(): string | null {
-	const raw = name;
+export function getTeamMemberSlug(currentUserAlias: string | null | undefined): string | null {
+	const raw = currentUserAlias;
 	if (!raw || typeof raw !== "string") return null;
 	return raw.trim().toLowerCase().replace(/\s+/g, "-");
 }
