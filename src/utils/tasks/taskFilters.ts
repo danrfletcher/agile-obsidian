@@ -204,8 +204,8 @@ export const isSleeping = (
  * @param {boolean} active - Whether to check for active (true) or inactive (false) status.
  * @returns {boolean} True if it matches the criteria, false otherwise.
  */
-export const activeForMember = (task: TaskItem, active = true): boolean => {
-	const memberSlug = getUserAliasSlug();
+export const activeForMember = (task: TaskItem, active = true, selectedAlias?: string | null): boolean => {
+	const memberSlug = selectedAlias || getUserAliasSlug();
 	const activePattern = new RegExp(`active-${memberSlug}(?![\\w-])`, "i");
 	const inactivePattern = new RegExp(`inactive-${memberSlug}(?![\\w-])`, "i");
 

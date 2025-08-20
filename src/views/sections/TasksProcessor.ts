@@ -15,6 +15,7 @@ export function processAndRenderTasks(
 	container: HTMLElement,
 	currentTasks: TaskItem[],
 	status: boolean,
+	selectedAlias: string | null,
 	app: App,
 	taskMap: Map<string, TaskItem>,
 	childrenMap: Map<string, TaskItem[]>,
@@ -33,7 +34,7 @@ export function processAndRenderTasks(
 
 	// Filter for any task directly assigned to the user
 	const directlyAssigned = sectionTasks.filter(
-		(task) => activeForMember(task, status) && isTask(task)
+		(task) => activeForMember(task, status, selectedAlias) && isTask(task)
 	);
 
 	// Build pruned merged trees from the filtered tasks

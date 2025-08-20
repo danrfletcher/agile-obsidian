@@ -15,6 +15,7 @@ export function processAndRenderInitiatives(
 	container: HTMLElement,
 	currentTasks: TaskItem[],
 	status: boolean,
+	selectedAlias: string | null,
 	app: App,
 	taskMap: Map<string, TaskItem>,
 	childrenMap: Map<string, TaskItem[]>,
@@ -33,7 +34,8 @@ export function processAndRenderInitiatives(
 
 	// Filter for any task directly assigned to the user and that is an Initiative
 	const directlyAssigned = sectionTasks.filter(
-		(task) => activeForMember(task, status) && isInitiative(task)
+		(task) =>
+			activeForMember(task, status, selectedAlias) && isInitiative(task)
 	);
 
 	// Simple callback: Keep child if status !== "I"

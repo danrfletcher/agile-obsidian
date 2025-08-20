@@ -4,6 +4,8 @@ import { renderTaskTree } from "../../components/TaskRenderer"; // Adjust path
 import {
 	activeForMember,
 	isCancelled,
+	isInProgress,
+	isMarkedCompleted,
 	isSleeping,
 } from "../../utils/tasks/taskFilters"; // Adjust path (added name)
 import {
@@ -12,23 +14,22 @@ import {
 	isLearningEpic,
 } from "../../utils/tasks/taskTypes"; // Adjust path
 import { isRelevantToday } from "../../utils/dates/dateUtils";
-import { getTeamMemberSlug } from "../../utils/snooze/snooze";
 import { stripListItems } from "../../utils/hierarchy/hierarchyUtils";
 
-function escapeRegex(str: string): string {
-	return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 export function processAndRenderPriorities(
 	container: HTMLElement,
 	currentTasks: TaskItem[],
 	status: boolean,
+	selectedAlias: string | null,
 	app: App,
 	taskMap: Map<string, TaskItem>,
 	childrenMap: Map<string, TaskItem[]>,
 	taskParams: TaskParams
 ) {
-	const userSlug = getTeamMemberSlug();
+	// Filter for task params
+	const { inProgress, completed, sleeping, cancelled } = taskParams;
+
 	// Priorities logic (extracted)
 	const buildPriorityTree = (
 		task: TaskItem,
@@ -59,7 +60,7 @@ export function processAndRenderPriorities(
 		}
 
 		const hasAllowed = hasAllowedMarker || hasAllowedStatus;
-		const assignedToMe = activeForMember(task);
+		const assignedToMe = activeForMember(task, status, selectedAlias);
 		if (!hasAllowed && children.length === 0 && !assignedToMe) {
 			return null;
 		}
@@ -91,17 +92,8 @@ export function processAndRenderPriorities(
 		node: TaskItem,
 		inherited = false
 	): TaskItem | null => {
-		// If no user slug, don't filter by assignment
-		const assignedToMe = userSlug
-			? new RegExp(`\\bactive-${escapeRegex(userSlug)}\\b`, "i").test(
-					node.text
-			) &&
-				!new RegExp(`\\binactive-${escapeRegex(userSlug)}\\b`, "i").test(
-					node.text
-			)
-			: true;
-
-		const isInherited = inherited || assignedToMe;
+		const assignedToSelected = activeForMember(node, status, selectedAlias);
+		const isInherited = inherited || assignedToSelected;
 		const children = (node.children || [])
 			.map((child: TaskItem) => prunePriorities(child, isInherited)) // Typed parameter
 			.filter((c): c is TaskItem => c !== null);
@@ -115,25 +107,28 @@ export function processAndRenderPriorities(
 		.map((tree: TaskItem) => prunePriorities(tree)) // Typed parameter
 		.filter((tree): tree is TaskItem => tree !== null) // Type guard
 		.filter((tree: TaskItem) => {
-			if (!userSlug) return true;
-			const isMe =
-				new RegExp(`\\bactive-${escapeRegex(userSlug)}\\b`, "i").test(
-					tree.text
-				) &&
-				!new RegExp(
-					`\\binactive-${escapeRegex(userSlug)}\\b`,
-					"i"
-				).test(tree.text);
-			return isMe || (tree.children?.length ?? 0) > 0; // Safe default
+			if (!selectedAlias) return true;
+			const isSelected = activeForMember(tree, status, selectedAlias);
+			return isSelected || (tree.children?.length ?? 0) > 0; // Safe default
 		});
 
 	const strippedPriorityTasks = stripListItems(priorityTasks);
 
+	const filteredPriorityTasks = strippedPriorityTasks.filter((task) => {
+		return (
+			(inProgress && isInProgress(task, taskMap)) ||
+			(completed && isMarkedCompleted(task)) ||
+			(sleeping && isSleeping(task, taskMap)) ||
+			(cancelled && isCancelled(task))
+		);
+	});
+
 	// Render
-	if (strippedPriorityTasks.length > 0) {
+	// TO DO: enable inactive priorities in inactive project view ⚓ ^365034
+	if (filteredPriorityTasks.length > 0 && status) {
 		container.createEl("h2", { text: "📂 Priorities" });
 		renderTaskTree(
-			strippedPriorityTasks,
+			filteredPriorityTasks,
 			container,
 			app,
 			0,

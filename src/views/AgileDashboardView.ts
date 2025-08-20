@@ -19,7 +19,9 @@ export const VIEW_TYPE_AGILE_DASHBOARD = "agile-dashboard-view";
 export class AgileDashboardView extends ItemView {
 	private taskIndex: TaskIndex;
 	private viewSelect: HTMLSelectElement;
-	private projectStatusSelect: HTMLSelectElement;
+	private activeToggle: HTMLInputElement;
+	private activeToggleLabel: HTMLSpanElement;
+	private memberSelect: HTMLSelectElement;
 	private plugin: AgileObsidianPlugin; // New: Store the plugin instance for settings access
 	private suppressedFiles = new Set<string>();
 
@@ -60,25 +62,89 @@ export class AgileDashboardView extends ItemView {
 		});
 		this.viewSelect.innerHTML = `
       <option value="projects">🚀 Projects</option>
-      <option value="deadlines">❗ Deadlines</option>
       <option value="completed">✅ Completed</option>
     `;
 
-		this.projectStatusSelect = controlsContainer.createEl("select");
-		this.projectStatusSelect.innerHTML = `
-      <option value="active">Active</option>
-      <option value="inactive">Inactive</option>
-    `;
-		this.projectStatusSelect.style.display =
-			this.viewSelect.value === "projects" ? "inline-block" : "none";
+		// Active/Inactive toggle:
+		// - When checked (true), the view is "Active".
+		// - When unchecked (false), the view is "Inactive".
+		// The label below reflects the current state, and the boolean is later passed to projectView as `status`.
+		const statusToggleContainer = controlsContainer.createEl("span", {
+			attr: { style: "display: inline-flex; align-items: center; gap: 6px;" },
+		});
+		this.activeToggleLabel = statusToggleContainer.createEl("span", { text: "Active" });
+		this.activeToggle = statusToggleContainer.createEl("input", { type: "checkbox" }) as HTMLInputElement;
+		this.activeToggle.checked = true;
+		statusToggleContainer.style.display =
+			this.viewSelect.value === "projects" ? "inline-flex" : "none";
 
-		this.viewSelect.addEventListener("change", () => {
-			this.projectStatusSelect.style.display =
-				this.viewSelect.value === "projects" ? "inline-block" : "none";
+		this.activeToggle.addEventListener("change", () => {
+			this.activeToggleLabel.textContent = this.activeToggle.checked ? "Active" : "Inactive";
 			this.updateView();
 		});
 
-		this.projectStatusSelect.addEventListener("change", () => {
+		this.viewSelect.addEventListener("change", () => {
+			statusToggleContainer.style.display =
+				this.viewSelect.value === "projects" ? "inline-flex" : "none";
+			this.updateView();
+		});
+
+		// Member dropdown
+		this.memberSelect = controlsContainer.createEl("select");
+
+		const populateMemberSelect = () => {
+			this.memberSelect.innerHTML = "";
+
+			type Entry = { alias: string; name: string; role: string; rank: number; label: string };
+			const entries: Entry[] = [];
+			const teams = this.plugin.settings.teams || [];
+			const seen = new Set<string>();
+			for (const t of teams) {
+				for (const m of (t.members || [])) {
+					const alias = (m.alias || "").trim();
+					const dispName = m.name || alias;
+					if (!alias) continue;
+					if (seen.has(alias)) continue; // de-duplicate members across teams by alias
+					seen.add(alias);
+					const lower = alias.toLowerCase();
+					let role = m.type || "member";
+					if (lower.endsWith("-ext")) role = "external";
+					else if (lower.endsWith("-team")) role = "team";
+					else if (lower.endsWith("-int")) role = "internal-team-member";
+					const rank = role === "member" ? 0 : role === "internal-team-member" ? 1 : role === "team" ? 2 : 3;
+					const roleLabel =
+						role === "member"
+							? "Team Member"
+							: role === "internal-team-member"
+							? "Internal Team Member"
+							: role === "team"
+							? "Internal Team"
+							: "External Delegate";
+					const label = `${dispName} (${roleLabel} - ${alias})`;
+					entries.push({ alias, name: dispName, role, rank, label });
+				}
+			}
+
+			entries.sort((a, b) => (a.rank - b.rank) || a.name.localeCompare(b.name));
+
+			for (const e of entries) {
+				const opt = document.createElement("option");
+				opt.value = e.alias;
+				opt.text = e.label;
+				this.memberSelect.appendChild(opt);
+			}
+
+			const def = this.plugin.settings.currentUserAlias || "";
+			if (def && entries.some((e) => e.alias === def)) {
+				this.memberSelect.value = def;
+			} else if (entries.length > 0) {
+				this.memberSelect.value = entries[0].alias;
+			}
+		};
+
+		populateMemberSelect();
+
+		this.memberSelect.addEventListener("change", () => {
 			this.updateView();
 		});
 
@@ -86,6 +152,16 @@ export class AgileDashboardView extends ItemView {
 		this.registerEvent(
 			// @ts-ignore - Suppress type error for custom event (Obsidian typings don't support arbitrary events)
 			this.app.workspace.on("agile-settings-changed", () => {
+				if (this.memberSelect) {
+					const prev = this.memberSelect.value;
+					// Repopulate member dropdown and preserve selection if possible
+					// populateMemberSelect is defined above in onOpen scope
+					// @ts-ignore - using function from closure
+					(typeof populateMemberSelect === "function") && (populateMemberSelect as any)();
+					if (prev && Array.from(this.memberSelect.options).some((o) => o.value === prev)) {
+						this.memberSelect.value = prev;
+					}
+				}
 				this.updateView(); // Force re-render with new settings
 			})
 		);
@@ -181,15 +257,12 @@ export class AgileDashboardView extends ItemView {
 		contentContainer.empty(); // Clear previous content (keep controls)
 
 		const selectedView = this.viewSelect.value;
-		const isActive = this.projectStatusSelect.value === "active";
+		// isActive is true when the checkbox is checked ("Active"), false when unchecked ("Inactive").
+		const isActive = this.activeToggle ? this.activeToggle.checked : true;
+		const selectedAlias = this.memberSelect?.value || this.plugin.settings.currentUserAlias || null;
 
 		if (selectedView === "projects") {
-			await this.projectView(contentContainer, isActive);
-		} else if (selectedView === "deadlines") {
-			// Placeholder for deadlineView
-			contentContainer.createEl("h2", {
-				text: "❗ Deadlines (Coming Soon)",
-			});
+			await this.projectView(contentContainer, isActive, selectedAlias);
 		} else if (selectedView === "completed") {
 			// Placeholder for completedView
 			contentContainer.createEl("h2", {
@@ -202,7 +275,13 @@ export class AgileDashboardView extends ItemView {
 		contentContainer.scrollTop = prevContentScrollTop;
 	}
 
-	private async projectView(container: HTMLElement, status = true) {
+	/**
+	 * Render the Projects view.
+	 * @param container Target element to render into.
+	 * @param status When true => "Active" mode; when false => "Inactive" mode.
+	 * @param selectedAlias Alias whose items to emphasize/filter; null means current user or all.
+	 */
+	private async projectView(container: HTMLElement, status = true, selectedAlias: string | null = null) {
 		// Get all tasks from index
 		let currentTasks = this.taskIndex.getAllTasks();
 
@@ -252,6 +331,7 @@ export class AgileDashboardView extends ItemView {
 				container,
 				currentTasks,
 				status,
+				selectedAlias,
 				this.app,
 				taskMap,
 				childrenMap,
@@ -263,6 +343,7 @@ export class AgileDashboardView extends ItemView {
 				container,
 				currentTasks,
 				status,
+				selectedAlias,
 				this.app,
 				taskMap,
 				childrenMap,
@@ -274,6 +355,7 @@ export class AgileDashboardView extends ItemView {
 				container,
 				currentTasks,
 				status,
+				selectedAlias,
 				this.app,
 				taskMap,
 				childrenMap,
@@ -285,6 +367,7 @@ export class AgileDashboardView extends ItemView {
 				container,
 				currentTasks,
 				status,
+				selectedAlias,
 				this.app,
 				taskMap,
 				childrenMap,
@@ -296,6 +379,7 @@ export class AgileDashboardView extends ItemView {
 				container,
 				currentTasks,
 				status,
+				selectedAlias,
 				this.app,
 				taskMap,
 				childrenMap,
@@ -307,6 +391,7 @@ export class AgileDashboardView extends ItemView {
 				container,
 				currentTasks,
 				status,
+				selectedAlias,
 				this.app,
 				taskMap,
 				childrenMap,
@@ -318,6 +403,7 @@ export class AgileDashboardView extends ItemView {
 				container,
 				currentTasks,
 				status,
+				selectedAlias,
 				this.app,
 				taskMap,
 				childrenMap,

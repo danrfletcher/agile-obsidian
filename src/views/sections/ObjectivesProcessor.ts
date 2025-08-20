@@ -15,6 +15,7 @@ export function processAndRenderObjectives(
 	container: HTMLElement,
 	currentTasks: TaskItem[],
 	status: boolean,
+	selectedAlias: string | null,
 	app: App,
 	taskMap: Map<string, TaskItem>,
 	childrenMap: Map<string, TaskItem[]>,
@@ -33,7 +34,7 @@ export function processAndRenderObjectives(
 
 	// Fetch OKRs for current user
 	const assignedOKRs = sectionTasks.filter(
-		(task) => isOKR(task) && activeForMember(task, status)
+		(task) => isOKR(task) && activeForMember(task, status, selectedAlias)
 	);
 	const assignedOKRSet = new Set(assignedOKRs.map((t) => t._uniqueId ?? "")); // Guarded
 
@@ -152,7 +153,8 @@ export function processAndRenderObjectives(
 		);
 
 	// Render if there are tasks (with header)
-	if (prunedOKRs.length > 0) {
+	// TO DO: limit number of OKRs displayed per person to 1: all other OKRs are considered future OKRs & are inactive - displayed when status (active/inactive toggle is inactive/false) ⚓ ^efa4fb
+	if (prunedOKRs.length > 0 && status) {
 		container.createEl("h2", { text: "🎯 Objectives" });
 
 		prunedOKRs.forEach(({ okr, linkedTrees }) => {

@@ -7,6 +7,8 @@ import {
 	activeForMember,
 	isSleeping,
 	isCancelled,
+	isInProgress,
+	isMarkedCompleted,
 } from "src/utils/tasks/taskFilters"; // Adjust path
 import {
 	getTopAncestor,
@@ -25,6 +27,7 @@ export function processAndRenderResponsibilities(
 	container: HTMLElement,
 	currentTasks: TaskItem[],
 	status: boolean,
+	selectedAlias: string | null,
 	app: App,
 	taskMap: Map<string, TaskItem>,
 	childrenMap: Map<string, TaskItem[]>,
@@ -32,9 +35,11 @@ export function processAndRenderResponsibilities(
 ) {
 	// Responsibilities logic (extracted)
 	// Avoid unused parameter errors in strict TS configs
-	void status;
 	void childrenMap;
-	void taskParams;
+
+	// Filter for task params
+	const { inProgress, completed, sleeping, cancelled } = taskParams;
+
 	const isAssignedToMemberIncludingInferred = (task: TaskItem) => {
 		if (isAssignedToMemberOrTeam(task)) return true;
 		let cur: TaskItem | undefined = task;
@@ -44,7 +49,7 @@ export function processAndRenderResponsibilities(
 			cur = taskMap.get(parentId);
 			if (!cur) return false;
 			if (isAssignedToAnyUser(cur)) {
-				return activeForMember(cur);
+				return activeForMember(cur, status, selectedAlias);
 			}
 		}
 		return false;
@@ -214,11 +219,23 @@ export function processAndRenderResponsibilities(
 
 	const responsibilityTasks = Array.from(responsibilityTreesMap.values());
 
+	const responsibilityTasksParamFilter = responsibilityTasks.filter(
+		(task) => {
+			return (
+				(inProgress && isInProgress(task, taskMap)) ||
+				(completed && isMarkedCompleted(task)) ||
+				(sleeping && isSleeping(task, taskMap)) ||
+				(cancelled && isCancelled(task))
+			);
+		}
+	);
+
 	// Render
-	if (responsibilityTasks.length > 0) {
+	// TO DO: Enable inactive responsibilities in inactive project view ⚓ ^369d2d
+	if (responsibilityTasksParamFilter.length > 0 && status) {
 		container.createEl("h2", { text: "🧹 Responsibilities" });
 		renderTaskTree(
-			responsibilityTasks,
+			responsibilityTasksParamFilter,
 			container,
 			app,
 			0,
