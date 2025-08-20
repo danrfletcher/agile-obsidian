@@ -1,10 +1,10 @@
-import { App, PluginSettingTab, Setting, TFile, TFolder, Modal, Notice } from "obsidian";
+import { App, PluginSettingTab, Setting, TFolder, Modal, Notice } from "obsidian";
 import AgileObsidian from "./main";
 
 export interface MemberInfo {
 	alias: string;
 	name: string;
-	type?: "member" | "external" | "team";
+	type?: "member" | "external" | "team" | "internal-team-member";
 }
 
 class AddMemberModal extends Modal {
@@ -91,7 +91,7 @@ class AddMemberModal extends Modal {
 
 		// Member name input
 		const nameWrapper = contentEl.createEl("div", { attr: { style: "margin-bottom: 12px;" } });
-		const nameLabel = nameWrapper.createEl("label", { text: "Member name", attr: { style: "display:block; margin-bottom:4px;" } });
+		nameWrapper.createEl("label", { text: "Member name", attr: { style: "display:block; margin-bottom:4px;" } });
 		const nameInput = nameWrapper.createEl("input", {
 			type: "text",
 			attr: { placeholder: "e.g., Dan Fletcher", style: "width: 100%;" },
@@ -99,7 +99,7 @@ class AddMemberModal extends Modal {
 
 		// Internal team select (hidden by default)
 		const teamWrapper = contentEl.createEl("div", { attr: { style: "margin-bottom: 12px; display: none;" } });
-		const teamLabel = teamWrapper.createEl("label", { text: "Select team", attr: { style: "display:block; margin-bottom:4px;" } });
+		teamWrapper.createEl("label", { text: "Select team", attr: { style: "display:block; margin-bottom:4px;" } });
 		const teamSelect = teamWrapper.createEl("select", { attr: { style: "width: 100%;" } }) as HTMLSelectElement;
 		for (const tn of this.allTeams) {
 			const opt = document.createElement("option");
@@ -110,7 +110,7 @@ class AddMemberModal extends Modal {
 
 		// Existing member select (hidden by default)
 		const existingWrapper = contentEl.createEl("div", { attr: { style: "margin-bottom: 12px; display: none;" } });
-		const existingLabel = existingWrapper.createEl("label", { text: "Select existing member", attr: { style: "display:block; margin-bottom:4px;" } });
+		existingWrapper.createEl("label", { text: "Select existing member", attr: { style: "display:block; margin-bottom:4px;" } });
 		const existingSelect = existingWrapper.createEl("select", { attr: { style: "width: 100%;" } }) as HTMLSelectElement;
 		for (const m of this.existingMembers || []) {
 			const opt = document.createElement("option");
@@ -121,7 +121,7 @@ class AddMemberModal extends Modal {
 
 		// Existing member role select (hidden by default)
 		const roleWrapper = contentEl.createEl("div", { attr: { style: "margin-bottom: 12px; display: none;" } });
-		const roleLabel = roleWrapper.createEl("label", { text: "Existing member role", attr: { style: "display:block; margin-bottom:4px;" } });
+		roleWrapper.createEl("label", { text: "Existing member role", attr: { style: "display:block; margin-bottom:4px;" } });
 		const roleSelect = roleWrapper.createEl("select", { attr: { style: "width: 100%;" } }) as HTMLSelectElement;
 		const roleMember = document.createElement("option");
 		roleMember.value = "member";
@@ -137,7 +137,7 @@ class AddMemberModal extends Modal {
 		const aliasPreview = contentEl.createEl("div", {
 			attr: { style: "margin-top: 8px; color: var(--text-muted);" },
 		});
-		const aliasLabel = aliasPreview.createEl("div", { text: "Alias (auto-generated):" });
+		aliasPreview.createEl("div", { text: "Alias (auto-generated):" });
 		const aliasValue = aliasPreview.createEl("code", { text: "" });
 
 		const updateAlias = () => {
@@ -474,7 +474,7 @@ export class AgileSettingTab extends PluginSettingTab {
 							if (alias.endsWith("-ext")) return "external";
 							if (alias.endsWith("-team")) return "team";
 							if (alias.endsWith("-int")) return "internal-team-member";
-							return (m as any).type ?? "member";
+							return m.type ?? "member";
 						};
 						const rank = (t: string) =>
 							t === "member" ? 0 : t === "internal-team-member" ? 1 : t === "team" ? 2 : 3;
@@ -502,7 +502,7 @@ export class AgileSettingTab extends PluginSettingTab {
 								? "team"
 								: alias.endsWith("-int")
 								? "internal-team-member"
-								: ((m as any).type ?? "member");
+								: (m.type ?? "member");
 						const typeLabel =
 							type === "external"
 								? "External Delegate"
@@ -562,7 +562,7 @@ export class AgileSettingTab extends PluginSettingTab {
 						for (const m of tt.members ?? []) {
 							const lower = (m.alias ?? "").toLowerCase();
 							const inferredType =
-								(m as any).type ??
+								m.type ??
 								(lower.endsWith("-ext") ? "external" : lower.endsWith("-team") ? "team" : "member");
 							if (inferredType !== "member") continue; // Exclude internal teams and external delegates
 							if (!uniq.has(m.alias)) {
@@ -598,7 +598,7 @@ export class AgileSettingTab extends PluginSettingTab {
 									if (alias.endsWith("-ext")) return "external";
 									if (alias.endsWith("-team")) return "team";
 									if (alias.endsWith("-int")) return "internal-team-member";
-									return (m as any).type ?? "member";
+									return m.type ?? "member";
 								};
 								const rank = (t: string) =>
 									t === "member" ? 0 : t === "internal-team-member" ? 1 : t === "team" ? 2 : 3;
