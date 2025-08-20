@@ -613,7 +613,16 @@ export default class AgileObsidianPlugin extends Plugin {
 				if (!team || team.name !== teamName) return false;
 
 				// Show the command whenever we're in a note for this team
-				if (checking) return true;
+				if (checking) {
+					// If we're looking at a task assigned to Everyone ("team"), hide delegation commands
+					const pos = editor.getCursor();
+					const line = editor.getLine(pos.line);
+					if (this.isUncheckedTaskLineLoose(line)) {
+						const alias = this.getExplicitAssigneeAliasFromText(line);
+						if ((alias || "").toLowerCase() === "team") return false;
+					}
+					return true;
+				}
 
 				const pos = editor.getCursor();
 				const line = editor.getLine(pos.line);
@@ -773,6 +782,17 @@ export default class AgileObsidianPlugin extends Plugin {
 												this.buildAssigneeMarkForAlias(a, v, t),
 										}
 									);
+									// Also remove any delegation mark when clearing assignee
+									const afterLine = editor.getLine(lineNo);
+									let cleaned = normalizeTaskLine(afterLine, { newDelegateMark: null });
+									if (/<\/mark>\s*$/.test(cleaned)) cleaned = cleaned.replace(/\s*$/, " ");
+									if (cleaned !== afterLine) {
+										editor.replaceRange(
+											cleaned,
+											{ line: lineNo, ch: 0 },
+											{ line: lineNo, ch: afterLine.length }
+										);
+									}
 								} finally {
 									// Restore cursor exactly
 									editor.setCursor(savedCursor);
