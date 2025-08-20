@@ -1,6 +1,7 @@
 import { App } from "obsidian";
 import { TaskItem } from "../types/TaskItem";
-import { snoozeTask, getTeamMemberSlug } from "../utils/snooze/snooze";
+import { snoozeTask } from "../utils/snooze/snooze";
+import { getTeamMemberSlug } from "../utils/tasks/taskFilters";
 
 // Check if task text indicates it's assigned to the current user
 function isAssignedToUser(text: string, userSlug: string) {
