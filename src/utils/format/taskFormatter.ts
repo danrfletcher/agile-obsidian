@@ -88,7 +88,16 @@ export function normalizeTaskLine(line: string, opts: NormalizeOptions = {}): st
 			out += dateTokens.join(" ");
 		}
 
-		return out.replace(/\s+$/g, "");
+		// If the normalized line ends with a </mark>, ensure exactly one trailing space
+		// so Live Preview doesn't open the HTML block when clicking at line end.
+		if (/<\/mark>\s*$/i.test(out)) {
+			out = out.replace(/\s*$/, " ");
+		} else {
+			// Otherwise, trim trailing whitespace.
+			out = out.replace(/\s+$/g, "");
+		}
+
+		return out;
 	} catch {
 		return line;
 	}

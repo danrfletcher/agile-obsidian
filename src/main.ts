@@ -101,6 +101,16 @@ export default class AgileObsidianPlugin extends Plugin {
 		}
 	}
 
+	// Looser unchecked-task detection that accepts missing space after the bracket and multiple spaces inside.
+	private isUncheckedTaskLineLoose(line: string): boolean {
+		try {
+			// unchecked if brackets contain only whitespace (including empty), and starts with "- [ ]"
+			return /^\s*-\s\[\s*\]/.test(line);
+		} catch {
+			return false;
+		}
+	}
+
 	// Build an assignee <mark> HTML for an alias.
 	private buildAssigneeMarkForAlias(alias: string, variant: "active" | "inactive", team: any): string {
 		const lower = (alias || "").toLowerCase();
@@ -469,14 +479,39 @@ export default class AgileObsidianPlugin extends Plugin {
 				const team = resolveTeamForPath(filePath, (this.settings as any)?.teams ?? []);
 				if (!team || team.name !== teamName) return false;
 
-				const pos = editor.getCursor();
-				const line = editor.getLine(pos.line);
-				if (!isUncheckedTaskLine(line)) return false;
-
+				// Show the command whenever we're in a note for this team
 				if (checking) return true;
 
+				// Only execute when the cursor is on an unchecked task line
+				const pos = editor.getCursor();
+				const line = editor.getLine(pos.line);
+				if (!this.isUncheckedTaskLineLoose(line)) return false;
+
 				const oldAlias = this.getExplicitAssigneeAliasFromText(line);
-				this.applyAssigneeChangeWithCascade(filePath, editor, pos.line, oldAlias, memberAlias, variant, team);
+				void import("./assignees/assignmentCascade").then(async ({ applyAssigneeChangeWithCascade }) => {
+					try {
+						await applyAssigneeChangeWithCascade(
+							filePath,
+							editor,
+							pos.line,
+							oldAlias,
+							memberAlias,
+							variant,
+							team,
+							{
+								app: this.app,
+								taskIndex: this.taskIndex,
+								normalizeTaskLine,
+								isUncheckedTaskLine: (l: string) => this.isUncheckedTaskLineLoose(l),
+								getExplicitAssigneeAliasFromText: (l: string) => this.getExplicitAssigneeAliasFromText(l),
+								buildAssigneeMarkForAlias: (a: string, v: "active" | "inactive", t: any) =>
+									this.buildAssigneeMarkForAlias(a, v, t),
+							}
+						);
+					} catch (e) {
+						void e;
+					}
+				});
 
 				return true;
 			},
@@ -502,15 +537,40 @@ export default class AgileObsidianPlugin extends Plugin {
 				const team = resolveTeamForPath(filePath, (this.settings as any)?.teams ?? []);
 				if (!team || team.name !== teamName) return false;
 
+				// Show the command whenever we're in a note for this team
+				if (checking) return true;
+
+				// Only execute when the cursor is on an unchecked task line
 				const pos = editor.getCursor();
 				const line = editor.getLine(pos.line);
-				if (!isUncheckedTaskLine(line)) return false;
-
-				if (checking) return true;
+				if (!this.isUncheckedTaskLineLoose(line)) return false;
 
 				const oldAlias = this.getExplicitAssigneeAliasFromText(line);
 				// Everyone alias is exactly "team"
-				this.applyAssigneeChangeWithCascade(filePath, editor, pos.line, oldAlias, "team", variant, team);
+				void import("./assignees/assignmentCascade").then(async ({ applyAssigneeChangeWithCascade }) => {
+					try {
+						await applyAssigneeChangeWithCascade(
+							filePath,
+							editor,
+							pos.line,
+							oldAlias,
+							"team",
+							variant,
+							team,
+							{
+								app: this.app,
+								taskIndex: this.taskIndex,
+								normalizeTaskLine,
+								isUncheckedTaskLine: (l: string) => this.isUncheckedTaskLineLoose(l),
+								getExplicitAssigneeAliasFromText: (l: string) => this.getExplicitAssigneeAliasFromText(l),
+								buildAssigneeMarkForAlias: (a: string, v: "active" | "inactive", t: any) =>
+									this.buildAssigneeMarkForAlias(a, v, t),
+							}
+						);
+					} catch (e) {
+						void e;
+					}
+				});
 
 				return true;
 			},
@@ -552,14 +612,16 @@ export default class AgileObsidianPlugin extends Plugin {
 				const team = resolveTeamForPath(filePath, (this.settings as any)?.teams ?? []);
 				if (!team || team.name !== teamName) return false;
 
+				// Show the command whenever we're in a note for this team
+				if (checking) return true;
+
 				const pos = editor.getCursor();
 				const line = editor.getLine(pos.line);
-				if (!isUncheckedTaskLine(line)) return false;
+				// Only execute when the cursor is on an unchecked task line
+				if (!this.isUncheckedTaskLineLoose(line)) return false;
 
 				// Only after an assignment to a team member exists
 				if (!hasAnyTeamMemberAssignment(line, team)) return false;
-
-				if (checking) return true;
 
 				let updated = normalizeTaskLine(line, { newDelegateMark: newDelegateMark });
 				// If we just added a delegate and the line ends with the <mark>, add a trailing space
@@ -691,9 +753,31 @@ export default class AgileObsidianPlugin extends Plugin {
 						i.onClick(() => {
 							const before = editor.getLine(lineNo);
 							const oldAlias = this.getExplicitAssigneeAliasFromText(before);
-							this.applyAssigneeChangeWithCascade(filePath, editor, lineNo, oldAlias, null, "active", team);
-							// Restore cursor exactly
-							editor.setCursor(savedCursor);
+							void import("./assignees/assignmentCascade").then(async ({ applyAssigneeChangeWithCascade }) => {
+								try {
+									await applyAssigneeChangeWithCascade(
+										filePath,
+										editor,
+										lineNo,
+										oldAlias,
+										null,
+										"active",
+										team,
+										{
+											app: this.app,
+											taskIndex: this.taskIndex,
+											normalizeTaskLine,
+											isUncheckedTaskLine: (l: string) => this.isUncheckedTaskLineLoose(l),
+											getExplicitAssigneeAliasFromText: (l: string) => this.getExplicitAssigneeAliasFromText(l),
+											buildAssigneeMarkForAlias: (a: string, v: "active" | "inactive", t: any) =>
+												this.buildAssigneeMarkForAlias(a, v, t),
+										}
+									);
+								} finally {
+									// Restore cursor exactly
+									editor.setCursor(savedCursor);
+								}
+							});
 						});
 					});
 
@@ -704,8 +788,30 @@ export default class AgileObsidianPlugin extends Plugin {
 							i.onClick(() => {
 								const before = editor.getLine(lineNo);
 								const oldAlias = this.getExplicitAssigneeAliasFromText(before);
-								this.applyAssigneeChangeWithCascade(filePath, editor, lineNo, oldAlias, "team", v, team);
-								editor.setCursor(savedCursor);
+								void import("./assignees/assignmentCascade").then(async ({ applyAssigneeChangeWithCascade }) => {
+									try {
+										await applyAssigneeChangeWithCascade(
+											filePath,
+											editor,
+											lineNo,
+											oldAlias,
+											"team",
+											v,
+											team,
+											{
+												app: this.app,
+												taskIndex: this.taskIndex,
+												normalizeTaskLine,
+												isUncheckedTaskLine: (l: string) => this.isUncheckedTaskLineLoose(l),
+												getExplicitAssigneeAliasFromText: (l: string) => this.getExplicitAssigneeAliasFromText(l),
+												buildAssigneeMarkForAlias: (a: string, vv: "active" | "inactive", t: any) =>
+													this.buildAssigneeMarkForAlias(a, vv, t),
+											}
+										);
+									} finally {
+										editor.setCursor(savedCursor);
+									}
+								});
 							});
 						});
 					};
@@ -728,8 +834,30 @@ export default class AgileObsidianPlugin extends Plugin {
 							i.onClick(() => {
 								const before = editor.getLine(lineNo);
 								const oldAlias = this.getExplicitAssigneeAliasFromText(before);
-								this.applyAssigneeChangeWithCascade(filePath, editor, lineNo, oldAlias, mem.alias, v, team);
-								editor.setCursor(savedCursor);
+								void import("./assignees/assignmentCascade").then(async ({ applyAssigneeChangeWithCascade }) => {
+									try {
+										await applyAssigneeChangeWithCascade(
+											filePath,
+											editor,
+											lineNo,
+											oldAlias,
+											mem.alias,
+											v,
+											team,
+											{
+												app: this.app,
+												taskIndex: this.taskIndex,
+												normalizeTaskLine,
+												isUncheckedTaskLine: (l: string) => this.isUncheckedTaskLineLoose(l),
+												getExplicitAssigneeAliasFromText: (l: string) => this.getExplicitAssigneeAliasFromText(l),
+												buildAssigneeMarkForAlias: (a: string, vv: "active" | "inactive", t: any) =>
+													this.buildAssigneeMarkForAlias(a, vv, t),
+											}
+										);
+									} finally {
+										editor.setCursor(savedCursor);
+									}
+								});
 							});
 						});
 					};
