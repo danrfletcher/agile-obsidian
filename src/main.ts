@@ -908,10 +908,8 @@ export default class AgileObsidianPlugin extends Plugin {
 		);
 
 		// Capture content snapshot before optimistic external edits (e.g., from dashboard)
-		this.registerDomEvent(
-			window as unknown as EventTarget,
-			"agile:prepare-optimistic-file-change",
-			async (ev: Event) => {
+		{
+			const handler = async (ev: Event) => {
 				try {
 					const ce = ev as CustomEvent<any>;
 					const filePath = ce?.detail?.filePath as string;
@@ -926,14 +924,16 @@ export default class AgileObsidianPlugin extends Plugin {
 				} catch (err) {
 					void err;
 				}
-			}
-		);
+			};
+			window.addEventListener("agile:prepare-optimistic-file-change", handler as EventListener);
+			this.register(() => {
+				window.removeEventListener("agile:prepare-optimistic-file-change", handler as EventListener);
+			});
+		}
 
 		// After an external assignment completes, cascade explicit/redundant marks across descendants
-		this.registerDomEvent(
-			window as unknown as EventTarget,
-			"agile:assignment-changed",
-			async (ev: Event) => {
+		{
+			const handler = async (ev: Event) => {
 				try {
 					const ce = ev as CustomEvent<any>;
 					const detail = (ce && (ce as any).detail) || {};
@@ -956,8 +956,12 @@ export default class AgileObsidianPlugin extends Plugin {
 				} catch (err) {
 					void err;
 				}
-			}
-		);
+			};
+			window.addEventListener("agile:assignment-changed", handler as EventListener);
+			this.register(() => {
+				window.removeEventListener("agile:assignment-changed", handler as EventListener);
+			});
+		}
 
 		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
 		this.registerInterval(

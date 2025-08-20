@@ -55,9 +55,9 @@ function getAncestorsChain(
 	parentId: Map<string, string | null>
 ): string[] {
 	const chain: string[] = [];
-	let cur: string | null | undefined = targetId;
+	let cur: string | null = targetId;
 	while (cur) {
-		const p = parentId.get(cur) ?? null;
+		const p: string | null = parentId.get(cur) ?? null;
 		if (p) chain.push(p);
 		cur = p;
 	}
@@ -148,7 +148,7 @@ export async function updateAssigneeAndPropagate(
 		const { byId, parentId } = buildIdMaps(items);
 
 		// Find target by line or uid
-		let target =
+		const target =
 			items.find((it) => (it.line ?? -1) === lineNo) ||
 			(byId.get(uid) as TaskItem | undefined);
 		if (!target) return;
