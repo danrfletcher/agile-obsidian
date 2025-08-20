@@ -1,8 +1,61 @@
 import { TaskItem } from "src/types/TaskItem";
-import { name } from "../config/config";
+import {
+	getCurrentUserAlias,
+	type AgileObsidianSettings,
+} from "../../settings";
 
-export const fullName = name || "Default Name"; // Replace with dynamic if needed (e.g., from settings)
-export const teamMemberName = fullName.toLowerCase().split(" ").join("-");
+function getAlias(): string {
+	try {
+		const app = (window as any).app;
+		const pluginMgr = app?.plugins;
+		const viaGet =
+			typeof pluginMgr?.getPlugin === "function"
+				? pluginMgr.getPlugin("agile-obsidian")
+				: undefined;
+		const viaDict = pluginMgr?.plugins?.["agile-obsidian"];
+		const plugin = viaGet ?? viaDict;
+
+		const settings = (
+			plugin as { settings?: AgileObsidianSettings } | undefined
+		)?.settings;
+		const resolved = settings ? getCurrentUserAlias(settings) : null;
+		const fallback = "Default Name";
+		if (resolved && typeof resolved === "string" && resolved.trim()) {
+			return resolved;
+		}
+		console.warn(
+			"[Agile Obsidian] Identity alias not resolved yet; returning fallback 'Default Name'. Plugin/settings may not be loaded."
+		);
+		return fallback;
+	} catch (e) {
+		console.warn(
+			"[Agile Obsidian] Failed to resolve Identity alias; returning fallback 'Default Name'.",
+			e
+		);
+		return "Default Name";
+	}
+}
+
+export function getUserAlias(): string {
+	return getAlias();
+}
+
+export function getUserAliasSlug(): string {
+	const alias = getUserAlias() || "";
+	return alias.toLowerCase().replace(/\s+/g, "-");
+}
+
+/**
+ * Dynamic getters (lazy) for current user's identity values.
+ * Use these instead of importing constants so changes in Settings take effect without reload.
+ */
+export function getFullName(): string {
+	// In this project, "full name" aligns with the current Identity alias
+	return getUserAlias() || "Default Name";
+}
+export function getTeamMemberSlug(): string {
+	return getUserAliasSlug();
+}
 
 /**
  * Checks if a task is marked as completed with a ✅ emoji followed by a YYYY-MM-DD date.
@@ -83,9 +136,8 @@ export const isSleeping = (
 			return false;
 		}
 
-		const memberSnooze = matches.find(
-			(match) => match[1] === teamMemberName
-		);
+		const memberSlug = getUserAliasSlug();
+		const memberSnooze = matches.find((match) => match[1] === memberSlug);
 		if (memberSnooze) {
 			if (!memberSnooze[2]) {
 				return true; // Indefinite member snooze
@@ -153,11 +205,9 @@ export const isSleeping = (
  * @returns {boolean} True if it matches the criteria, false otherwise.
  */
 export const activeForMember = (task: TaskItem, active = true): boolean => {
-	const activePattern = new RegExp(`active-${teamMemberName}(?![\\w-])`, "i");
-	const inactivePattern = new RegExp(
-		`inactive-${teamMemberName}(?![\\w-])`,
-		"i"
-	);
+	const memberSlug = getUserAliasSlug();
+	const activePattern = new RegExp(`active-${memberSlug}(?![\\w-])`, "i");
+	const inactivePattern = new RegExp(`inactive-${memberSlug}(?![\\w-])`, "i");
 
 	const hasActive = activePattern.test(task.text);
 	const hasInactive = inactivePattern.test(task.text);

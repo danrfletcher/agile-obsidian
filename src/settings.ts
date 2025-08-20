@@ -1,4 +1,11 @@
-import { App, PluginSettingTab, Setting, TFolder, Modal, Notice } from "obsidian";
+import {
+	App,
+	PluginSettingTab,
+	Setting,
+	TFolder,
+	Modal,
+	Notice,
+} from "obsidian";
 import AgileObsidian from "./main";
 
 export interface MemberInfo {
@@ -8,7 +15,10 @@ export interface MemberInfo {
 }
 
 class AddMemberModal extends Modal {
-	private onSubmit: (memberName: string, memberAlias: string) => void | Promise<void>;
+	private onSubmit: (
+		memberName: string,
+		memberAlias: string
+	) => void | Promise<void>;
 	private teamName: string;
 	private allTeams: string[];
 	private existingMembers: MemberInfo[];
@@ -20,7 +30,10 @@ class AddMemberModal extends Modal {
 		allTeams: string[],
 		existingMembers: MemberInfo[],
 		internalTeamCodes: Map<string, string>,
-		onSubmit: (memberName: string, memberAlias: string) => void | Promise<void>
+		onSubmit: (
+			memberName: string,
+			memberAlias: string
+		) => void | Promise<void>
 	) {
 		super(app);
 		this.onSubmit = onSubmit;
@@ -38,17 +51,27 @@ class AddMemberModal extends Modal {
 		return (first + rest).toLowerCase();
 	}
 
-	private nameToAlias(name: string, code: string, isExternal: boolean): string {
+	private nameToAlias(
+		name: string,
+		code: string,
+		isExternal: boolean
+	): string {
 		// Lowercase, spaces -> '-', existing hyphens -> '--', strip invalid
 		let base = (name || "").trim().toLowerCase();
-		base = base.replace(/-/g, "--").replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+		base = base
+			.replace(/-/g, "--")
+			.replace(/\s+/g, "-")
+			.replace(/[^a-z0-9-]/g, "");
 		return `${base}-${code}${isExternal ? "-ext" : ""}`;
 	}
 
 	private teamAlias(name: string, code: string): string {
 		// Same slug rules as nameToAlias but with '-team' suffix
 		let base = (name || "").trim().toLowerCase();
-		base = base.replace(/-/g, "--").replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+		base = base
+			.replace(/-/g, "--")
+			.replace(/\s+/g, "-")
+			.replace(/[^a-z0-9-]/g, "");
 		return `${base}-${code}-team`;
 	}
 
@@ -61,8 +84,13 @@ class AddMemberModal extends Modal {
 		contentEl.createEl("h3", { text: `Add Member to ${this.teamName}` });
 
 		// Member type select (above name)
-		const typeWrapper = contentEl.createEl("div", { attr: { style: "margin-bottom: 8px;" } });
-		typeWrapper.createEl("label", { text: "Member type", attr: { style: "display:block; margin-bottom:4px;" } });
+		const typeWrapper = contentEl.createEl("div", {
+			attr: { style: "margin-bottom: 8px;" },
+		});
+		typeWrapper.createEl("label", {
+			text: "Member type",
+			attr: { style: "display:block; margin-bottom:4px;" },
+		});
 		const typeSelect = typeWrapper.createEl("select", {
 			attr: { style: "width: 100%;" },
 		}) as HTMLSelectElement;
@@ -90,17 +118,29 @@ class AddMemberModal extends Modal {
 		let isExisting = false;
 
 		// Member name input
-		const nameWrapper = contentEl.createEl("div", { attr: { style: "margin-bottom: 12px;" } });
-		nameWrapper.createEl("label", { text: "Member name", attr: { style: "display:block; margin-bottom:4px;" } });
+		const nameWrapper = contentEl.createEl("div", {
+			attr: { style: "margin-bottom: 12px;" },
+		});
+		nameWrapper.createEl("label", {
+			text: "Member name",
+			attr: { style: "display:block; margin-bottom:4px;" },
+		});
 		const nameInput = nameWrapper.createEl("input", {
 			type: "text",
 			attr: { placeholder: "e.g., Dan Fletcher", style: "width: 100%;" },
 		}) as HTMLInputElement;
 
 		// Internal team select (hidden by default)
-		const teamWrapper = contentEl.createEl("div", { attr: { style: "margin-bottom: 12px; display: none;" } });
-		teamWrapper.createEl("label", { text: "Select team", attr: { style: "display:block; margin-bottom:4px;" } });
-		const teamSelect = teamWrapper.createEl("select", { attr: { style: "width: 100%;" } }) as HTMLSelectElement;
+		const teamWrapper = contentEl.createEl("div", {
+			attr: { style: "margin-bottom: 12px; display: none;" },
+		});
+		teamWrapper.createEl("label", {
+			text: "Select team",
+			attr: { style: "display:block; margin-bottom:4px;" },
+		});
+		const teamSelect = teamWrapper.createEl("select", {
+			attr: { style: "width: 100%;" },
+		}) as HTMLSelectElement;
 		for (const tn of this.allTeams) {
 			const opt = document.createElement("option");
 			opt.value = tn;
@@ -109,9 +149,16 @@ class AddMemberModal extends Modal {
 		}
 
 		// Existing member select (hidden by default)
-		const existingWrapper = contentEl.createEl("div", { attr: { style: "margin-bottom: 12px; display: none;" } });
-		existingWrapper.createEl("label", { text: "Select existing member", attr: { style: "display:block; margin-bottom:4px;" } });
-		const existingSelect = existingWrapper.createEl("select", { attr: { style: "width: 100%;" } }) as HTMLSelectElement;
+		const existingWrapper = contentEl.createEl("div", {
+			attr: { style: "margin-bottom: 12px; display: none;" },
+		});
+		existingWrapper.createEl("label", {
+			text: "Select existing member",
+			attr: { style: "display:block; margin-bottom:4px;" },
+		});
+		const existingSelect = existingWrapper.createEl("select", {
+			attr: { style: "width: 100%;" },
+		}) as HTMLSelectElement;
 		for (const m of this.existingMembers || []) {
 			const opt = document.createElement("option");
 			opt.value = m.alias;
@@ -120,9 +167,16 @@ class AddMemberModal extends Modal {
 		}
 
 		// Existing member role select (hidden by default)
-		const roleWrapper = contentEl.createEl("div", { attr: { style: "margin-bottom: 12px; display: none;" } });
-		roleWrapper.createEl("label", { text: "Existing member role", attr: { style: "display:block; margin-bottom:4px;" } });
-		const roleSelect = roleWrapper.createEl("select", { attr: { style: "width: 100%;" } }) as HTMLSelectElement;
+		const roleWrapper = contentEl.createEl("div", {
+			attr: { style: "margin-bottom: 12px; display: none;" },
+		});
+		roleWrapper.createEl("label", {
+			text: "Existing member role",
+			attr: { style: "display:block; margin-bottom:4px;" },
+		});
+		const roleSelect = roleWrapper.createEl("select", {
+			attr: { style: "width: 100%;" },
+		}) as HTMLSelectElement;
 		const roleMember = document.createElement("option");
 		roleMember.value = "member";
 		roleMember.text = "Team Member";
@@ -152,14 +206,20 @@ class AddMemberModal extends Modal {
 					return;
 				}
 				if (roleSelect.value === "internal-team-member") {
-					aliasValue.textContent = selectedAlias.toLowerCase().endsWith("-int")
+					aliasValue.textContent = selectedAlias
+						.toLowerCase()
+						.endsWith("-int")
 						? selectedAlias
 						: `${selectedAlias}-int`;
 				} else {
 					aliasValue.textContent = selectedAlias;
 				}
 			} else {
-				aliasValue.textContent = this.nameToAlias(nameInput.value, code, isExternal);
+				aliasValue.textContent = this.nameToAlias(
+					nameInput.value,
+					code,
+					isExternal
+				);
 			}
 		};
 
@@ -196,7 +256,9 @@ class AddMemberModal extends Modal {
 
 		// Buttons
 		const buttons = contentEl.createEl("div", {
-			attr: { style: "display:flex; gap: 8px; justify-content: flex-end; margin-top: 16px;" },
+			attr: {
+				style: "display:flex; gap: 8px; justify-content: flex-end; margin-top: 16px;",
+			},
 		});
 
 		const cancelBtn = buttons.createEl("button", { text: "Cancel" });
@@ -213,7 +275,8 @@ class AddMemberModal extends Modal {
 					new Notice("Please select a team.");
 					return;
 				}
-				const codeToUse = this.internalTeamCodes.get(memberName) ?? code;
+				const codeToUse =
+					this.internalTeamCodes.get(memberName) ?? code;
 				memberAlias = this.teamAlias(memberName, codeToUse);
 			} else if (isExisting) {
 				const selectedAlias = existingSelect.value || "";
@@ -221,7 +284,9 @@ class AddMemberModal extends Modal {
 					new Notice("Please select an existing member.");
 					return;
 				}
-				const found = (this.existingMembers || []).find((m) => m.alias === selectedAlias);
+				const found = (this.existingMembers || []).find(
+					(m) => m.alias === selectedAlias
+				);
 				memberName = found?.name ?? selectedAlias;
 				if (roleSelect.value === "internal-team-member") {
 					memberAlias = selectedAlias.toLowerCase().endsWith("-int")
@@ -256,9 +321,15 @@ export interface TeamInfo {
 }
 
 class AddTeamModal extends Modal {
-	private onSubmit: (teamName: string, parentPath: string) => void | Promise<void>;
+	private onSubmit: (
+		teamName: string,
+		parentPath: string
+	) => void | Promise<void>;
 
-	constructor(app: App, onSubmit: (teamName: string, parentPath: string) => void | Promise<void>) {
+	constructor(
+		app: App,
+		onSubmit: (teamName: string, parentPath: string) => void | Promise<void>
+	) {
 		super(app);
 		this.onSubmit = onSubmit;
 	}
@@ -270,16 +341,26 @@ class AddTeamModal extends Modal {
 		contentEl.createEl("h3", { text: "Add Team" });
 
 		// Team name input
-		const nameWrapper = contentEl.createEl("div", { attr: { style: "margin-bottom: 12px;" } });
-		nameWrapper.createEl("label", { text: "Team name", attr: { style: "display:block; margin-bottom:4px;" } });
+		const nameWrapper = contentEl.createEl("div", {
+			attr: { style: "margin-bottom: 12px;" },
+		});
+		nameWrapper.createEl("label", {
+			text: "Team name",
+			attr: { style: "display:block; margin-bottom:4px;" },
+		});
 		const nameInput = nameWrapper.createEl("input", {
 			type: "text",
 			attr: { placeholder: "e.g., Sample Team", style: "width: 100%;" },
 		}) as HTMLInputElement;
 
 		// Parent folder select
-		const folderWrapper = contentEl.createEl("div", { attr: { style: "margin-bottom: 12px;" } });
-		folderWrapper.createEl("label", { text: "Parent folder", attr: { style: "display:block; margin-bottom:4px;" } });
+		const folderWrapper = contentEl.createEl("div", {
+			attr: { style: "margin-bottom: 12px;" },
+		});
+		folderWrapper.createEl("label", {
+			text: "Parent folder",
+			attr: { style: "display:block; margin-bottom:4px;" },
+		});
 
 		const selectEl = folderWrapper.createEl("select", {
 			attr: { style: "width: 100%;" },
@@ -289,9 +370,9 @@ class AddTeamModal extends Modal {
 		const all = this.app.vault.getAllLoadedFiles();
 		const folders = all.filter((f) => f instanceof TFolder) as TFolder[];
 		// Ensure root is present
-		const paths = Array.from(new Set<string>(["/", ...folders.map((f) => f.path)])).sort((a, b) =>
-			a.localeCompare(b)
-		);
+		const paths = Array.from(
+			new Set<string>(["/", ...folders.map((f) => f.path)])
+		).sort((a, b) => a.localeCompare(b));
 
 		for (const p of paths) {
 			const opt = document.createElement("option");
@@ -302,7 +383,9 @@ class AddTeamModal extends Modal {
 
 		// Buttons
 		const buttons = contentEl.createEl("div", {
-			attr: { style: "display:flex; gap: 8px; justify-content: flex-end; margin-top: 16px;" },
+			attr: {
+				style: "display:flex; gap: 8px; justify-content: flex-end; margin-top: 16px;",
+			},
 		});
 
 		const cancelBtn = buttons.createEl("button", { text: "Cancel" });
@@ -352,6 +435,46 @@ export const DEFAULT_SETTINGS: AgileObsidianSettings = {
 	teams: [],
 };
 
+/**
+ * Helper: returns the saved current user alias (or null if not set).
+ */
+export function getCurrentUserAlias(
+	settings: AgileObsidianSettings
+): string | null {
+	return settings.currentUserAlias ?? null;
+}
+
+/**
+ * Helper: find a member's display name by alias across all teams.
+ * Returns null if no match is found.
+ */
+export function getMemberDisplayNameByAlias(
+	teams: TeamInfo[],
+	alias: string
+): string | null {
+	if (!alias) return null;
+	for (const t of teams ?? []) {
+		for (const m of t.members ?? []) {
+			if ((m.alias ?? "") === alias) {
+				return m.name ?? alias;
+			}
+		}
+	}
+	return null;
+}
+
+/**
+ * Convenience: resolve the current user's display name from settings.
+ * Falls back to null if alias isn't set or member isn't found.
+ */
+export function getCurrentUserDisplayName(
+	settings: AgileObsidianSettings
+): string | null {
+	const alias = getCurrentUserAlias(settings);
+	if (!alias) return null;
+	return getMemberDisplayNameByAlias(settings.teams ?? [], alias);
+}
+
 export class AgileSettingTab extends PluginSettingTab {
 	plugin: AgileObsidian;
 
@@ -380,7 +503,9 @@ export class AgileSettingTab extends PluginSettingTab {
 					await this.plugin.detectAndUpdateTeams();
 					renderTeamsList();
 					renderCurrentUserSelector();
-					new Notice(`Detected ${this.plugin.settings.teams.length} team(s).`);
+					new Notice(
+						`Detected ${this.plugin.settings.teams.length} team(s).`
+					);
 				})
 		);
 
@@ -398,20 +523,24 @@ export class AgileSettingTab extends PluginSettingTab {
 
 		// Container to display teams
 		const teamsListContainer = containerEl.createEl("div");
-		const identityContainer = containerEl.createEl("div", { attr: { style: "padding-top: 12px;" } });
+		const identityContainer = containerEl.createEl("div", {
+			attr: { style: "padding-top: 12px;" },
+		});
 
 		// Render teams helper
 		const renderTeamsList = () => {
 			teamsListContainer.empty();
-			if (!this.plugin.settings.teams || this.plugin.settings.teams.length === 0) {
+			if (
+				!this.plugin.settings.teams ||
+				this.plugin.settings.teams.length === 0
+			) {
 				teamsListContainer.createEl("em", { text: "No teams yet." });
 				return;
 			}
 			for (const t of this.plugin.settings.teams) {
 				const row = teamsListContainer.createEl("div", {
 					attr: {
-						style:
-							"display: flex; gap: 8px; align-items: center; margin: 6px 0;",
+						style: "display: flex; gap: 8px; align-items: center; margin: 6px 0;",
 					},
 				});
 
@@ -422,16 +551,18 @@ export class AgileSettingTab extends PluginSettingTab {
 				const pathInput = row.createEl("input", {
 					type: "text",
 					attr: {
-						style:
-							"flex: 1; min-width: 0; white-space: nowrap; overflow-x: auto; padding: 2px 6px;",
+						style: "flex: 1; min-width: 0; white-space: nowrap; overflow-x: auto; padding: 2px 6px;",
 					},
 				}) as HTMLInputElement;
 				pathInput.value = t.rootPath;
 				pathInput.readOnly = true;
 				pathInput.disabled = true;
 				pathInput.addEventListener("click", () => {
-					const folder = this.app.vault.getAbstractFileByPath(t.rootPath);
-					const explorerLeaves = this.app.workspace.getLeavesOfType("file-explorer");
+					const folder = this.app.vault.getAbstractFileByPath(
+						t.rootPath
+					);
+					const explorerLeaves =
+						this.app.workspace.getLeavesOfType("file-explorer");
 					if (explorerLeaves.length > 0 && folder) {
 						const leaf = explorerLeaves[0];
 						// @ts-ignore Internal API
@@ -446,16 +577,21 @@ export class AgileSettingTab extends PluginSettingTab {
 
 				// Buttons: View Members + Add Member
 				const btns = row.createEl("div", {
-					attr: { style: "display:flex; gap:6px; align-items:center;" },
+					attr: {
+						style: "display:flex; gap:6px; align-items:center;",
+					},
 				});
-				const toggleBtn = btns.createEl("button", { text: "View Members" });
-				const addMemberBtn = btns.createEl("button", { text: "Add Member" });
+				const toggleBtn = btns.createEl("button", {
+					text: "View Members",
+				});
+				const addMemberBtn = btns.createEl("button", {
+					text: "Add Member",
+				});
 
 				// Members container (collapsed by default)
 				const membersContainer = teamsListContainer.createEl("div", {
 					attr: {
-						style:
-							"margin: 6px 0 8px 16px; display: none; border-left: 2px solid var(--background-modifier-border); padding-left: 10px;",
+						style: "margin: 6px 0 8px 16px; display: none; border-left: 2px solid var(--background-modifier-border); padding-left: 10px;",
 					},
 				});
 
@@ -463,7 +599,9 @@ export class AgileSettingTab extends PluginSettingTab {
 					membersContainer.empty();
 					const raw = t.members ?? [];
 					if (raw.length === 0) {
-						membersContainer.createEl("em", { text: "No members yet." });
+						membersContainer.createEl("em", {
+							text: "No members yet.",
+						});
 						return;
 					}
 
@@ -473,11 +611,18 @@ export class AgileSettingTab extends PluginSettingTab {
 							const alias = (m.alias || "").toLowerCase();
 							if (alias.endsWith("-ext")) return "external";
 							if (alias.endsWith("-team")) return "team";
-							if (alias.endsWith("-int")) return "internal-team-member";
+							if (alias.endsWith("-int"))
+								return "internal-team-member";
 							return m.type ?? "member";
 						};
 						const rank = (t: string) =>
-							t === "member" ? 0 : t === "internal-team-member" ? 1 : t === "team" ? 2 : 3;
+							t === "member"
+								? 0
+								: t === "internal-team-member"
+								? 1
+								: t === "team"
+								? 2
+								: 3;
 						const ta = typeFrom(a) as string;
 						const tb = typeFrom(b) as string;
 						const ra = rank(ta);
@@ -489,20 +634,18 @@ export class AgileSettingTab extends PluginSettingTab {
 					for (const m of sorted) {
 						const line = membersContainer.createEl("div", {
 							attr: {
-								style:
-									"display:flex; gap:8px; align-items: center; margin: 3px 0;",
+								style: "display:flex; gap:8px; align-items: center; margin: 3px 0;",
 							},
 						});
 
 						const alias = (m.alias || "").toLowerCase();
-						const type =
-							alias.endsWith("-ext")
-								? "external"
-								: alias.endsWith("-team")
-								? "team"
-								: alias.endsWith("-int")
-								? "internal-team-member"
-								: (m.type ?? "member");
+						const type = alias.endsWith("-ext")
+							? "external"
+							: alias.endsWith("-team")
+							? "team"
+							: alias.endsWith("-int")
+							? "internal-team-member"
+							: m.type ?? "member";
 						const typeLabel =
 							type === "external"
 								? "External Delegate"
@@ -513,7 +656,10 @@ export class AgileSettingTab extends PluginSettingTab {
 								: "Team Member";
 
 						// Name + type
-						line.createEl("span", { text: m.name, attr: { style: "min-width: 160px;" } });
+						line.createEl("span", {
+							text: m.name,
+							attr: { style: "min-width: 160px;" },
+						});
 						line.createEl("span", {
 							text: `(${typeLabel})`,
 							attr: { style: "color: var(--text-muted);" },
@@ -523,8 +669,7 @@ export class AgileSettingTab extends PluginSettingTab {
 						const aliasInput = line.createEl("input", {
 							type: "text",
 							attr: {
-								style:
-									"flex:1; min-width: 0; white-space: nowrap; overflow-x: auto; padding: 2px 6px;",
+								style: "flex:1; min-width: 0; white-space: nowrap; overflow-x: auto; padding: 2px 6px;",
 							},
 						}) as HTMLInputElement;
 						aliasInput.value = m.alias;
@@ -536,18 +681,25 @@ export class AgileSettingTab extends PluginSettingTab {
 
 				toggleBtn.addEventListener("click", () => {
 					membersContainer.style.display =
-						membersContainer.style.display === "none" ? "block" : "none";
+						membersContainer.style.display === "none"
+							? "block"
+							: "none";
 				});
 
 				addMemberBtn.addEventListener("click", () => {
 					// Build team list and existing internal team code map
-					const teamNames = (this.plugin.settings.teams ?? []).map((tt) => tt.name);
+					const teamNames = (this.plugin.settings.teams ?? []).map(
+						(tt) => tt.name
+					);
 					const internalTeamCodes = new Map<string, string>();
 					for (const tt of this.plugin.settings.teams ?? []) {
 						for (const m of tt.members ?? []) {
 							const lower = m.alias.toLowerCase();
 							if (lower.endsWith("-team")) {
-								const mm = /^([a-z0-9-]+)-([0-9][a-z0-9]{5})-team$/i.exec(m.alias);
+								const mm =
+									/^([a-z0-9-]+)-([0-9][a-z0-9]{5})-team$/i.exec(
+										m.alias
+									);
 								if (mm) {
 									// Use the display name stored with the member to associate the code
 									internalTeamCodes.set(m.name, mm[2]);
@@ -563,57 +715,96 @@ export class AgileSettingTab extends PluginSettingTab {
 							const lower = (m.alias ?? "").toLowerCase();
 							const inferredType =
 								m.type ??
-								(lower.endsWith("-ext") ? "external" : lower.endsWith("-team") ? "team" : "member");
+								(lower.endsWith("-ext")
+									? "external"
+									: lower.endsWith("-team")
+									? "team"
+									: "member");
 							if (inferredType !== "member") continue; // Exclude internal teams and external delegates
 							if (!uniq.has(m.alias)) {
-								uniq.set(m.alias, { alias: m.alias, name: m.name, type: "member" });
+								uniq.set(m.alias, {
+									alias: m.alias,
+									name: m.name,
+									type: "member",
+								});
 							}
 						}
 					}
-					const existingMembers = Array.from(uniq.values()).sort((a, b) => a.name.localeCompare(b.name));
+					const existingMembers = Array.from(uniq.values()).sort(
+						(a, b) => a.name.localeCompare(b.name)
+					);
 
-					new AddMemberModal(this.app, t.name, teamNames, existingMembers, internalTeamCodes, async (memberName, memberAlias) => {
-						// Ensure team exists in settings
-						const idx = this.plugin.settings.teams.findIndex((x) => x.name === t.name);
-						if (idx === -1) return;
+					new AddMemberModal(
+						this.app,
+						t.name,
+						teamNames,
+						existingMembers,
+						internalTeamCodes,
+						async (memberName, memberAlias) => {
+							// Ensure team exists in settings
+							const idx = this.plugin.settings.teams.findIndex(
+								(x) => x.name === t.name
+							);
+							if (idx === -1) return;
 
-						const team = this.plugin.settings.teams[idx];
-						team.members = team.members || [];
-						if (!team.members.find((mm) => mm.alias === memberAlias)) {
-							const lower = memberAlias.toLowerCase();
-							const type =
-								lower.endsWith("-ext")
+							const team = this.plugin.settings.teams[idx];
+							team.members = team.members || [];
+							if (
+								!team.members.find(
+									(mm) => mm.alias === memberAlias
+								)
+							) {
+								const lower = memberAlias.toLowerCase();
+								const type = lower.endsWith("-ext")
 									? "external"
 									: lower.endsWith("-team")
 									? "team"
 									: lower.endsWith("-int")
 									? "internal-team-member"
 									: "member";
-							team.members.push({ alias: memberAlias, name: memberName, type });
+								team.members.push({
+									alias: memberAlias,
+									name: memberName,
+									type,
+								});
 
-							// Sort order: Team Members, Internal Team Members, Internal Teams, External Delegates; then by name
-							team.members.sort((a, b) => {
-								const typeFrom = (m: MemberInfo) => {
-									const alias = (m.alias || "").toLowerCase();
-									if (alias.endsWith("-ext")) return "external";
-									if (alias.endsWith("-team")) return "team";
-									if (alias.endsWith("-int")) return "internal-team-member";
-									return m.type ?? "member";
-								};
-								const rank = (t: string) =>
-									t === "member" ? 0 : t === "internal-team-member" ? 1 : t === "team" ? 2 : 3;
-								const ra = rank(typeFrom(a) as string);
-								const rb = rank(typeFrom(b) as string);
-								if (ra !== rb) return ra - rb;
-								return a.name.localeCompare(b.name);
-							});
+								// Sort order: Team Members, Internal Team Members, Internal Teams, External Delegates; then by name
+								team.members.sort((a, b) => {
+									const typeFrom = (m: MemberInfo) => {
+										const alias = (
+											m.alias || ""
+										).toLowerCase();
+										if (alias.endsWith("-ext"))
+											return "external";
+										if (alias.endsWith("-team"))
+											return "team";
+										if (alias.endsWith("-int"))
+											return "internal-team-member";
+										return m.type ?? "member";
+									};
+									const rank = (t: string) =>
+										t === "member"
+											? 0
+											: t === "internal-team-member"
+											? 1
+											: t === "team"
+											? 2
+											: 3;
+									const ra = rank(typeFrom(a) as string);
+									const rb = rank(typeFrom(b) as string);
+									if (ra !== rb) return ra - rb;
+									return a.name.localeCompare(b.name);
+								});
 
-							await this.plugin.saveSettings();
-							renderMembers();
-						} else {
-							new Notice("A member with the same alias already exists for this team.");
+								await this.plugin.saveSettings();
+								renderMembers();
+							} else {
+								new Notice(
+									"A member with the same alias already exists for this team."
+								);
+							}
 						}
-					}).open();
+					).open();
 				});
 			}
 		};
@@ -630,7 +821,12 @@ export class AgileSettingTab extends PluginSettingTab {
 					if (!alias) continue;
 					const lower = alias.toLowerCase();
 					// Exclude external delegates (-ext), internal teams (-team), and internal team members (-int)
-					if (lower.endsWith("-ext") || lower.endsWith("-team") || lower.endsWith("-int")) continue;
+					if (
+						lower.endsWith("-ext") ||
+						lower.endsWith("-team") ||
+						lower.endsWith("-int")
+					)
+						continue;
 					if (!uniq.has(alias)) {
 						uniq.set(alias, { alias, name: m.name });
 					}
@@ -639,11 +835,15 @@ export class AgileSettingTab extends PluginSettingTab {
 
 			if (uniq.size === 0) {
 				const emptyEl = identityContainer.createEl("div");
-				emptyEl.createEl("em", { text: "No team members detected yet." });
+				emptyEl.createEl("em", {
+					text: "No team members detected yet.",
+				});
 				return;
 			}
 
-			const members = Array.from(uniq.values()).sort((a, b) => a.name.localeCompare(b.name));
+			const members = Array.from(uniq.values()).sort((a, b) =>
+				a.name.localeCompare(b.name)
+			);
 
 			new Setting(identityContainer)
 				.setName("Identity")
@@ -651,7 +851,7 @@ export class AgileSettingTab extends PluginSettingTab {
 				.addDropdown((dropdown) => {
 					dropdown.addOption("", "(Not set)");
 					for (const m of members) {
-						dropdown.addOption(m.alias, `${m.name}`);
+						dropdown.addOption(m.alias, `${m.name} (${m.alias})`);
 					}
 					const current = this.plugin.settings.currentUserAlias ?? "";
 					dropdown.setValue(uniq.has(current) ? current : "");
@@ -663,7 +863,10 @@ export class AgileSettingTab extends PluginSettingTab {
 		};
 
 		// Helper to create team folder + files, then update settings
-		const createTeamResources = async (teamName: string, parentPath: string) => {
+		const createTeamResources = async (
+			teamName: string,
+			parentPath: string
+		) => {
 			const normalizedParent =
 				parentPath === "/" ? "" : parentPath.replace(/\/+$/g, "");
 			const teamFolder = normalizedParent
@@ -786,7 +989,7 @@ export class AgileSettingTab extends PluginSettingTab {
 		containerEl.createEl("h3", { text: "Appearance" });
 
 		new Setting(containerEl)
-			.setName('Custom Task Styles')
+			.setName("Custom Task Styles")
 			.setDesc(
 				'This plugin uses custom task styles including a customized version of SlRvb’s "Checkboxes" (from the ITS Theme) for checkbox icons. Turn this on to use the bundled styles; turn it off if you prefer your own theme/snippet for custom task styles and checkboxes.'
 			)
