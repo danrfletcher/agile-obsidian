@@ -6,6 +6,7 @@ import {
 } from "obsidian";
 import { TaskItem } from "../types/TaskItem";
 import { appendSnoozeButtonIfEligible, hideTaskAndCollapseAncestors } from "./TaskButtons";
+import { updateAssigneeAndPropagate } from "../utils/assignments/assignmentUtils";
 
 // Helpers to control checkbox interactivity per section and hierarchy level
 function isLeaf(task: TaskItem): boolean {
@@ -37,6 +38,55 @@ function shouldEnableCheckbox(sectionType: string, depth: number, task: TaskItem
   return true;
 }
 
+let assignmentEventListenerAttached = false;
+
+function ensureAssignmentEventListener(app: App) {
+  if (assignmentEventListenerAttached) return;
+  assignmentEventListenerAttached = true;
+
+  window.addEventListener("agile:request-assign-propagate" as any, async (ev: Event) => {
+    try {
+      const ce = ev as CustomEvent<any>;
+      const detail = (ce && (ce as any).detail) || {};
+      const uid = detail?.uid;
+      const newAlias = detail?.newAlias;
+      if (typeof uid === "string" && typeof newAlias === "string" && uid) {
+        const filePath = (uid.split(":")[0] || "");
+        if (filePath) {
+          window.dispatchEvent(
+            new CustomEvent("agile:prepare-optimistic-file-change", {
+              detail: { filePath },
+            })
+          );
+        }
+        await updateAssigneeAndPropagate(app, uid, newAlias);
+        if (filePath) {
+          window.dispatchEvent(
+            new CustomEvent("agile:assignment-changed", {
+              detail: { uid, filePath, newAlias },
+            })
+          );
+        }
+      }
+    } catch {}
+  });
+}
+
+function annotateAssigneeMarks(liEl: HTMLElement, uid: string, filePath: string) {
+  const marks = liEl.querySelectorAll("mark");
+  marks.forEach((m) => {
+    const el = m as HTMLElement;
+    const cls = (el.getAttribute("class") || "").toLowerCase();
+    // Mark must have an active/inactive-<alias> class
+    if (!/(^|\s)(?:active|inactive)-[a-z0-9-]+(\s|$)/i.test(" " + cls + " ")) return;
+    // And contain a 👋 strong (assignee, not delegate)
+    const strong = el.querySelector("strong");
+    if (!strong || !/^\s*👋/u.test(strong.textContent || "")) return;
+    el.setAttribute("data-task-uid", uid);
+    if (filePath) el.setAttribute("data-file-path", filePath);
+  });
+}
+
 // Shared tree renderer (used by all sections)
 export function renderTaskTree(
   tasks: TaskItem[],
@@ -46,6 +96,8 @@ export function renderTaskTree(
   isRoot: boolean,
   sectionType: string // Kept for potential future use, but sections can override
 ) {
+  ensureAssignmentEventListener(app);
+
   // Skip if no tasks
   if (tasks.length === 0) return;
 
@@ -95,6 +147,19 @@ export function renderTaskTree(
 
     if (task.annotated) {
       taskItemEl.addClass("annotated-task");
+    }
+
+    // Tag LI and assignee marks with identifiers so external handlers can target the correct task/line
+    if (task._uniqueId) {
+      taskItemEl.setAttribute("data-task-uid", task._uniqueId);
+    }
+    const filePath = task.link?.path || "";
+    if (filePath) {
+      taskItemEl.setAttribute("data-file-path", filePath);
+    }
+    try {
+      annotateAssigneeMarks(taskItemEl, task._uniqueId || "", filePath);
+    } catch (e) {
     }
 
     // Attach snooze button if eligible for this section

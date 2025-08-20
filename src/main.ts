@@ -6,6 +6,7 @@ import {
 	Plugin,
 	TFile,
 	WorkspaceLeaf,
+	Menu,
 } from "obsidian";
 
 import {
@@ -24,13 +25,18 @@ import {
 	resolveTeamForPath,
 	hasAnyTeamMemberAssignment,
 	aliasToName,
+	escapeRegExp,
 } from "./utils/commands/commandUtils";
+import { normalizeTaskLine } from "./utils/format/taskFormatter";
 
 export default class AgileObsidianPlugin extends Plugin {
 	settings: AgileObsidianSettings;
 	taskIndex: TaskIndex;
 	private checkboxStyleEl?: HTMLStyleElement;
 	private dynamicCommandIds: Set<string> = new Set();
+	private formattingFiles: Set<string> = new Set();
+	private lastActiveFilePath: string | null = null;
+	private optimisticBeforeContent: Map<string, string[]> = new Map();
 
 	private async injectCheckboxStyles(): Promise<void> {
 		try {
@@ -47,10 +53,312 @@ export default class AgileObsidianPlugin extends Plugin {
 			this.checkboxStyleEl = styleEl;
 		} catch (e) {
 			// no-op
+			void e;
 		}
 	}
 
 	
+
+	// Determine the target line corresponding to a clicked <mark> in Live Preview without moving the cursor.
+	private findTargetLineFromClick(editor: Editor, evt: MouseEvent, alias: string): number {
+		let lineNo = editor.getCursor().line; // fallback
+		try {
+			const cm: any = (editor as any).cm;
+			if (cm && typeof cm.posAtCoords === "function") {
+				const posOrOffset = cm.posAtCoords({ x: evt.clientX, y: evt.clientY });
+				if (posOrOffset != null) {
+					const pos = typeof posOrOffset === "number" ? editor.offsetToPos(posOrOffset) : ("pos" in posOrOffset ? editor.offsetToPos(posOrOffset.pos) : posOrOffset);
+					if (pos && typeof pos.line === "number") {
+						lineNo = pos.line;
+						return lineNo;
+					}
+				}
+			}
+		} catch (err) { void err; }
+		// Fallback: find a unique line containing this alias class
+		try {
+			const signature = new RegExp(`\\bclass="(?:active|inactive)-${escapeRegExp(alias)}"\\b`, "i");
+			const lines = editor.getValue().split("\n");
+			const matches: number[] = [];
+			for (let i = 0; i < lines.length; i++) {
+				if (isUncheckedTaskLine(lines[i]) && signature.test(lines[i])) matches.push(i);
+			}
+			if (matches.length === 1) return matches[0];
+		} catch (err) { void err; }
+		return lineNo;
+	}
+
+	// Extract the explicit assignee alias from a task line, or null if none.
+	private getExplicitAssigneeAliasFromText(line: string): string | null {
+		try {
+			// Everyone (alias exactly "team")
+			if (/\bclass="(?:active|inactive)-team"\b/i.test(line)) return "team";
+			// Member assignee (👋 ...)
+			const m = /\bclass="(?:active|inactive)-([a-z0-9-]+)"[^>]*>\s*<strong>👋/i.exec(line);
+			return m ? m[1].toLowerCase() : null;
+		} catch {
+			return null;
+		}
+	}
+
+	// Build an assignee <mark> HTML for an alias.
+	private buildAssigneeMarkForAlias(alias: string, variant: "active" | "inactive", team: any): string {
+		const lower = (alias || "").toLowerCase();
+		if (lower === "team") {
+			const bg = variant === "active" ? "#FFFFFF" : "#CACFD9A6";
+			return `<mark class="${variant}-team" style="background: ${bg}; color: #000000"><strong>🤝 Everyone</strong></mark>`;
+		}
+		const member = (team?.members ?? []).find((m: any) => (m.alias || "").toLowerCase() === lower);
+		const name = member?.name || aliasToName(alias);
+		const bg = variant === "active" ? "#BBFABBA6" : "#CACFD9A6";
+		return `<mark class="${variant}-${alias}" style="background: ${bg};"><strong>👋 ${name}</strong></mark>`;
+	}
+
+	// Apply an assignee change on a specific line and then cascade adjustments across descendants.
+	private async applyAssigneeChangeWithCascade(
+		filePath: string,
+		editor: Editor,
+		lineNo: number,
+		oldAlias: string | null,
+		newAlias: string | null,
+		variant: "active" | "inactive",
+		team: any
+	): Promise<void> {
+		// Capture content BEFORE making any edits, to compute cascade correctly
+		const beforeLines = editor.getValue().split("\n");
+
+		// Update the target line first
+		const originalLine = editor.getLine(lineNo);
+		const newMark = newAlias ? this.buildAssigneeMarkForAlias(newAlias, variant, team) : null;
+		let updated = normalizeTaskLine(originalLine, { newAssigneeMark: newMark });
+		if (/<\/mark>\s*$/.test(updated)) updated = updated.replace(/\s*$/, " ");
+		editor.replaceRange(updated, { line: lineNo, ch: 0 }, { line: lineNo, ch: originalLine.length });
+
+		// Ensure TaskIndex is up-to-date for this file structure before cascade/redundancy checks
+		try {
+			const af = this.app.vault.getAbstractFileByPath(filePath);
+			if (af instanceof TFile) {
+				await this.taskIndex.updateFile(af);
+			}
+		} catch (err) { void err; }
+
+		// If the new explicit assignee equals the inherited value from ancestors, remove the explicit mark (redundant)
+		try {
+			const fileEntry = this.taskIndex.getIndex()?.[filePath];
+			if (fileEntry) {
+				const allTextNow = editor.getValue();
+				const linesNow = allTextNow.split("\n");
+
+				// Build line->item and id->item maps from index
+				const byLine = new Map<number, any>();
+				const byId = new Map<string, any>();
+				const collect = (items: any[]) => {
+					for (const it of items) {
+						const l0 = (it.line ?? 1) - 1;
+						byLine.set(l0, it);
+						if (it._uniqueId) byId.set(it._uniqueId, it);
+						if (Array.isArray(it.children)) collect(it.children);
+					}
+				};
+				collect(fileEntry.lists || []);
+
+				const aliasNow: (string | null)[] = linesNow.map((ln) =>
+					isUncheckedTaskLine(ln) ? this.getExplicitAssigneeAliasFromText(ln) : null
+				);
+
+				const nearestUp = (l0: number, aliasMap: (string | null)[]): string | null => {
+					let cur = byLine.get(l0);
+					while (cur) {
+						const parentId = cur._parentId;
+						if (!parentId) return null;
+						const parent = byId.get(parentId);
+						if (!parent) return null;
+						const pLine0 = (parent.line ?? 1) - 1;
+						const v = aliasMap[pLine0];
+						if (v) return v;
+						cur = parent;
+					}
+					return null;
+				};
+
+				const explicitOnLine = aliasNow[lineNo];
+				if (explicitOnLine) {
+					// Compute inherited ignoring self
+					const saved = aliasNow[lineNo];
+					aliasNow[lineNo] = null;
+					const inherited = nearestUp(lineNo, aliasNow);
+					aliasNow[lineNo] = saved;
+
+					if (inherited && inherited.toLowerCase() === explicitOnLine.toLowerCase()) {
+						const after = editor.getLine(lineNo);
+						let cleaned = normalizeTaskLine(after, { newAssigneeMark: null });
+						if (/<\/mark>\s*$/.test(cleaned)) cleaned = cleaned.replace(/\s*$/, " ");
+						editor.replaceRange(cleaned, { line: lineNo, ch: 0 }, { line: lineNo, ch: after.length });
+					}
+				}
+			}
+		} catch (err) { void err; }
+
+		// Then cascade adjustments (computed against the pre-edit snapshot)
+		await this.applyAssigneeCascade(filePath, editor, lineNo, oldAlias, newAlias, team, beforeLines);
+	}
+
+	// Ensure effective assignments remain constant across descendants after a parent assignment change.
+	private async applyAssigneeCascade(
+		filePath: string,
+		editor: Editor,
+		parentLineNo: number,
+		oldAlias: string | null,
+		newAlias: string | null,
+		team: any,
+		beforeLines?: string[]
+	): Promise<void> {
+		try {
+			if (oldAlias === newAlias) return;
+
+			// Build alias maps before and after parent change (use pre-edit snapshot if provided)
+			const lines = (beforeLines ?? editor.getValue().split("\n"));
+
+			// Ensure we have an index entry for this file before proceeding
+			try {
+				const af = this.app.vault.getAbstractFileByPath(filePath);
+				if (af instanceof TFile) {
+					await this.taskIndex.updateFile(af);
+				}
+			} catch (err) { void err; }
+
+			// Acquire the indexed tree for this file
+			const fileEntry = this.taskIndex.getIndex()?.[filePath];
+			if (!fileEntry) return;
+
+			// Map line(0-based) -> TaskItem, and id -> TaskItem
+			const byLine = new Map<number, any>();
+			const byId = new Map<string, any>();
+			const collect = (items: any[]) => {
+				for (const it of items) {
+					const l0 = (it.line ?? 1) - 1;
+					byLine.set(l0, it);
+					if (it._uniqueId) byId.set(it._uniqueId, it);
+					if (Array.isArray(it.children)) collect(it.children);
+				}
+			};
+			collect(fileEntry.lists || []);
+
+			const parentItem = byLine.get(parentLineNo);
+			if (!parentItem) return;
+
+			// Collect descendant line numbers (0-based) under the parent
+			const descendants: number[] = [];
+			const dfs = (it: any) => {
+				for (const ch of it.children || []) {
+					const l0 = (ch.line ?? 1) - 1;
+					descendants.push(l0);
+					dfs(ch);
+				}
+			};
+			dfs(parentItem);
+
+			// Helper: explicit alias on a line
+			const explicitAliasOn = (l0: number) =>
+				isUncheckedTaskLine(lines[l0] || "") ? this.getExplicitAssigneeAliasFromText(lines[l0] || "") : null;
+
+			const aliasBefore: (string | null)[] = lines.map((_, i) => explicitAliasOn(i));
+			const aliasAfter: (string | null)[] = aliasBefore.slice();
+			aliasAfter[parentLineNo] = newAlias; // parent updated
+
+			// Resolve nearest ancestor explicit alias for a given line, using a given alias map
+			const nearestUp = (l0: number, aliasMap: (string | null)[]): string | null => {
+				let cur = byLine.get(l0);
+				while (cur) {
+					const line0 = (cur.line ?? 1) - 1;
+					const v = aliasMap[line0];
+					if (v) return v;
+					const pid = cur._parentId;
+					cur = pid ? byId.get(pid) : null;
+				}
+				return null;
+			};
+			// Variant that also returns the source ancestor line that provided the alias
+			const nearestUpWithSource = (
+				l0: number,
+				aliasMap: (string | null)[]
+			): { alias: string | null; source: number | null } => {
+				let cur = byLine.get(l0);
+				while (cur) {
+					const line0 = (cur.line ?? 1) - 1;
+					const v = aliasMap[line0];
+					if (v) return { alias: v, source: line0 };
+					const pid = cur._parentId;
+					cur = pid ? byId.get(pid) : null;
+				}
+				return { alias: null, source: null };
+			};
+
+			// Pass 1: preserve previous effective assignment for each descendant
+			const toSetExplicit = new Map<number, string>(); // line -> alias to set
+			for (const d of descendants) {
+				if (!isUncheckedTaskLine(lines[d] || "")) continue;
+
+				const explicitD = aliasBefore[d];
+				const prevEff = explicitD ?? nearestUp(d, aliasBefore);
+				const newEffCandidate = (explicitD ?? nearestUp(d, aliasAfter)) || null;
+
+				if (prevEff !== newEffCandidate) {
+					if (prevEff) {
+						toSetExplicit.set(d, prevEff);
+						aliasAfter[d] = prevEff; // reflect the planned explicit addition
+					}
+				} else {
+					// If effective assignment stayed the same, but it was previously INFERRED
+					// from the changed ancestor (parentLineNo), make it explicit to preserve intent.
+					if (!explicitD && prevEff) {
+						const beforeSrc = nearestUpWithSource(d, aliasBefore).source;
+						if (beforeSrc === parentLineNo) {
+							toSetExplicit.set(d, prevEff);
+							aliasAfter[d] = prevEff;
+						}
+					}
+				}
+			}
+
+			// Pass 2: remove redundant explicits that now match inherited value
+			const toRemoveExplicit = new Set<number>();
+			for (const d of descendants) {
+				if (!isUncheckedTaskLine(lines[d] || "")) continue;
+
+				const explicitD = aliasAfter[d];
+				if (!explicitD) continue;
+
+				// Compute inherited alias if this line had no explicit (exclude self)
+				const saved = aliasAfter[d];
+				aliasAfter[d] = null;
+				const inherited = nearestUp(d, aliasAfter);
+				aliasAfter[d] = saved;
+
+				if (inherited && inherited === explicitD) {
+					// If we just added this explicit in pass 1 to preserve a different assignment, skip removal
+					const wasAdded = toSetExplicit.has(d);
+					if (!wasAdded) toRemoveExplicit.add(d);
+				}
+			}
+
+			// Apply changes to editor
+			for (const [lineNo, alias] of toSetExplicit.entries()) {
+				const orig = editor.getLine(lineNo);
+				const mark = this.buildAssigneeMarkForAlias(alias, "active", team);
+				let upd = normalizeTaskLine(orig, { newAssigneeMark: mark });
+				if (/<\/mark>\s*$/.test(upd)) upd = upd.replace(/\s*$/, " ");
+				editor.replaceRange(upd, { line: lineNo, ch: 0 }, { line: lineNo, ch: orig.length });
+			}
+
+			for (const lineNo of toRemoveExplicit) {
+				const orig = editor.getLine(lineNo);
+				let upd = normalizeTaskLine(orig, { newAssigneeMark: null });
+				if (/<\/mark>\s*$/.test(upd)) upd = upd.replace(/\s*$/, " ");
+				editor.replaceRange(upd, { line: lineNo, ch: 0 }, { line: lineNo, ch: orig.length });
+			}
+		} catch (err) { void err; }
+	}
 
 	private unregisterDynamicCommands(): void {
 		try {
@@ -60,7 +368,7 @@ export default class AgileObsidianPlugin extends Plugin {
 				try {
 					// @ts-ignore
 					cmds.removeCommand(id);
-				} catch {}
+				} catch (err) { void err; }
 			}
 		} finally {
 			this.dynamicCommandIds.clear();
@@ -85,6 +393,10 @@ export default class AgileObsidianPlugin extends Plugin {
 			const a = (m.alias || "").toLowerCase();
 			return a && !a.endsWith("-ext") && !a.endsWith("-team") && !a.endsWith("-int");
 		});
+
+		// Everyone (special) assignments
+		this.createAssignEveryoneCommand(teamName, "active");
+		this.createAssignEveryoneCommand(teamName, "inactive");
 
 		// "to me" if identity set and is part of this team
 		const meAlias = ((this.settings as any)?.currentUserAlias || "").trim();
@@ -143,16 +455,9 @@ export default class AgileObsidianPlugin extends Plugin {
 		isMe: boolean
 	) {
 		const id = `${this.manifest.id}:assign:${teamName}:${memberAlias}:${variant}`;
-		const title =
-			isMe
-				? `/Assign: to me (${variant})`
-				: `/Assign: to ${memberName} (${variant})`;
-
-		const bg = variant === "active" ? "#BBFABBA6" : "#CACFD9A6";
-		const newMark = `<mark class="${variant}-${memberAlias}" style="background: ${bg};"><strong>👋 ${memberName}</strong></mark>`;
-		// Any existing assignment mark (👋) – irrespective of alias – should be overwritten
-		const reExistingAssignment =
-			/(?:\s+)?<mark\s+class="(?:active|inactive)-[a-z0-9-]+"[^>]*>\s*<strong>👋[\s\S]*?<\/strong>\s*<\/mark>/i;
+		const title = isMe
+			? `Assign: to me - ${memberName} (${variant})`
+			: `Assign: to ${memberName} (${variant})`;
 
 		// @ts-ignore - types for id not strictly enforced
 		this.addCommand({
@@ -170,21 +475,42 @@ export default class AgileObsidianPlugin extends Plugin {
 
 				if (checking) return true;
 
-				let updated = line.replace(/\s+$/, "");
-				if (reExistingAssignment.test(updated)) {
-					// Replace existing assignment in place, normalize to single leading space
-					updated = updated.replace(reExistingAssignment, ` ${newMark}`);
-				} else {
-					const spacer = updated.endsWith(" ") ? "" : " ";
-					updated = `${updated}${spacer}${newMark}`;
-				}
-				updated = updated.replace(/\s{2,}/g, " ");
+				const oldAlias = this.getExplicitAssigneeAliasFromText(line);
+				this.applyAssigneeChangeWithCascade(filePath, editor, pos.line, oldAlias, memberAlias, variant, team);
 
-				editor.replaceRange(
-					updated,
-					{ line: pos.line, ch: 0 },
-					{ line: pos.line, ch: line.length }
-				);
+				return true;
+			},
+		});
+
+		this.dynamicCommandIds.add(id);
+	}
+
+	private createAssignEveryoneCommand(
+		teamName: string,
+		variant: "active" | "inactive"
+	) {
+		const id = `${this.manifest.id}:assign:${teamName}:everyone:${variant}`;
+		const title = `Assign: to Everyone (${variant})`;
+
+		// @ts-ignore - types for id not strictly enforced
+		this.addCommand({
+			id,
+			name: title,
+			editorCheckCallback: (checking: boolean, editor: Editor, view: MarkdownView) => {
+				const filePath = view?.file?.path ?? null;
+				if (!filePath) return false;
+				const team = resolveTeamForPath(filePath, (this.settings as any)?.teams ?? []);
+				if (!team || team.name !== teamName) return false;
+
+				const pos = editor.getCursor();
+				const line = editor.getLine(pos.line);
+				if (!isUncheckedTaskLine(line)) return false;
+
+				if (checking) return true;
+
+				const oldAlias = this.getExplicitAssigneeAliasFromText(line);
+				// Everyone alias is exactly "team"
+				this.applyAssigneeChangeWithCascade(filePath, editor, pos.line, oldAlias, "team", variant, team);
 
 				return true;
 			},
@@ -214,10 +540,7 @@ export default class AgileObsidianPlugin extends Plugin {
 					: "#FA9684"
 				: "#CACFD9A6";
 
-		const newMark = `→ <mark class="${variant}-${targetAlias}" style="background: ${bg};"><strong><a href="">${emoji} ${targetName}</a></strong></mark>`;
-		// Any existing delegation (arrow + mark containing an anchor) – irrespective of alias – should be overwritten
-		const reExistingDelegation =
-			/(?:\s*→\s*)?<mark\s+class="(?:active|inactive)-[a-z0-9-]+"[^>]*>[\s\S]*?<a\b[^>]*>[\s\S]*?<\/a>[\s\S]*?<\/mark>/i;
+		const newDelegateMark = `<mark class="${variant}-${targetAlias}" style="background: ${bg};"><strong>${emoji} ${targetName}</strong></mark>`;
 
 		// @ts-ignore - types for id not strictly enforced
 		this.addCommand({
@@ -238,15 +561,12 @@ export default class AgileObsidianPlugin extends Plugin {
 
 				if (checking) return true;
 
-				let updated = line.replace(/\s+$/, "");
-				if (reExistingDelegation.test(updated)) {
-					// Replace existing delegation (including optional arrow) with a single spaced arrow + mark
-					updated = updated.replace(reExistingDelegation, ` ${newMark}`);
-				} else {
-					const spacer = updated.endsWith(" ") ? "" : " ";
-					updated = `${updated}${spacer}${newMark}`;
+				let updated = normalizeTaskLine(line, { newDelegateMark: newDelegateMark });
+				// If we just added a delegate and the line ends with the <mark>, add a trailing space
+				// so Live Preview renders the HTML block (cursor is placed outside the HTML).
+				if (/<\/mark>\s*$/.test(updated)) {
+					updated = updated.replace(/\s*$/, " ");
 				}
-				updated = updated.replace(/\s{2,}/g, " ");
 
 				editor.replaceRange(
 					updated,
@@ -334,9 +654,310 @@ export default class AgileObsidianPlugin extends Plugin {
 
 		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
 		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, "click", (evt: MouseEvent) => {
-			console.log("click", evt);
-		});
+		const showAssignDelegateMenu = async (evt: MouseEvent, markEl: HTMLElement) => {
+			try {
+				const classAttr = markEl.getAttribute("class") || "";
+				const m = /\b(active|inactive)-([a-z0-9-]+)\b/i.exec(classAttr);
+				if (!m) return;
+				const variant = (m[1] as "active" | "inactive");
+				const alias = m[2].toLowerCase();
+
+				const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+				if (!view) return;
+				const editor = view.editor;
+				const filePath = view?.file?.path ?? null;
+				if (!filePath) return;
+
+				const team = resolveTeamForPath(filePath, (this.settings as any)?.teams ?? []);
+				if (!team) return;
+
+				// Determine the actual line for the clicked mark and preserve the current cursor
+				const savedCursor = editor.getCursor();
+				const lineNo = this.findTargetLineFromClick(editor, evt, alias);
+				const currentLine = editor.getLine(lineNo);
+				if (!isUncheckedTaskLine(currentLine)) return;
+
+				// Determine if this mark is an assignee or delegate based on content/alias
+				const text = (markEl.textContent || "").trim();
+				const isAssignee = alias === "team" || text.includes("👋");
+				const isDelegate = !isAssignee;
+
+				const menu = new Menu();
+
+				if (isAssignee) {
+					// Remove Assignee option
+					menu.addItem((i) => {
+						i.setTitle("Remove Assignee");
+						i.onClick(() => {
+							const before = editor.getLine(lineNo);
+							const oldAlias = this.getExplicitAssigneeAliasFromText(before);
+							this.applyAssigneeChangeWithCascade(filePath, editor, lineNo, oldAlias, null, "active", team);
+							// Restore cursor exactly
+							editor.setCursor(savedCursor);
+						});
+					});
+
+					// Everyone options
+					const addEveryone = (v: "active" | "inactive") => {
+						menu.addItem((i) => {
+							i.setTitle(`Everyone (${v})`);
+							i.onClick(() => {
+								const before = editor.getLine(lineNo);
+								const oldAlias = this.getExplicitAssigneeAliasFromText(before);
+								this.applyAssigneeChangeWithCascade(filePath, editor, lineNo, oldAlias, "team", v, team);
+								editor.setCursor(savedCursor);
+							});
+						});
+					};
+					if (alias === "team") {
+						addEveryone(variant === "active" ? "inactive" : "active"); // opposite only for current
+					} else {
+						addEveryone("active");
+						addEveryone("inactive");
+					}
+
+					// Team members (non -ext/-team/-int)
+					const members: any[] = (team.members ?? []).filter((m: any) => {
+						const a = (m.alias || "").toLowerCase();
+						return a && !a.endsWith("-ext") && !a.endsWith("-team") && !a.endsWith("-int");
+					});
+
+					const addMember = (mem: any, v: "active" | "inactive") => {
+						menu.addItem((i) => {
+							i.setTitle(`${mem.name} (${v})`);
+							i.onClick(() => {
+								const before = editor.getLine(lineNo);
+								const oldAlias = this.getExplicitAssigneeAliasFromText(before);
+								this.applyAssigneeChangeWithCascade(filePath, editor, lineNo, oldAlias, mem.alias, v, team);
+								editor.setCursor(savedCursor);
+							});
+						});
+					};
+
+					for (const mem of members) {
+						if ((mem.alias || "").toLowerCase() === alias) {
+							// Current member: offer opposite variant only
+							addMember(mem, variant === "active" ? "inactive" : "active");
+						} else {
+							// Other members: offer both variants
+							addMember(mem, "active");
+							addMember(mem, "inactive");
+						}
+					}
+				} else if (isDelegate) {
+					// Disallow if assigned to Everyone
+					if (/\bclass="(?:active|inactive)-team"\b/i.test(currentLine)) {
+						return;
+					}
+
+					// Remove Delegation option
+					menu.addItem((i) => {
+						i.setTitle("Remove Delegation");
+						i.onClick(() => {
+							const before = editor.getLine(lineNo);
+							let updated = normalizeTaskLine(before, { newDelegateMark: null });
+							if (/<\/mark>\s*$/.test(updated)) updated = updated.replace(/\s*$/, " ");
+							editor.replaceRange(updated, { line: lineNo, ch: 0 }, { line: lineNo, ch: before.length });
+							editor.setCursor(savedCursor);
+						});
+					});
+
+					const pickEmojiAndBg = (type: "team" | "internal" | "external") => {
+						const emoji = type === "team" ? "🤝" : type === "internal" ? "👥" : "👤";
+						const bg = type === "team" ? "#008080" : type === "internal" ? "#687D70" : "#FA9684";
+						return { emoji, bg };
+					};
+					const dVariant = "active" as const; // Delegates can only be active
+
+					// Internal Teams (-team but not bare 'team')
+					const internalTeams: any[] = (team.members ?? []).filter((m: any) => {
+						const a = (m.alias || "").toLowerCase();
+						return a.endsWith("-team") && a !== "team";
+					});
+					for (const t of internalTeams) {
+						menu.addItem((i) => {
+							i.setTitle(t.name);
+							i.onClick(() => {
+								const before = editor.getLine(lineNo);
+								const { emoji, bg } = pickEmojiAndBg("team");
+								let updated = normalizeTaskLine(before, {
+									newDelegateMark: `<mark class="${dVariant}-${t.alias}" style="background: ${bg};"><strong>${emoji} ${t.name}</strong></mark>`,
+								});
+								if (/<\/mark>\s*$/.test(updated)) updated = updated.replace(/\s*$/, " ");
+								editor.replaceRange(updated, { line: lineNo, ch: 0 }, { line: lineNo, ch: before.length });
+								editor.setCursor(savedCursor);
+							});
+						});
+					}
+
+					// Internal Members (-int)
+					const internalMembers: any[] = (team.members ?? []).filter((m: any) =>
+						(m.alias || "").toLowerCase().endsWith("-int")
+					);
+					for (const im of internalMembers) {
+						menu.addItem((i) => {
+							i.setTitle(im.name);
+							i.onClick(() => {
+								const before = editor.getLine(lineNo);
+								const { emoji, bg } = pickEmojiAndBg("internal");
+								let updated = normalizeTaskLine(before, {
+									newDelegateMark: `<mark class="${dVariant}-${im.alias}" style="background: ${bg};"><strong>${emoji} ${im.name}</strong></mark>`,
+								});
+								if (/<\/mark>\s*$/.test(updated)) updated = updated.replace(/\s*$/, " ");
+								editor.replaceRange(updated, { line: lineNo, ch: 0 }, { line: lineNo, ch: before.length });
+								editor.setCursor(savedCursor);
+							});
+						});
+					}
+
+					// External Delegates (-ext)
+					const externals: any[] = (team.members ?? []).filter((m: any) =>
+						(m.alias || "").toLowerCase().endsWith("-ext")
+					);
+					for (const ex of externals) {
+						menu.addItem((i) => {
+							i.setTitle(ex.name);
+							i.onClick(() => {
+								const before = editor.getLine(lineNo);
+								const { emoji, bg } = pickEmojiAndBg("external");
+								let updated = normalizeTaskLine(before, {
+									newDelegateMark: `<mark class="${dVariant}-${ex.alias}" style="background: ${bg};"><strong>${emoji} ${ex.name}</strong></mark>`,
+								});
+								if (/<\/mark>\s*$/.test(updated)) updated = updated.replace(/\s*$/, " ");
+								editor.replaceRange(updated, { line: lineNo, ch: 0 }, { line: lineNo, ch: before.length });
+								editor.setCursor(savedCursor);
+							});
+						});
+					}
+				}
+
+				if ((menu as any).items?.length > 0) {
+					menu.showAtPosition({ x: evt.clientX, y: evt.clientY });
+				}
+			} catch (err) { void err; }
+		};
+
+		// Use mousedown (capturing) to suppress Live Preview HTML opening on single click; allow double-click to edit as normal.
+		this.registerDomEvent(
+			document,
+			"mousedown",
+			(evt: MouseEvent) => {
+				const target = evt.target as HTMLElement | null;
+				if (!target) return;
+				const markEl = target.closest("mark") as HTMLElement | null;
+				if (!markEl) return;
+
+				// Only handle our assignment/delegation marks (active|inactive-<alias>)
+				const cls = markEl.getAttribute("class") || "";
+				if (!/\b(?:active|inactive)-[a-z0-9-]+\b/i.test(cls)) return;
+
+				// Single-click: prevent default selection/opening and show menu
+				if (evt.detail < 2) {
+					evt.preventDefault();
+					evt.stopPropagation();
+					// @ts-ignore
+					evt.stopImmediatePropagation?.();
+
+					// Preserve cursor in the active editor (if any)
+					const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+					const savedCursor = view?.editor.getCursor();
+
+					// Show menu asynchronously to avoid blocking default handling
+					showAssignDelegateMenu(evt, markEl);
+
+					// Restore cursor position on next frame (in case the editor moved it)
+					if (view && savedCursor) {
+						requestAnimationFrame(() => {
+							try {
+								// Only restore if the same editor is still active
+								const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+								if (activeView && activeView === view) {
+									view.editor.setCursor(savedCursor);
+								}
+							} catch (e) { void e; }
+						});
+					}
+				}
+				// Double-click: let Obsidian handle (to edit raw HTML)
+			},
+			{ capture: true }
+		);
+
+		// Click handler (capturing): if we already handled via mousedown (single click), swallow the event.
+		this.registerDomEvent(
+			document,
+			"click",
+			(evt: MouseEvent) => {
+				const target = evt.target as HTMLElement | null;
+				if (!target) return;
+				const markEl = target.closest("mark") as HTMLElement | null;
+				if (!markEl) return;
+
+				// Only handle our assignment/delegation marks
+				const cls = markEl.getAttribute("class") || "";
+				if (!/\b(?:active|inactive)-[a-z0-9-]+\b/i.test(cls)) return;
+
+				if (evt.detail < 2) {
+					evt.preventDefault();
+					evt.stopPropagation();
+					// @ts-ignore
+					evt.stopImmediatePropagation?.();
+				}
+			},
+			{ capture: true }
+		);
+
+		// Capture content snapshot before optimistic external edits (e.g., from dashboard)
+		this.registerDomEvent(
+			window as unknown as EventTarget,
+			"agile:prepare-optimistic-file-change",
+			async (ev: Event) => {
+				try {
+					const ce = ev as CustomEvent<any>;
+					const filePath = ce?.detail?.filePath as string;
+					if (!filePath) return;
+					const af = this.app.vault.getAbstractFileByPath(filePath);
+					if (af instanceof TFile) {
+						const content = await this.app.vault.cachedRead(af);
+						this.optimisticBeforeContent.set(filePath, content.split("\n"));
+						// Ensure TaskIndex is up-to-date for this file structure
+						await this.taskIndex.updateFile(af);
+					}
+				} catch (err) {
+					void err;
+				}
+			}
+		);
+
+		// After an external assignment completes, cascade explicit/redundant marks across descendants
+		this.registerDomEvent(
+			window as unknown as EventTarget,
+			"agile:assignment-changed",
+			async (ev: Event) => {
+				try {
+					const ce = ev as CustomEvent<any>;
+					const detail = (ce && (ce as any).detail) || {};
+					const uid: string | null = (detail?.uid as string) || null;
+					const filePath: string | null =
+						(detail?.filePath as string) || (uid && uid.includes(":") ? uid.split(":")[0] : null);
+					if (!uid || !filePath) return;
+
+					const linePart = uid.split(":")[1];
+					const line1 = Number.parseInt(linePart || "", 10);
+					if (!Number.isFinite(line1)) return;
+					const parentLine0 = Math.max(0, line1 - 1);
+
+					const newAlias: string | null =
+						typeof detail?.newAlias === "string" ? (detail.newAlias as string) : null;
+
+					const before = this.optimisticBeforeContent.get(filePath) ?? null;
+					await this.applyCascadeAfterExternalChange(filePath, parentLine0, before, newAlias);
+					this.optimisticBeforeContent.delete(filePath);
+				} catch (err) {
+					void err;
+				}
+			}
+		);
 
 		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
 		this.registerInterval(
@@ -347,6 +968,7 @@ export default class AgileObsidianPlugin extends Plugin {
 			this.app.vault.on("modify", async (file) => {
 				if (file instanceof TFile && file.extension === "md") {
 					await this.taskIndex.updateFile(file);
+					await this.autoFormatFile(file);
 				}
 			})
 		);
@@ -373,6 +995,101 @@ export default class AgileObsidianPlugin extends Plugin {
 					this.taskIndex.removeFile(oldPath);
 					await this.taskIndex.updateFile(file);
 				}
+			})
+		);
+
+		// When switching files, format the previously active file (now inactive) safely,
+		// and also normalize the newly opened file right away (non-intrusively).
+		this.registerEvent(
+			this.app.workspace.on("file-open", async (file) => {
+				try {
+					const prev = this.lastActiveFilePath;
+					const newPath = file?.path ?? null;
+					if (prev && prev !== newPath) {
+						const af = this.app.vault.getAbstractFileByPath(prev);
+						if (af instanceof TFile && af.extension === "md") {
+							await this.autoFormatFile(af);
+						}
+					}
+					this.lastActiveFilePath = newPath;
+
+					// Also check and format the file that was just opened
+					if (file instanceof TFile && file.extension === "md") {
+						await this.autoFormatFile(file);
+
+						// After formatting, normalize redundant assignee marks in the active editor
+						const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+						if (view && view.file?.path === file.path) {
+							const editor = view.editor;
+							try {
+								const filePath = file.path;
+								const fileEntry = this.taskIndex.getIndex()?.[filePath];
+								if (fileEntry) {
+									const savedCursor = editor.getCursor();
+									const lines = editor.getValue().split("\n");
+
+									// Build maps
+									const byLine = new Map<number, any>();
+									const byId = new Map<string, any>();
+									const collect = (items: any[]) => {
+										for (const it of items) {
+											const l0 = (it.line ?? 1) - 1;
+											byLine.set(l0, it);
+											if (it._uniqueId) byId.set(it._uniqueId, it);
+											if (Array.isArray(it.children)) collect(it.children);
+										}
+									};
+									collect(fileEntry.lists || []);
+
+									const aliasNow: (string | null)[] = lines.map((ln) =>
+										isUncheckedTaskLine(ln) ? this.getExplicitAssigneeAliasFromText(ln) : null
+									);
+
+									const nearestUp = (l0: number, aliasMap: (string | null)[]): string | null => {
+										let cur = byLine.get(l0);
+										while (cur) {
+											const parentId = cur._parentId;
+											if (!parentId) return null;
+											const parent = byId.get(parentId);
+											if (!parent) return null;
+											const pLine0 = (parent.line ?? 1) - 1;
+											const v = aliasMap[pLine0];
+											if (v) return v;
+											cur = parent;
+										}
+										return null;
+									};
+
+									// Iterate in ascending order; after each removal update aliasNow
+									const sortedLines = Array.from(byLine.keys()).sort((a, b) => a - b);
+									for (const l0 of sortedLines) {
+										const exp = aliasNow[l0];
+										if (!exp) continue;
+										// Only operate on unchecked tasks
+										if (!isUncheckedTaskLine(lines[l0] || "")) continue;
+
+										const saved = aliasNow[l0];
+										aliasNow[l0] = null;
+										const inherited = nearestUp(l0, aliasNow);
+										aliasNow[l0] = saved;
+
+										if (inherited && inherited.toLowerCase() === exp.toLowerCase()) {
+											const before = editor.getLine(l0);
+											let cleaned = normalizeTaskLine(before, { newAssigneeMark: null });
+											if (/<\/mark>\s*$/.test(cleaned)) cleaned = cleaned.replace(/\s*$/, " ");
+											editor.replaceRange(cleaned, { line: l0, ch: 0 }, { line: l0, ch: before.length });
+											// Reflect change in local arrays
+											lines[l0] = cleaned;
+											aliasNow[l0] = null;
+										}
+									}
+									// Restore cursor
+									editor.setCursor(savedCursor);
+								}
+							} catch (err) { void err; }
+						}
+					}
+				} catch (err) { void err; }
 			})
 		);
 
@@ -404,6 +1121,7 @@ export default class AgileObsidianPlugin extends Plugin {
 			this.checkboxStyleEl = undefined;
 		} catch (e) {
 			// no-op
+			void e;
 		}
 	}
 
@@ -412,6 +1130,253 @@ export default class AgileObsidianPlugin extends Plugin {
 			await this.injectCheckboxStyles();
 		} else {
 			this.removeCheckboxStyles();
+		}
+	}
+
+	private async autoFormatFile(file: TFile): Promise<void> {
+		try {
+			if (this.formattingFiles.has(file.path)) return;
+
+			// If the file is currently active in an editor, apply non-intrusive, line-local edits
+			// and NEVER touch the user's current line. This prevents cursor jumps while typing.
+			const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+			const isActive = !!activeView && activeView.file?.path === file.path;
+
+			if (isActive && activeView) {
+				const editor = activeView.editor;
+				const cursor = editor.getCursor();
+				const currentContent = editor.getValue();
+				const lines = currentContent.split("\n");
+
+				let changed = false;
+				const targets: number[] = [];
+
+				for (let i = 0; i < lines.length; i++) {
+					if (i === cursor.line) continue; // Defer formatting of the line the user is actively typing on
+					const line = lines[i];
+					if (isUncheckedTaskLine(line)) {
+						const normalized = normalizeTaskLine(line, {});
+						if (normalized !== line) {
+							lines[i] = normalized;
+							changed = true;
+							targets.push(i);
+						}
+					}
+				}
+
+				if (changed) {
+					const savedCursor = { ...cursor };
+					for (const idx of targets) {
+						const originalLine = editor.getLine(idx);
+						if (originalLine !== lines[idx]) {
+							editor.replaceRange(
+								lines[idx],
+								{ line: idx, ch: 0 },
+								{ line: idx, ch: originalLine.length }
+							);
+						}
+					}
+					// Restore cursor position exactly
+					editor.setCursor(savedCursor);
+				}
+				return;
+			}
+
+			// If not active, safe to rewrite the file as a whole.
+			const current = await this.app.vault.cachedRead(file);
+			const lines = current.split("\n");
+			let changed = false;
+
+			for (let i = 0; i < lines.length; i++) {
+				const line = lines[i];
+				if (isUncheckedTaskLine(line)) {
+					const normalized = normalizeTaskLine(line, {});
+					if (normalized !== line) {
+						lines[i] = normalized;
+						changed = true;
+					}
+				}
+			}
+
+			if (changed) {
+				this.formattingFiles.add(file.path);
+				try {
+					await this.app.vault.modify(file, lines.join("\n"));
+				} finally {
+					this.formattingFiles.delete(file.path);
+				}
+			}
+		} catch (err) { void err; }
+	}
+
+	private async applyCascadeAfterExternalChange(
+		filePath: string,
+		parentLine0: number,
+		beforeLines: string[] | null,
+		newAlias: string | null
+	): Promise<void> {
+		try {
+			const af = this.app.vault.getAbstractFileByPath(filePath);
+			if (!(af instanceof TFile)) return;
+
+			// Ensure we have a current index for structure (parents/children)
+			let fileEntry = this.taskIndex.getIndex()?.[filePath];
+			if (!fileEntry) {
+				await this.taskIndex.updateFile(af);
+				fileEntry = this.taskIndex.getIndex()?.[filePath];
+				if (!fileEntry) return;
+			}
+
+			// Build maps of line -> item and id -> item
+			const byLine = new Map<number, any>();
+			const byId = new Map<string, any>();
+			const collect = (items: any[]) => {
+				for (const it of items) {
+					const l0 = (it.line ?? 1) - 1;
+					byLine.set(l0, it);
+					if (it._uniqueId) byId.set(it._uniqueId, it);
+					if (Array.isArray(it.children)) collect(it.children);
+				}
+			};
+			collect(fileEntry.lists || []);
+
+			const parentItem = byLine.get(parentLine0);
+			if (!parentItem) return;
+
+			// Collect descendant line numbers (0-based) under the parent
+			const descendants: number[] = [];
+			const dfs = (it: any) => {
+				for (const ch of it.children || []) {
+					const l0 = (ch.line ?? 1) - 1;
+					descendants.push(l0);
+					dfs(ch);
+				}
+			};
+			dfs(parentItem);
+
+			// Before snapshot (for computing previous effective assignments)
+			const before = beforeLines ?? (await this.app.vault.cachedRead(af)).split("\n");
+			// After content (we'll apply our cascade edits on top of this)
+			const afterContent = await this.app.vault.cachedRead(af);
+			const lines = afterContent.split("\n");
+
+			const explicitOn = (ln: string): string | null =>
+				isUncheckedTaskLine(ln) ? this.getExplicitAssigneeAliasFromText(ln) : null;
+
+			const aliasBefore: (string | null)[] = before.map((ln) => explicitOn(ln));
+			const aliasAfter: (string | null)[] = lines.map((ln) => explicitOn(ln));
+
+			// Reflect the changed parent explicit alias in aliasAfter for accurate inheritance
+			aliasAfter[parentLine0] = newAlias;
+
+			// Resolve nearest ancestor explicit alias for a given line, using a given alias map
+			const nearestUp = (l0: number, aliasMap: (string | null)[]): string | null => {
+				let cur = byLine.get(l0);
+				while (cur) {
+					const line0 = (cur.line ?? 1) - 1;
+					const v = aliasMap[line0];
+					if (v) return v;
+					const pid = cur._parentId;
+					cur = pid ? byId.get(pid) : null;
+				}
+				return null;
+			};
+			// Variant that also returns the source ancestor line that provided the alias
+			const nearestUpWithSource = (
+				l0: number,
+				aliasMap: (string | null)[]
+			): { alias: string | null; source: number | null } => {
+				let cur = byLine.get(l0);
+				while (cur) {
+					const line0 = (cur.line ?? 1) - 1;
+					const v = aliasMap[line0];
+					if (v) return { alias: v, source: line0 };
+					const pid = cur._parentId;
+					cur = pid ? byId.get(pid) : null;
+				}
+				return { alias: null, source: null };
+			};
+
+			const toSetExplicit = new Map<number, string>(); // line -> alias to set explicitly
+			for (const d of descendants) {
+				if (!isUncheckedTaskLine(lines[d] || "")) continue;
+
+				// Previous effective assignment (explicit or inherited)
+				const explicitD = aliasBefore[d];
+				const prevEff = explicitD ?? nearestUp(d, aliasBefore);
+				// New effective assignment after the change (using updated aliasAfter parent)
+				const newEff = aliasAfter[d] ?? nearestUp(d, aliasAfter);
+
+				if (prevEff !== newEff) {
+					if (prevEff) {
+						toSetExplicit.set(d, prevEff);
+						aliasAfter[d] = prevEff; // Reflect planned explicit addition for downstream inheritance
+					}
+				} else {
+					// If effective assignment stayed same but was previously inferred from the changed ancestor,
+					// convert it to an explicit assignment to preserve intent.
+					if (!explicitD && prevEff) {
+						const beforeSrc = nearestUpWithSource(d, aliasBefore).source;
+						if (beforeSrc === parentLine0) {
+							toSetExplicit.set(d, prevEff);
+							aliasAfter[d] = prevEff;
+						}
+					}
+				}
+			}
+
+			// Pass 2: remove redundant explicits that now match inherited value
+			const toRemoveExplicit = new Set<number>();
+			for (const d of descendants) {
+				if (!isUncheckedTaskLine(lines[d] || "")) continue;
+
+				const explicitD = aliasAfter[d];
+				if (!explicitD) continue;
+
+				// Exclude self to compute inherited value
+				const saved = aliasAfter[d];
+				aliasAfter[d] = null;
+				const inherited = nearestUp(d, aliasAfter);
+				aliasAfter[d] = saved;
+
+				// If an explicit equals inherited and wasn't just added to preserve a change, remove it
+				if (inherited && inherited === explicitD && !toSetExplicit.has(d)) {
+					toRemoveExplicit.add(d);
+				}
+			}
+
+			// Apply changes to file content lines
+			const team = resolveTeamForPath(filePath, (this.settings as any)?.teams ?? []);
+			let changed = false;
+
+			for (const [lineNo, alias] of toSetExplicit.entries()) {
+				const orig = lines[lineNo] ?? "";
+				const mark = this.buildAssigneeMarkForAlias(alias, "active", team);
+				let upd = normalizeTaskLine(orig, { newAssigneeMark: mark });
+				if (/<\/mark>\s*$/.test(upd)) upd = upd.replace(/\s*$/, " ");
+				if (upd !== orig) {
+					lines[lineNo] = upd;
+					changed = true;
+				}
+			}
+
+			for (const lineNo of toRemoveExplicit) {
+				const orig = lines[lineNo] ?? "";
+				let upd = normalizeTaskLine(orig, { newAssigneeMark: null });
+				if (/<\/mark>\s*$/.test(upd)) upd = upd.replace(/\s*$/, " ");
+				if (upd !== orig) {
+					lines[lineNo] = upd;
+					changed = true;
+				}
+			}
+
+			if (changed) {
+				await this.app.vault.modify(af, lines.join("\n"));
+				// Keep TaskIndex fresh after cascading edits
+				await this.taskIndex.updateFile(af);
+			}
+		} catch (err) {
+			void err;
 		}
 	}
 
@@ -466,7 +1431,7 @@ export default class AgileObsidianPlugin extends Plugin {
 
 			// Scan all files within each team's root folder to detect members
 			const allFiles = this.app.vault.getAllLoadedFiles();
-			for (const [teamName, info] of detectedTeams.entries()) {
+			for (const [, info] of detectedTeams.entries()) {
 				const root = info.rootPath;
 				for (const af of allFiles) {
 					if (af instanceof TFile && af.extension === "md" && (af.path === root || af.path.startsWith(root + "/"))) {
@@ -554,8 +1519,8 @@ export default class AgileObsidianPlugin extends Plugin {
 					mergedMap.set(t.name, { rootPath: t.rootPath, members: mm });
 				} else {
 					// Detected team: keep detected members, but prefer any customized rootPath from existing
-					const entry = mergedMap.get(t.name)!;
-					if (t.rootPath && t.rootPath !== entry.rootPath) {
+					const entry = mergedMap.get(t.name);
+					if (entry && t.rootPath && t.rootPath !== entry.rootPath) {
 						entry.rootPath = t.rootPath;
 					}
 					// Do NOT merge members here; detected set remains the source of truth
