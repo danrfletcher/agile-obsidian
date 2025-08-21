@@ -7,13 +7,13 @@ import {
 	Notice,
 } from "obsidian";
 import {
-	slugifyName,
 	generateShortCode,
 	buildTeamSlug,
 	buildResourceFolderName,
 	buildResourceFileName,
 	parseTeamFolderName,
 	buildResourceSlug,
+	getBaseCodeFromSlug,
 } from "./utils/commands/commandUtils";
 import AgileObsidian from "./main";
 
@@ -1668,10 +1668,14 @@ export class AgileSettingTab extends PluginSettingTab {
 			const segments = team.rootPath.split("/").filter(Boolean);
 			const currentFolderName = segments[segments.length - 1];
 			const parsed = parseTeamFolderName(currentFolderName);
-			if (!parsed)
-				throw new Error("Team folder does not match slug naming.");
-			const originalCode = parsed.code;
-			const baseNameSlug = slugifyName(orgName);
+			let originalCode: string;
+			if (parsed) {
+				originalCode = parsed.code;
+			} else {
+				const fallbackSlug = team.slug ?? null;
+				const fromSlug = fallbackSlug ? getBaseCodeFromSlug(fallbackSlug) : null;
+				originalCode = fromSlug || generateShortCode();
+			}
 			const orgBaseSlug = buildTeamSlug(orgName, originalCode, null); // e.g., "nueral-6fg1hj"
 
 			// If org name changed, rename folder "<OldName> (old-slug)" -> "<NewName> (new-slug)"
