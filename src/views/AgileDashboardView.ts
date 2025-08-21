@@ -327,7 +327,7 @@ export class AgileDashboardView extends ItemView {
 		const changedFiles = await cleanupExpiredSnoozes(
 			this.app,
 			currentTasks,
-			getCurrentUserDisplayName(this.plugin.settings)
+			getCurrentUserDisplayName(this.plugin.settings) || ""
 		);
 		if (changedFiles.size > 0) {
 			for (const path of changedFiles) {

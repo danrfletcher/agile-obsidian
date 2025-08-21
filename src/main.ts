@@ -32,7 +32,14 @@ export default class AgileObsidianPlugin extends Plugin {
 				this.settings,
 				{
 					detectAndUpdateTeams: async () => {
-						updateSettingsTeams(this.app.vault, this.settings);
+						updateSettingsTeams(
+							this.app.vault,
+							this.settings as unknown as {
+								teamsFolder: string;
+								teams?: DetectedTeamInfo[];
+								[k: string]: any;
+							}
+						);
 						await this.saveSettings();
 					},
 					saveSettings: async () => {
@@ -99,7 +106,11 @@ export default class AgileObsidianPlugin extends Plugin {
 			callback: async () => {
 				const count = updateSettingsTeams(
 					this.app.vault,
-					this.settings
+					this.settings as unknown as {
+						teamsFolder: string;
+						teams?: DetectedTeamInfo[];
+						[k: string]: any;
+					}
 				);
 				await this.saveSettings();
 				new Notice(`Detected ${count} team(s).`);
@@ -131,7 +142,14 @@ export default class AgileObsidianPlugin extends Plugin {
 					});
 
 					// Refresh teams
-					updateSettingsTeams(this.app.vault, this.settings);
+					updateSettingsTeams(
+						this.app.vault,
+						this.settings as unknown as {
+							teamsFolder: string;
+							teams?: DetectedTeamInfo[];
+							[k: string]: any;
+						}
+					);
 					await this.saveSettings();
 					new Notice(`Organization "${orgName}" created.`);
 				} catch (e: any) {
