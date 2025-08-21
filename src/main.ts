@@ -77,7 +77,7 @@ export default class AgileObsidianPlugin extends Plugin {
 					) => {
 						await addTeamsToExistingOrganization(
 							this.app,
-							org,
+							org as DetectedTeamInfo,
 							orgName,
 							suffixes,
 						);
