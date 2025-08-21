@@ -110,38 +110,16 @@ export async function createOrganizationFromTeam(opts: {
 
 			// Child alias and slug based on org base code + pathId
 			const childName = `${orgName} ${displaySuffix}`;
-			const childSlug = buildTeamSlug(orgName, code, pid);
+			const childSlug = buildTeamSlug(childName, code, pid);
 
 			// Reuse the exact team creation flow as "Add Team"
 			const parentPathForChild = teamsDir;
-			const { info } = await createTeamResources(
+			await createTeamResources(
 				app,
 				childName,
 				parentPathForChild,
 				childSlug
 			);
-
-			// Safety fallback to ensure Docs/Initiatives exist
-			const childFolder = info?.rootPath ?? `${parentPathForChild}/${childName} (${childSlug})`;
-			if (!(await vault.adapter.exists(childFolder))) {
-				await vault.createFolder(childFolder);
-			}
-			const docs = `${childFolder}/Docs`;
-			if (!(await vault.adapter.exists(docs))) {
-				await vault.createFolder(docs);
-			}
-			// Initiatives directly under team root
-			const initDirName = buildResourceFolderName("initiatives", code, pid);
-			const initDir = `${childFolder}/${initDirName}`;
-			if (!(await vault.adapter.exists(initDir))) {
-				await vault.createFolder(initDir);
-			}
-			const completedFile = `${initDir}/${buildResourceFileName("completed", code, pid)}`;
-			const initiativesFile = `${initDir}/${buildResourceFileName("initiatives", code, pid)}`;
-			const prioritiesFile = `${initDir}/${buildResourceFileName("priorities", code, pid)}`;
-			if (!(await vault.adapter.exists(completedFile))) await vault.create(completedFile, "");
-			if (!(await vault.adapter.exists(initiativesFile))) await vault.create(initiativesFile, "");
-			if (!(await vault.adapter.exists(prioritiesFile))) await vault.create(prioritiesFile, "");
 
 			createdTeamSlugs.push(childSlug);
 		}
@@ -345,32 +323,10 @@ export async function createSubteams(
     const num = nextNum();
     const childPathId = parentPathId ? `${parentPathId}-${num}` : `${num}`;
     const childName = `${orgName} ${suf}`;
-    const childSlug = buildTeamSlug(orgName, code, childPathId);
+    const childSlug = buildTeamSlug(childName, code, childPathId);
     const parentPathForChild = teamsDir;
 
     // Use the same creation path as "Add Team" and organization children
-    const { info } = await createTeamResources(app, childName, parentPathForChild, childSlug);
-
-    // Safety fallback to ensure Docs/Initiatives exist
-    const childFolder = info?.rootPath ?? `${parentPathForChild}/${childName} (${childSlug})`;
-    if (!(await vault.adapter.exists(childFolder))) {
-      await vault.createFolder(childFolder);
-    }
-    const docs = `${childFolder}/Docs`;
-    if (!(await vault.adapter.exists(docs))) {
-      await vault.createFolder(docs);
-    }
-    // Initiatives directly under team root
-    const initDirName = buildResourceFolderName("initiatives", code, childPathId);
-    const initDir = `${childFolder}/${initDirName}`;
-    if (!(await vault.adapter.exists(initDir))) {
-      await vault.createFolder(initDir);
-    }
-    const completedFile = `${initDir}/${buildResourceFileName("completed", code, childPathId)}`;
-    const initiativesFile = `${initDir}/${buildResourceFileName("initiatives", code, childPathId)}`;
-    const prioritiesFile = `${initDir}/${buildResourceFileName("priorities", code, childPathId)}`;
-    if (!(await vault.adapter.exists(completedFile))) await vault.create(completedFile, "");
-    if (!(await vault.adapter.exists(initiativesFile))) await vault.create(initiativesFile, "");
-    if (!(await vault.adapter.exists(prioritiesFile))) await vault.create(prioritiesFile, "");
+    await createTeamResources(app, childName, parentPathForChild, childSlug);
   }
 }
