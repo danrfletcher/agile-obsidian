@@ -1,4 +1,4 @@
-import { App, Modal, Notice } from "obsidian";
+import { App, Modal, Notice, TFolder } from "obsidian";
 import {
 	generateShortCode,
 	buildTeamSlug,
@@ -35,7 +35,43 @@ export class AddTeamModal extends Modal {
 			attr: { placeholder: "e.g., Sample Team", style: "width: 100%;" },
 		}) as HTMLInputElement;
 
-		// Parent folder selection removed; teams are created in the vault root by default.
+		// Parent folder selection (default to vault root)
+		const folderWrapper = contentEl.createEl("div", {
+			attr: { style: "margin-bottom: 12px;" },
+		});
+		folderWrapper.createEl("label", {
+			text: "Parent folder",
+			attr: { style: "display:block; margin-bottom:4px;" },
+		});
+		const selectEl = folderWrapper.createEl("select", {
+			attr: { style: "width: 100%;" },
+		}) as HTMLSelectElement;
+
+		const all = this.app.vault.getAllLoadedFiles();
+		const folders = all.filter((f) => f instanceof TFolder) as TFolder[];
+		const paths = Array.from(
+			new Set<string>(["/", ...folders.map((f) => f.path)])
+		).sort((a, b) => a.localeCompare(b));
+		for (const p of paths) {
+			const opt = document.createElement("option");
+			opt.value = p;
+			opt.text = p === "/" ? "(vault root)" : p;
+			selectEl.appendChild(opt);
+		}
+		// Preselect default path if provided; else default to vault root
+		if (this.defaultParentPath) {
+			const preferred = this.defaultParentPath;
+			const hasPreferred = paths.includes(preferred);
+			if (!hasPreferred && preferred !== "/") {
+				const opt = document.createElement("option");
+				opt.value = preferred;
+				opt.text = preferred;
+				selectEl.appendChild(opt);
+			}
+			selectEl.value = preferred;
+		} else {
+			selectEl.value = "/";
+		}
 
 		const code = generateShortCode();
 		const aliasPreview = contentEl.createEl("div", {
@@ -62,7 +98,7 @@ export class AddTeamModal extends Modal {
 		const addBtn = btns.createEl("button", { text: "Add Team" });
 		addBtn.addEventListener("click", async () => {
 			const teamName = nameInput.value.trim();
-			const parentPath = "/";
+			const parentPath = selectEl.value;
 			if (!teamName) {
 				new Notice("Please enter a team name.");
 				return;
