@@ -32,7 +32,6 @@ export async function createOrganizationFromTeam(opts: {
 		vault,
 		orgName,
 		orgSlug,
-		organizationsRoot = "Organizations",
 		team,
 	} = opts;
 
@@ -40,8 +39,9 @@ export async function createOrganizationFromTeam(opts: {
 	if (!team.rootPath) throw new Error("Original team folder not found");
 	const teamFolderName = basename(team.rootPath);
 
-	// Ensure org root exists
-	const orgRootPath = joinPath(organizationsRoot, `${orgName} (${orgSlug})`);
+	// Ensure org root exists adjacent to the original team folder
+	const parentDir = dirname(team.rootPath);
+	const orgRootPath = joinPath(parentDir, `${orgName} (${orgSlug})`);
 	await ensureFolder(vault, orgRootPath);
 
 	// New team location under organization
