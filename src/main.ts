@@ -16,6 +16,7 @@ import {
 	toggleTaskAtLine,
 } from "./tasks/taskOperations";
 import { createTeamResources } from "./teams/teamCreation";
+import { slugifyName } from "./utils/commands/commandUtils";
 
 export default class AgileObsidianPlugin extends Plugin {
 	settings: AgileObsidianSettings;
@@ -66,7 +67,7 @@ export default class AgileObsidianPlugin extends Plugin {
 							vault: this.app.vault,
 							team: team as DetectedTeamInfo,
 							orgName,
-							suffixes,
+							orgSlug: slugifyName(orgName),
 						});
 					},
 					addTeamsToExistingOrganization: async (
@@ -126,10 +127,10 @@ export default class AgileObsidianPlugin extends Plugin {
 					const suffixes = ["A", "B"];
 
 					await createOrganizationFromTeam({
-						app: this.app,
+						vault: this.app.vault,
 						team: team as DetectedTeamInfo,
 						orgName,
-						suffixes,
+						orgSlug: slugifyName(orgName),
 					});
 
 					// Refresh teams
