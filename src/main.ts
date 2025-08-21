@@ -5,6 +5,7 @@ import type {
 	AgileObsidianSettings,
 } from "./settings/settings.types";
 import { updateSettingsTeams } from "./teams/teamDetection";
+import type { TeamInfo as DetectedTeamInfo } from "./teams/teamDetection";
 import {
 	createOrganizationFromTeam,
 	addTeamsToExistingOrganization,
@@ -63,7 +64,7 @@ export default class AgileObsidianPlugin extends Plugin {
 					) => {
 						await createOrganizationFromTeam({
 							app: this.app,
-							team,
+							team: team as DetectedTeamInfo,
 							orgName,
 							suffixes,
 						});
@@ -83,7 +84,7 @@ export default class AgileObsidianPlugin extends Plugin {
 					createSubteams: async (parentTeam, suffixes) => {
 						await createSubteams({
 							app: this.app,
-							parentTeam,
+							parentTeam: parentTeam as DetectedTeamInfo,
 							suffixes,
 						});
 					},
@@ -126,7 +127,7 @@ export default class AgileObsidianPlugin extends Plugin {
 
 					await createOrganizationFromTeam({
 						app: this.app,
-						team,
+						team: team as DetectedTeamInfo,
 						orgName,
 						suffixes,
 					});
