@@ -376,17 +376,34 @@ export async function hydrateTeamsFromVault(
 			// If user customized rootPath previously, honor it
 			const entry = merged.get(key)!;
 			if (t.rootPath && t.rootPath !== entry.rootPath) {
-				console.log(
-					`${TAG} overriding detected rootPath with existing customized rootPath:`,
-					{
-						name: t.name,
-						slug: key,
-						from: entry.rootPath,
-						to: t.rootPath,
-					}
-				);
-				entry.rootPath = t.rootPath;
-				updatedRootPaths++;
+				// Only honor overrides that still point to a valid team folder with the same slug
+				const existingFolder = getFolder(vault, t.rootPath);
+				const parsed = existingFolder
+					? parseTeamFolderName(existingFolder.name)
+					: null;
+				if (parsed && parsed.slug.toLowerCase() === key.toLowerCase()) {
+					console.log(
+						`${TAG} overriding detected rootPath with existing customized rootPath:`,
+						{
+							name: t.name,
+							slug: key,
+							from: entry.rootPath,
+							to: t.rootPath,
+						}
+					);
+					entry.rootPath = t.rootPath;
+					updatedRootPaths++;
+				} else {
+					console.warn(
+						`${TAG} ignoring rootPath override that does not match slug; keeping detected path`,
+						{
+							name: t.name,
+							slug: key,
+							existingRootPath: t.rootPath,
+							detectedRootPath: entry.rootPath,
+						}
+					);
+				}
 			}
 		}
 
