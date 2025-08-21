@@ -1,4 +1,4 @@
-import { Plugin, TFile, Notice } from "obsidian";
+import { Plugin } from "obsidian";
 import { AgileSettingTab } from "./settings/settings.ui";
 import { DEFAULT_SETTINGS } from "./settings/settings.store";
 import type {
@@ -11,10 +11,6 @@ import {
 	addTeamsToExistingOrganization,
 	createSubteams,
 } from "./teams/organizations";
-import {
-	getUncheckedTasksFromFile,
-	toggleTaskAtLine,
-} from "./tasks/taskOperations";
 import { createTeamResources } from "./teams/teamCreation";
 import { slugifyName } from "./utils/commands/commandUtils";
 
@@ -97,87 +93,6 @@ export default class AgileObsidianPlugin extends Plugin {
 				() => this.saveSettings(),
 				() => this.applyCheckboxStylesSetting()
 			)
-		);
-
-		// Command: Update Teams
-		this.addCommand({
-			id: "agile-update-teams",
-			name: "Update Teams",
-			callback: async () => {
-				const count = updateSettingsTeams(
-					this.app.vault,
-					this.settings as unknown as {
-						teamsFolder: string;
-						teams?: DetectedTeamInfo[];
-						[k: string]: any;
-					}
-				);
-				await this.saveSettings();
-				new Notice(`Detected ${count} team(s).`);
-			},
-		});
-
-		// Command: Create organization from selected team (demo)
-		this.addCommand({
-			id: "agile-create-organization-from-team",
-			name: "Create Organization from Selected Team",
-			callback: async () => {
-				try {
-					// Demo: pick first team (replace with your selection UI/modal)
-					const team = this.settings.teams?.[0];
-					if (!team) {
-						new Notice("No team selected or detected.");
-						return;
-					}
-
-					// Demo: simple defaults — replace with CreateOrganizationModal
-					const orgName = "Acme";
-					const suffixes = ["A", "B"];
-
-					await createOrganizationFromTeam({
-						vault: this.app.vault,
-						team: team as DetectedTeamInfo,
-						orgName,
-						orgSlug: slugifyName(orgName),
-					});
-
-					// Refresh teams
-					updateSettingsTeams(
-						this.app.vault,
-						this.settings as unknown as {
-							teamsFolder: string;
-							teams?: DetectedTeamInfo[];
-							[k: string]: any;
-						}
-					);
-					await this.saveSettings();
-					new Notice(`Organization "${orgName}" created.`);
-				} catch (e: any) {
-					console.error(e);
-					new Notice(e?.message ?? "Failed to create organization");
-				}
-			},
-		});
-
-		// Command: Toggle task in active file at cursor line
-		this.addCommand({
-			id: "agile-toggle-task-at-cursor",
-			name: "Toggle Task at Cursor",
-			editorCallback: async (editor, view) => {
-				const file = view?.file;
-				if (!(file instanceof TFile)) return;
-				const line = editor.getCursor().line;
-				await toggleTaskAtLine(this.app, file, line);
-			},
-		});
-
-		// Example: On file open, list unchecked tasks (demo hook)
-		this.registerEvent(
-			this.app.workspace.on("file-open", async (file) => {
-				if (!(file instanceof TFile)) return;
-				const tasks = await getUncheckedTasksFromFile(this.app, file);
-				// TODO: index/process tasks as needed
-			})
 		);
 	}
 
