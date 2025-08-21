@@ -121,11 +121,8 @@ export async function createOrganizationFromTeam(opts: {
 				childSlug
 			);
 
-			// Safety: If createTeamResources returns without creating, ensure at least the expected
-			// scaffolding exists (Docs, Projects, Initiatives and files). This keeps behavior robust.
-			const childFolder =
-				info?.rootPath ??
-				`${parentPathForChild}/${childName} (${childSlug})`;
+			// Safety fallback to ensure Docs/Initiatives exist
+			const childFolder = info?.rootPath ?? `${parentPathForChild}/${childName} (${childSlug})`;
 			if (!(await vault.adapter.exists(childFolder))) {
 				await vault.createFolder(childFolder);
 			}
@@ -133,42 +130,18 @@ export async function createOrganizationFromTeam(opts: {
 			if (!(await vault.adapter.exists(docs))) {
 				await vault.createFolder(docs);
 			}
-
-			// Seed Projects/Initiatives structure
-			const projects = `${childFolder}/Projects`;
-			if (!(await vault.adapter.exists(projects))) {
-				await vault.createFolder(projects);
-			}
-			const initDirName = buildResourceFolderName(
-				"initiatives",
-				code,
-				pid
-			);
-			const initDir = `${projects}/${initDirName}`;
+			// Initiatives directly under team root
+			const initDirName = buildResourceFolderName("initiatives", code, pid);
+			const initDir = `${childFolder}/${initDirName}`;
 			if (!(await vault.adapter.exists(initDir))) {
 				await vault.createFolder(initDir);
 			}
-			const completedFile = `${initDir}/${buildResourceFileName(
-				"completed",
-				code,
-				pid
-			)}`;
-			const initiativesFile = `${initDir}/${buildResourceFileName(
-				"initiatives",
-				code,
-				pid
-			)}`;
-			const prioritiesFile = `${initDir}/${buildResourceFileName(
-				"priorities",
-				code,
-				pid
-			)}`;
-			if (!(await vault.adapter.exists(completedFile)))
-				await vault.create(completedFile, "");
-			if (!(await vault.adapter.exists(initiativesFile)))
-				await vault.create(initiativesFile, "");
-			if (!(await vault.adapter.exists(prioritiesFile)))
-				await vault.create(prioritiesFile, "");
+			const completedFile = `${initDir}/${buildResourceFileName("completed", code, pid)}`;
+			const initiativesFile = `${initDir}/${buildResourceFileName("initiatives", code, pid)}`;
+			const prioritiesFile = `${initDir}/${buildResourceFileName("priorities", code, pid)}`;
+			if (!(await vault.adapter.exists(completedFile))) await vault.create(completedFile, "");
+			if (!(await vault.adapter.exists(initiativesFile))) await vault.create(initiativesFile, "");
+			if (!(await vault.adapter.exists(prioritiesFile))) await vault.create(prioritiesFile, "");
 
 			createdTeamSlugs.push(childSlug);
 		}
@@ -378,28 +351,21 @@ export async function createSubteams(
     // Use the same creation path as "Add Team" and organization children
     const { info } = await createTeamResources(app, childName, parentPathForChild, childSlug);
 
-    // Safety fallback to ensure Docs/Projects/Initiatives exist
+    // Safety fallback to ensure Docs/Initiatives exist
     const childFolder = info?.rootPath ?? `${parentPathForChild}/${childName} (${childSlug})`;
     if (!(await vault.adapter.exists(childFolder))) {
       await vault.createFolder(childFolder);
     }
-
     const docs = `${childFolder}/Docs`;
     if (!(await vault.adapter.exists(docs))) {
       await vault.createFolder(docs);
     }
-
-    const projects = `${childFolder}/Projects`;
-    if (!(await vault.adapter.exists(projects))) {
-      await vault.createFolder(projects);
-    }
-
+    // Initiatives directly under team root
     const initDirName = buildResourceFolderName("initiatives", code, childPathId);
-    const initDir = `${projects}/${initDirName}`;
+    const initDir = `${childFolder}/${initDirName}`;
     if (!(await vault.adapter.exists(initDir))) {
       await vault.createFolder(initDir);
     }
-
     const completedFile = `${initDir}/${buildResourceFileName("completed", code, childPathId)}`;
     const initiativesFile = `${initDir}/${buildResourceFileName("initiatives", code, childPathId)}`;
     const prioritiesFile = `${initDir}/${buildResourceFileName("priorities", code, childPathId)}`;
