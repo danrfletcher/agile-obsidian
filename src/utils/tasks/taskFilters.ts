@@ -2,7 +2,7 @@ import { TaskItem } from "src/types/TaskItem";
 import {
 	getCurrentUserAlias,
 	type AgileObsidianSettings,
-} from "../../settings";
+} from "../../settings/settings.ui";
 
 function getAlias(): string {
 	try {
@@ -204,7 +204,11 @@ export const isSleeping = (
  * @param {boolean} active - Whether to check for active (true) or inactive (false) status.
  * @returns {boolean} True if it matches the criteria, false otherwise.
  */
-export const activeForMember = (task: TaskItem, active = true, selectedAlias?: string | null): boolean => {
+export const activeForMember = (
+	task: TaskItem,
+	active = true,
+	selectedAlias?: string | null
+): boolean => {
 	const memberSlug = selectedAlias || getUserAliasSlug();
 	const activePattern = new RegExp(`active-${memberSlug}(?![\\w-])`, "i");
 	const inactivePattern = new RegExp(`inactive-${memberSlug}(?![\\w-])`, "i");

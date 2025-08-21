@@ -3,7 +3,7 @@ import { TaskIndex } from "../index/TaskIndex";
 import { TaskItem } from "../types/TaskItem";
 import manifest from "../../manifest.json";
 import { cleanupExpiredSnoozes } from "../utils/snooze/snoozeUtils";
-import { getCurrentUserDisplayName } from "../settings";
+import { getCurrentUserDisplayName } from "../settings/settings.ui";
 
 // Section processors
 import { processAndRenderObjectives } from "./sections/ObjectivesProcessor";
@@ -71,16 +71,24 @@ export class AgileDashboardView extends ItemView {
 		// - When unchecked (false), the view is "Inactive".
 		// The label below reflects the current state, and the boolean is later passed to projectView as `status`.
 		const statusToggleContainer = controlsContainer.createEl("span", {
-			attr: { style: "display: inline-flex; align-items: center; gap: 6px;" },
+			attr: {
+				style: "display: inline-flex; align-items: center; gap: 6px;",
+			},
 		});
-		this.activeToggleLabel = statusToggleContainer.createEl("span", { text: "Active" });
-		this.activeToggle = statusToggleContainer.createEl("input", { type: "checkbox" }) as HTMLInputElement;
+		this.activeToggleLabel = statusToggleContainer.createEl("span", {
+			text: "Active",
+		});
+		this.activeToggle = statusToggleContainer.createEl("input", {
+			type: "checkbox",
+		}) as HTMLInputElement;
 		this.activeToggle.checked = true;
 		statusToggleContainer.style.display =
 			this.viewSelect.value === "projects" ? "inline-flex" : "none";
 
 		this.activeToggle.addEventListener("change", () => {
-			this.activeToggleLabel.textContent = this.activeToggle.checked ? "Active" : "Inactive";
+			this.activeToggleLabel.textContent = this.activeToggle.checked
+				? "Active"
+				: "Inactive";
 			this.updateView();
 		});
 
@@ -96,12 +104,18 @@ export class AgileDashboardView extends ItemView {
 		const populateMemberSelect = () => {
 			this.memberSelect.innerHTML = "";
 
-			type Entry = { alias: string; name: string; role: string; rank: number; label: string };
+			type Entry = {
+				alias: string;
+				name: string;
+				role: string;
+				rank: number;
+				label: string;
+			};
 			const entries: Entry[] = [];
 			const teams = this.plugin.settings.teams || [];
 			const seen = new Set<string>();
 			for (const t of teams) {
-				for (const m of (t.members || [])) {
+				for (const m of t.members || []) {
 					const alias = (m.alias || "").trim();
 					const dispName = m.name || alias;
 					if (!alias) continue;
@@ -111,8 +125,16 @@ export class AgileDashboardView extends ItemView {
 					let role = m.type || "member";
 					if (lower.endsWith("-ext")) role = "external";
 					else if (lower.endsWith("-team")) role = "team";
-					else if (lower.endsWith("-int")) role = "internal-team-member";
-					const rank = role === "member" ? 0 : role === "internal-team-member" ? 1 : role === "team" ? 2 : 3;
+					else if (lower.endsWith("-int"))
+						role = "internal-team-member";
+					const rank =
+						role === "member"
+							? 0
+							: role === "internal-team-member"
+							? 1
+							: role === "team"
+							? 2
+							: 3;
 					const roleLabel =
 						role === "member"
 							? "Team Member"
@@ -126,7 +148,9 @@ export class AgileDashboardView extends ItemView {
 				}
 			}
 
-			entries.sort((a, b) => (a.rank - b.rank) || a.name.localeCompare(b.name));
+			entries.sort(
+				(a, b) => a.rank - b.rank || a.name.localeCompare(b.name)
+			);
 
 			for (const e of entries) {
 				const opt = document.createElement("option");
@@ -158,8 +182,14 @@ export class AgileDashboardView extends ItemView {
 					// Repopulate member dropdown and preserve selection if possible
 					// populateMemberSelect is defined above in onOpen scope
 					// @ts-ignore - using function from closure
-					(typeof populateMemberSelect === "function") && (populateMemberSelect as any)();
-					if (prev && Array.from(this.memberSelect.options).some((o) => o.value === prev)) {
+					typeof populateMemberSelect === "function" &&
+						(populateMemberSelect as any)();
+					if (
+						prev &&
+						Array.from(this.memberSelect.options).some(
+							(o) => o.value === prev
+						)
+					) {
 						this.memberSelect.value = prev;
 					}
 				}
@@ -260,7 +290,10 @@ export class AgileDashboardView extends ItemView {
 		const selectedView = this.viewSelect.value;
 		// isActive is true when the checkbox is checked ("Active"), false when unchecked ("Inactive").
 		const isActive = this.activeToggle ? this.activeToggle.checked : true;
-		const selectedAlias = this.memberSelect?.value || this.plugin.settings.currentUserAlias || null;
+		const selectedAlias =
+			this.memberSelect?.value ||
+			this.plugin.settings.currentUserAlias ||
+			null;
 
 		if (selectedView === "projects") {
 			await this.projectView(contentContainer, isActive, selectedAlias);
@@ -282,7 +315,11 @@ export class AgileDashboardView extends ItemView {
 	 * @param status When true => "Active" mode; when false => "Inactive" mode.
 	 * @param selectedAlias Alias whose items to emphasize/filter; null means current user or all.
 	 */
-	private async projectView(container: HTMLElement, status = true, selectedAlias: string | null = null) {
+	private async projectView(
+		container: HTMLElement,
+		status = true,
+		selectedAlias: string | null = null
+	) {
 		// Get all tasks from index
 		let currentTasks = this.taskIndex.getAllTasks();
 
