@@ -63,7 +63,7 @@ export default class AgileObsidianPlugin extends Plugin {
 						suffixes
 					) => {
 						await createOrganizationFromTeam({
-							app: this.app,
+							vault: this.app.vault,
 							team: team as DetectedTeamInfo,
 							orgName,
 							suffixes,
