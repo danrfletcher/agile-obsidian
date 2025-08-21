@@ -28,8 +28,9 @@ export async function createOrganizationFromTeam(opts: {
 	orgSlug: string;
 	organizationsRoot?: string; // unused here; org remains at the current location
 	team: TeamInfo;
+	suffixes?: string[]; // optional team suffixes to create immediately
 }): Promise<Organization> {
-	const { vault, orgName, orgSlug, team } = opts;
+	const { vault, orgName, orgSlug, team, suffixes = [] } = opts;
 
 	// Validate team source
 	if (!team.rootPath) throw new Error("Original team folder not found");
@@ -57,11 +58,82 @@ export async function createOrganizationFromTeam(opts: {
 	const teamsDir = joinPath(newRootPath, "Teams");
 	await ensureFolder(vault, teamsDir);
 
+	// Optionally create child teams inside the org's Teams folder
+	const createdTeamSlugs: string[] = [];
+
+	if (suffixes.length > 0) {
+		// Collect used pathIds from existing children to avoid collisions
+		const usedPathIds = new Set<string>();
+		try {
+			const list = await (vault.adapter as any).list(teamsDir);
+			const folders: string[] = Array.isArray(list?.folders) ? list.folders : [];
+			for (const full of folders) {
+				const name = full.split("/").filter(Boolean).pop()!;
+				const p = parseTeamFolderName(name);
+				if (p) {
+					const base = slugifyName(p.name);
+					const pid = getPathIdFromSlug(p.slug, base);
+					if (pid) usedPathIds.add(pid);
+				}
+			}
+		} catch {
+			// listing failed; proceed with empty set
+		}
+
+		for (let i = 0; i < suffixes.length; i++) {
+			const rawSuffix = (suffixes[i] ?? "").trim();
+			const displaySuffix = rawSuffix || `${i + 1}`;
+
+			// Prefer numeric or slugified suffix as pathId; ensure uniqueness
+			const baseCandidate = slugifyName(displaySuffix) || `${i + 1}`;
+			let pid = baseCandidate;
+			let n = 1;
+			while (usedPathIds.has(pid)) {
+				n++;
+				pid = `${baseCandidate}-${n}`;
+			}
+			usedPathIds.add(pid);
+
+			const childName = `${orgName} ${displaySuffix}`;
+			const childSlug = buildTeamSlug(orgName, code, pid);
+			const childFolder = `${teamsDir}/${childName} (${childSlug})`;
+
+			if (!(await vault.adapter.exists(childFolder))) {
+				await vault.createFolder(childFolder);
+			}
+
+			// Seed Docs
+			const docs = `${childFolder}/Docs`;
+			if (!(await vault.adapter.exists(docs))) {
+				await vault.createFolder(docs);
+			}
+
+			// Seed Projects/Initiatives structure
+			const projects = `${childFolder}/Projects`;
+			if (!(await vault.adapter.exists(projects))) {
+				await vault.createFolder(projects);
+			}
+			const initDirName = buildResourceFolderName("initiatives", code, pid);
+			const initDir = `${projects}/${initDirName}`;
+			if (!(await vault.adapter.exists(initDir))) {
+				await vault.createFolder(initDir);
+			}
+			const completedFile = `${initDir}/${buildResourceFileName("completed", code, pid)}`;
+			const initiativesFile = `${initDir}/${buildResourceFileName("initiatives", code, pid)}`;
+			const prioritiesFile = `${initDir}/${buildResourceFileName("priorities", code, pid)}`;
+			if (!(await vault.adapter.exists(completedFile))) await vault.create(completedFile, "");
+			if (!(await vault.adapter.exists(initiativesFile))) await vault.create(initiativesFile, "");
+			if (!(await vault.adapter.exists(prioritiesFile))) await vault.create(prioritiesFile, "");
+
+			createdTeamSlugs.push(childSlug);
+		}
+	}
+
 	return {
 		name: orgName,
 		slug: desiredSlug,
 		rootPath: newRootPath,
-		teams: [],
+		teams: createdTeamSlugs,
 	};
 }
 
@@ -140,6 +212,14 @@ export async function addTeamsToExistingOrganization(
 
     if (!(await app.vault.adapter.exists(folder))) {
       await app.vault.createFolder(folder);
+    }
+    const docs = `${folder}/Docs`;
+    if (!(await app.vault.adapter.exists(docs))) {
+      await app.vault.createFolder(docs);
+    }
+    const docs = `${folder}/Docs`;
+    if (!(await app.vault.adapter.exists(docs))) {
+      await app.vault.createFolder(docs);
     }
 
     // Seed Projects/Initiatives
