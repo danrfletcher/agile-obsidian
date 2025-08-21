@@ -26,7 +26,7 @@ export class IdentityPresenter {
 		}
 		if (uniq.size === 0) {
 			const emptyEl = container.createEl("div");
-			emptyEl.createEl("em", { text: "No team members detected yet." });
+			emptyEl.createEl("em", { text: "Cannot select identity - no team members detected yet." });
 			return;
 		}
 		const members = Array.from(uniq.values()).sort((a, b) =>

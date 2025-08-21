@@ -47,7 +47,7 @@ export class TeamsPresenter {
 		// Teams header
 		const teamsHeader = container.createEl("h4", { text: "Teams" });
 		if (orphanTeams.length === 0) {
-			container.createEl("em", { text: "No orphan teams." });
+			container.createEl("em", { text: "No teams." });
 		}
 
 		for (const t of orphanTeams) {
