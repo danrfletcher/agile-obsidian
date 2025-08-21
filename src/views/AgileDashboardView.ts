@@ -3,7 +3,7 @@ import { TaskIndex } from "../index/TaskIndex";
 import { TaskItem } from "../types/TaskItem";
 import manifest from "../../manifest.json";
 import { cleanupExpiredSnoozes } from "../utils/snooze/snoozeUtils";
-import { getCurrentUserDisplayName } from "../settings/settings.ui";
+import { getCurrentUserDisplayName } from "../settings/settings.store";
 
 // Section processors
 import { processAndRenderObjectives } from "./sections/ObjectivesProcessor";
@@ -30,7 +30,7 @@ export class AgileDashboardView extends ItemView {
 		// Updated: Accept plugin
 		super(leaf);
 		this.plugin = plugin; // New: Assign plugin
-		this.taskIndex = this.plugin.taskIndex; // Updated: Access taskIndex from plugin
+		this.taskIndex = TaskIndex.getInstance(plugin.app);
 	}
 
 	getViewType() {

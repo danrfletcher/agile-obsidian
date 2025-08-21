@@ -27,5 +27,6 @@ export interface AgileObsidianSettings {
 	showPriorities: boolean;
 	useBundledCheckboxes: boolean;
 	currentUserAlias: string | null;
+	teamsFolder: string;
 	teams: TeamInfo[];
 }

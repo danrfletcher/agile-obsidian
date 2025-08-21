@@ -7,7 +7,7 @@ import {
 	joinPath,
 	safeRename,
 } from "../files/fsUtils";
-import { buildResourceFileName, buildResourceFolderName, buildTeamSlug, parseTeamFolderName } from "src/utils/commands/commandUtils";
+import { buildResourceFileName, buildResourceFolderName, buildTeamSlug, parseTeamFolderName, getBaseCodeFromSlug, getPathIdFromSlug, slugifyName } from "src/utils/commands/commandUtils";
 
 export interface Organization {
 	name: string;
@@ -80,7 +80,9 @@ export async function addTeamsToExistingOrganization(
   const folderName = segs[segs.length - 1];
   const parsed = parseTeamFolderName(folderName);
   if (!parsed) throw new Error("Organization folder has no slug.");
-  const code = parsed.code;
+  const slug = parsed.slug;
+  const code = getBaseCodeFromSlug(slug);
+  if (!code) throw new Error("Organization folder has no code.");
 
   const teamsDir = `${org.rootPath}/Teams`;
   if (!(await app.vault.adapter.exists(teamsDir))) {
@@ -107,9 +109,13 @@ export async function addTeamsToExistingOrganization(
     for (const full of folders) {
       const name = full.split("/").filter(Boolean).pop()!;
       const p = parseTeamFolderName(name);
-      if (p?.pathId) {
-        const first = p.pathId.split("-")[0];
-        if (first) usedLetters.add(first);
+      if (p) {
+        const base = slugifyName(p.name);
+        const pid = getPathIdFromSlug(p.slug, base);
+        if (pid) {
+          const first = pid.split("-")[0];
+          if (first) usedLetters.add(first);
+        }
       }
     }
   } catch {
@@ -169,9 +175,11 @@ export async function createSubteams(
   const parentFolderName = parentSegs[parentSegs.length - 1];
   const parsed = parseTeamFolderName(parentFolderName);
   if (!parsed) throw new Error("Parent team folder has no slug.");
-  const code = parsed.code;
+  const slug = parsed.slug;
+  const code = getBaseCodeFromSlug(slug) as string;
+  if (!code) throw new Error("Parent team folder has no code.");
   const orgName = parsed.name;
-  const parentPathId = parsed.pathId || null; // e.g., "a" or "b-2"
+  const parentPathId = getPathIdFromSlug(slug, slugifyName(orgName)) || null; // e.g., "a" or "b-2"
 
   const teamsDir = `${parentTeam.rootPath}/Teams`;
   if (!(await app.vault.adapter.exists(teamsDir))) {
@@ -186,11 +194,15 @@ export async function createSubteams(
     for (const full of folders) {
       const name = full.split("/").filter(Boolean).pop()!;
       const p = parseTeamFolderName(name);
-      if (p?.pathId) {
-        const parts = p.pathId.split("-");
-        const last = parts[parts.length - 1];
-        const n = parseInt(last, 10);
-        if (Number.isFinite(n)) usedNums.add(n);
+      if (p) {
+        const base = slugifyName(p.name);
+        const pid = getPathIdFromSlug(p.slug, base);
+        if (pid) {
+          const parts = pid.split("-");
+          const last = parts[parts.length - 1];
+          const n = parseInt(last, 10);
+          if (Number.isFinite(n)) usedNums.add(n);
+        }
       }
     }
   } catch {

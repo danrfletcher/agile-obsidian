@@ -10,6 +10,7 @@ export const DEFAULT_SETTINGS: AgileObsidianSettings = {
 	showPriorities: true,
 	useBundledCheckboxes: true,
 	currentUserAlias: null,
+	teamsFolder: "Teams",
 	teams: [],
 };
 

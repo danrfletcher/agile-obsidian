@@ -1,4 +1,4 @@
-import { App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, Plugin, PluginSettingTab, Setting } from "obsidian";
 import type { AgileObsidianSettings } from "./settings.types";
 import { TeamsPresenter, TeamsActions } from "./presenters/TeamsPresenter";
 import { IdentityPresenter } from "./presenters/IdentityPresenter";
@@ -7,12 +7,13 @@ import { AddTeamModal } from "./modals/AddTeamModal";
 export class AgileSettingTab extends PluginSettingTab {
 	constructor(
 		app: App,
+		private plugin: Plugin,
 		private settings: AgileObsidianSettings,
 		private actions: TeamsActions,
 		private saveSettings: () => Promise<void>,
 		private applyCheckboxStylesSetting: () => Promise<void>
 	) {
-		super(app, { manifest: app.manifest } as any);
+		super(app, plugin);
 	}
 
 	display(): void {

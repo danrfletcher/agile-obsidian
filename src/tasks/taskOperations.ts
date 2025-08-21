@@ -21,11 +21,40 @@ export async function getUncheckedTasksFromFile(
 	for (const li of metadata.listItems) {
 		const line = lines[li.position.start.line] ?? "";
 		if (isUncheckedTaskLine(line)) {
+			const blockIdMatch = line.match(/\s*\^\w+$/);
+			const blockId = blockIdMatch ? blockIdMatch[0].trim().slice(1) : undefined;
+
 			tasks.push({
-				path: file.path,
-				line: li.position.start.line,
-				text: line,
 				checked: false,
+				completed: false,
+				fullyCompleted: false,
+				text: line,
+				visual: line,
+				line: li.position.start.line + 1,
+				lineCount: li.position.end.line - li.position.start.line + 1,
+				position: li.position,
+				children: [],
+				task: true,
+				listItem: undefined,
+				annotated: false,
+				parent: li.parent ?? -1,
+				blockId,
+				header: {
+					link: {
+						path: file.path,
+						display: "",
+						embed: false,
+						subpath: "",
+					},
+					level: 0,
+				},
+				status: " ",
+				link: {
+					path: file.path,
+					display: file.basename,
+					embed: false,
+					subpath: blockId ? `#^${blockId}` : "",
+				},
 			} as TaskItem);
 		}
 	}

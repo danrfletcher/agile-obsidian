@@ -28,6 +28,7 @@ export default class AgileObsidianPlugin extends Plugin {
 		this.addSettingTab(
 			new AgileSettingTab(
 				this.app,
+				this,
 				this.settings,
 				{
 					detectAndUpdateTeams: async () => {
@@ -83,11 +84,7 @@ export default class AgileObsidianPlugin extends Plugin {
 						);
 					},
 					createSubteams: async (parentTeam, suffixes) => {
-						await createSubteams({
-							app: this.app,
-							parentTeam: parentTeam as DetectedTeamInfo,
-							suffixes,
-						});
+						await createSubteams(this.app, parentTeam as DetectedTeamInfo, suffixes);
 					},
 				},
 				() => this.saveSettings(),

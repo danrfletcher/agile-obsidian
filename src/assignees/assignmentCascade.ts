@@ -362,8 +362,8 @@ export async function applyCascadeAfterExternalChange(
 		const explicitOn = (ln: string): string | null =>
 			deps.isUncheckedTaskLine(ln) ? deps.getExplicitAssigneeAliasFromText(ln) : null;
 
-		const aliasBefore: (string | null)[] = before.map((ln) => explicitOn(ln));
-		const aliasAfter: (string | null)[] = lines.map((ln) => explicitOn(ln));
+		const aliasBefore: (string | null)[] = before.map((ln: string) => explicitOn(ln));
+		const aliasAfter: (string | null)[] = lines.map((ln: string) => explicitOn(ln));
 
 		// Reflect the changed parent explicit alias in aliasAfter for accurate inheritance
 		aliasAfter[parentLine0] = newAlias;

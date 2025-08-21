@@ -1,8 +1,6 @@
 import { TaskItem } from "src/types/TaskItem";
-import {
-	getCurrentUserAlias,
-	type AgileObsidianSettings,
-} from "../../settings/settings.ui";
+import type { AgileObsidianSettings } from "../../settings/settings.types";
+import { getCurrentUserAlias } from "../../settings/settings.store";
 
 function getAlias(): string {
 	try {
