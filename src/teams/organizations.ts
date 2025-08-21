@@ -18,51 +18,50 @@ export interface Organization {
 
 /**
  * Create an organization structure from a selected team.
- * - Moves/renames the team folder under Organizations/<OrgName>/<TeamName (...)>
- * - Creates standard subfolders if needed
+ * - Renames the existing team folder (if needed) to <OrgName> (<org-slug>)
+ * - Ensures a "Teams" subfolder exists within the org root
+ * - Does NOT wrap the team in a new parent folder
  */
 export async function createOrganizationFromTeam(opts: {
 	vault: Vault;
 	orgName: string;
 	orgSlug: string;
-	organizationsRoot?: string; // default "Organizations"
+	organizationsRoot?: string; // unused here; org remains at the current location
 	team: TeamInfo;
 }): Promise<Organization> {
-	const {
-		vault,
-		orgName,
-		orgSlug,
-		team,
-	} = opts;
+	const { vault, orgName, orgSlug, team } = opts;
 
 	// Validate team source
 	if (!team.rootPath) throw new Error("Original team folder not found");
-	const teamFolderName = basename(team.rootPath);
 
-	// Ensure org root exists adjacent to the original team folder
 	const parentDir = dirname(team.rootPath);
-	const orgRootPath = joinPath(parentDir, `${orgName} (${orgSlug})`);
-	await ensureFolder(vault, orgRootPath);
+	const currentFolderName = basename(team.rootPath);
 
-	// New team location under organization
-	const newTeamPath = joinPath(orgRootPath, teamFolderName);
+	// Determine the stable 6-char code from current slug or provided orgSlug
+	const parsed = parseTeamFolderName(currentFolderName);
+	let code: string | null = parsed ? getBaseCodeFromSlug(parsed.slug) : null;
+	if (!code) code = getBaseCodeFromSlug(orgSlug);
+	if (!code) throw new Error("Could not determine team code for organization");
 
-	if (newTeamPath !== team.rootPath) {
-		// Ensure parent exists
-		await ensureFolder(vault, dirname(newTeamPath));
-		// Rename/move
-		await safeRename(vault, team.rootPath, newTeamPath);
+	// Build the desired org slug from the desired org name and existing code
+	const desiredSlug = buildTeamSlug(orgName, code);
+	const desiredFolderName = `${orgName} (${desiredSlug})`;
+	const newRootPath = joinPath(parentDir, desiredFolderName);
+
+	// Rename current team folder in-place to become the organization root (if needed)
+	if (newRootPath !== team.rootPath) {
+		await safeRename(vault, team.rootPath, newRootPath);
 	}
 
-	// Optional: create standard sub-structure within the org
-	// e.g., Initiatives, Objectives, etc. Adapt as needed.
-	// await ensureFolder(vault, joinPath(orgRootPath, "Initiatives"));
+	// Ensure "Teams" subfolder exists within the organization
+	const teamsDir = joinPath(newRootPath, "Teams");
+	await ensureFolder(vault, teamsDir);
 
 	return {
 		name: orgName,
-		slug: orgSlug,
-		rootPath: orgRootPath,
-		teams: [team.slug],
+		slug: desiredSlug,
+		rootPath: newRootPath,
+		teams: [],
 	};
 }
 
