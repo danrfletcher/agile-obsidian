@@ -61,27 +61,31 @@ export default class AgileObsidianPlugin extends Plugin {
 						orgName,
 						suffixes
 					) => {
-						await createOrganizationFromTeam(
-							this.app,
+						await createOrganizationFromTeam({
+							app: this.app,
 							team,
 							orgName,
-							suffixes
-						);
+							suffixes,
+						});
 					},
 					addTeamsToExistingOrganization: async (
 						org,
 						orgName,
 						suffixes
 					) => {
-						await addTeamsToExistingOrganization(
-							this.app,
+						await addTeamsToExistingOrganization({
+							app: this.app,
 							org,
 							orgName,
-							suffixes
-						);
+							suffixes,
+						});
 					},
 					createSubteams: async (parentTeam, suffixes) => {
-						await createSubteams(this.app, parentTeam, suffixes);
+						await createSubteams({
+							app: this.app,
+							parentTeam,
+							suffixes,
+						});
 					},
 				},
 				() => this.saveSettings(),
@@ -120,12 +124,12 @@ export default class AgileObsidianPlugin extends Plugin {
 					const orgName = "Acme";
 					const suffixes = ["A", "B"];
 
-					await createOrganizationFromTeam(
-						this.app,
+					await createOrganizationFromTeam({
+						app: this.app,
 						team,
 						orgName,
-						suffixes
-					);
+						suffixes,
+					});
 
 					// Refresh teams
 					updateSettingsTeams(this.app.vault, this.settings);
