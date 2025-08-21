@@ -210,7 +210,7 @@ export async function addTeamsToExistingOrganization(
 
 		const pathId = letter;
 		const name = `${orgName} ${suffixes[i]}`;
-		const childSlug = buildTeamSlug(orgName, code, pathId);
+		const childSlug = buildTeamSlug(name, code, pathId);
 		const folder = `${teamsDir}/${name} (${childSlug})`;
 
 		if (!(await app.vault.adapter.exists(folder))) {

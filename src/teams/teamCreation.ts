@@ -4,6 +4,7 @@ import {
 	buildResourceFolderName,
 	getBaseCodeFromSlug,
 	parseTeamFolderName,
+	buildTeamSlug,
 } from "src/utils/commands/commandUtils";
 
 export async function createTeamResources(
@@ -14,18 +15,7 @@ export async function createTeamResources(
 ): Promise<{ info: { name: string; slug: string; rootPath: string } }> {
 	const vault = app.vault;
 
-	// Create the team root folder: "<Name> (<slug>)"
-	const teamFolderName = `${teamName} (${teamSlug})`;
-	const teamRoot = `${parentPath}/${teamFolderName}`;
-	if (!(await vault.adapter.exists(teamRoot))) {
-		await vault.createFolder(teamRoot);
-	}
-
-	// Ensure Docs folder
-	const docs = `${teamRoot}/Docs`;
-	if (!(await vault.adapter.exists(docs))) {
-		await vault.createFolder(docs);
-	}
+	// Team folder will be created after deriving canonical slug
 
 	// Get the 6-char code and any pathId from teamSlug
 	const code = getBaseCodeFromSlug(teamSlug);
@@ -35,11 +25,6 @@ export async function createTeamResources(
 	// buildResourceFolderName("initiatives", code, pathId?) will parse from the slug when used elsewhere,
 	// but here we rely on the teamSlug to get code above and keep pathId derived in callers for files below.
 	// Determine pathId by parsing against the team folder name’s base
-	const parsed = parseTeamFolderName(teamFolderName)!;
-	const baseNameSlug = parsed
-		? parsed.slug.replace(/-[0-9a-z]{6}$/, "").split(/-(?:[a-z0-9-]+)?$/)[0]
-		: null;
-	// We don’t need baseNameSlug; callers already encode pathId in file names.
 
 	// Build the Initiatives folder name by using team’s pathId (if present) consistently in files
 	// The folder itself follows the convention:
@@ -50,6 +35,20 @@ export async function createTeamResources(
 	// Note: We don’t strictly need to compute pathId for creating the folder name; resource folder name only needs code and the same pathId used in the teamSlug.
 	// We’ll use a helper method: inferPathIdFromTeamSlug
 	const pathId = inferPathIdFromTeamSlug(teamName, teamSlug);
+	const canonicalSlug = buildTeamSlug(teamName, code, pathId);
+
+	// Create the team root folder: "<Name> (<canonicalSlug>)"
+	const teamFolderName = `${teamName} (${canonicalSlug})`;
+	const teamRoot = `${parentPath}/${teamFolderName}`;
+	if (!(await vault.adapter.exists(teamRoot))) {
+		await vault.createFolder(teamRoot);
+	}
+
+	// Ensure Docs folder
+	const docs = `${teamRoot}/Docs`;
+	if (!(await vault.adapter.exists(docs))) {
+		await vault.createFolder(docs);
+	}
 
 	const initDirName = buildResourceFolderName("initiatives", code, pathId);
 	const initDir = `${teamRoot}/${initDirName}`;
@@ -81,7 +80,7 @@ export async function createTeamResources(
 		await vault.create(prioritiesFile, "");
 
 	return {
-		info: { name: teamName, slug: teamSlug, rootPath: teamRoot },
+		info: { name: teamName, slug: canonicalSlug, rootPath: teamRoot },
 	};
 }
 
