@@ -58,20 +58,8 @@ export class AddTeamModal extends Modal {
 			opt.text = p === "/" ? "(vault root)" : p;
 			selectEl.appendChild(opt);
 		}
-		// Preselect default path if provided; else default to vault root
-		if (this.defaultParentPath) {
-			const preferred = this.defaultParentPath;
-			const hasPreferred = paths.includes(preferred);
-			if (!hasPreferred && preferred !== "/") {
-				const opt = document.createElement("option");
-				opt.value = preferred;
-				opt.text = preferred;
-				selectEl.appendChild(opt);
-			}
-			selectEl.value = preferred;
-		} else {
-			selectEl.value = "/";
-		}
+		// Default to vault root regardless of configured default path
+		selectEl.value = "/";
 
 		const code = generateShortCode();
 		const aliasPreview = contentEl.createEl("div", {
