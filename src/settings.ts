@@ -1687,9 +1687,17 @@ export class AgileSettingTab extends PluginSettingTab {
 
 			if (newOrgPath !== team.rootPath) {
 				const af = this.app.vault.getAbstractFileByPath(team.rootPath);
-				if (!af) throw new Error("Original team folder not found.");
-				// @ts-ignore
-				await this.app.vault.rename(af, newOrgPath);
+				if (!af) {
+					// Fallback: if adapter can see the path, rename via adapter
+					const exists = await this.app.vault.adapter.exists(team.rootPath);
+					if (!exists) {
+						throw new Error(`Original team folder not found: ${team.rootPath}`);
+					}
+					await this.app.vault.adapter.rename(team.rootPath, newOrgPath);
+				} else {
+					// @ts-ignore
+					await this.app.vault.rename(af, newOrgPath);
+				}
 				team.rootPath = newOrgPath;
 			}
 
