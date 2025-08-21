@@ -313,105 +313,98 @@ export async function addTeamsToExistingOrganization(
 /**
  * Create subteams under an existing team.
  * Produces Teams/<OrgName Suffix> (...) under the parent, with numeric suffix in pathId: a-1, a-2, etc.
+ * This now mirrors the organization child creation flow and reuses createTeamResources.
  */
 export async function createSubteams(
-	app: App,
-	parentTeam: TeamInfo,
-	suffixes: string[]
+  app: App,
+  parentTeam: TeamInfo,
+  suffixes: string[]
 ): Promise<void> {
-	const parentSegs = parentTeam.rootPath.split("/").filter(Boolean);
-	const parentFolderName = parentSegs[parentSegs.length - 1];
-	const parsed = parseTeamFolderName(parentFolderName);
-	if (!parsed) throw new Error("Parent team folder has no slug.");
-	const slug = parsed.slug;
-	const code = getBaseCodeFromSlug(slug) as string;
-	if (!code) throw new Error("Parent team folder has no code.");
-	const orgName = parsed.name;
-	const parentPathId = getPathIdFromSlug(slug, slugifyName(orgName)) || null; // e.g., "a" or "b-2"
+  const vault = app.vault;
 
-	const teamsDir = `${parentTeam.rootPath}/Teams`;
-	if (!(await app.vault.adapter.exists(teamsDir))) {
-		await app.vault.createFolder(teamsDir);
-	}
+  const parentSegs = parentTeam.rootPath.split("/").filter(Boolean);
+  const parentFolderName = parentSegs[parentSegs.length - 1];
+  const parsed = parseTeamFolderName(parentFolderName);
+  if (!parsed) throw new Error("Parent team folder has no slug.");
+  const slug = parsed.slug;
+  const code = getBaseCodeFromSlug(slug) as string;
+  if (!code) throw new Error("Parent team folder has no code.");
+  const orgName = parsed.name;
+  const parentPathId = getPathIdFromSlug(slug, slugifyName(orgName)) || null; // e.g., "a" or "b-2"
 
-	// Determine next numeric suffix from existing subteams
-	const usedNums = new Set<number>();
-	try {
-		const list = await (app.vault.adapter as any).list(teamsDir);
-		const folders: string[] = Array.isArray(list?.folders)
-			? list.folders
-			: [];
-		for (const full of folders) {
-			const name = full.split("/").filter(Boolean).pop()!;
-			const p = parseTeamFolderName(name);
-			if (p) {
-				const base = slugifyName(p.name);
-				const pid = getPathIdFromSlug(p.slug, base);
-				if (pid) {
-					const parts = pid.split("-");
-					const last = parts[parts.length - 1];
-					const n = parseInt(last, 10);
-					if (Number.isFinite(n)) usedNums.add(n);
-				}
-			}
-		}
-	} catch {
-		// If list fails, we'll start from 1
-	}
+  const teamsDir = `${parentTeam.rootPath}/Teams`;
+  if (!(await vault.adapter.exists(teamsDir))) {
+    await vault.createFolder(teamsDir);
+  }
 
-	let n = 1;
-	const nextNum = () => {
-		while (usedNums.has(n)) n++;
-		const val = n;
-		usedNums.add(n);
-		return val;
-	};
+  // Determine next numeric suffix from existing subteams
+  const usedNums = new Set<number>();
+  try {
+    const list = await (vault.adapter as any).list(teamsDir);
+    const folders: string[] = Array.isArray(list?.folders) ? list.folders : [];
+    for (const full of folders) {
+      const name = full.split("/").filter(Boolean).pop()!;
+      const p = parseTeamFolderName(name);
+      if (p) {
+        const base = slugifyName(p.name);
+        const pid = getPathIdFromSlug(p.slug, base);
+        if (pid) {
+          const parts = pid.split("-");
+          const last = parts[parts.length - 1];
+          const n = parseInt(last, 10);
+          if (Number.isFinite(n)) usedNums.add(n);
+        }
+      }
+    }
+  } catch {
+    // If list fails, we'll start from 1
+  }
 
-	for (const suf of suffixes) {
-		const num = nextNum();
-		const childPathId = parentPathId ? `${parentPathId}-${num}` : `${num}`;
-		const name = `${orgName} ${suf}`;
-		const childSlug = buildTeamSlug(orgName, code, childPathId);
-		const folder = `${teamsDir}/${name} (${childSlug})`;
+  let n = 1;
+  const nextNum = () => {
+    while (usedNums.has(n)) n++;
+    const val = n;
+    usedNums.add(n);
+    return val;
+  };
 
-		if (!(await app.vault.adapter.exists(folder))) {
-			await app.vault.createFolder(folder);
-		}
+  for (const suf of suffixes) {
+    const num = nextNum();
+    const childPathId = parentPathId ? `${parentPathId}-${num}` : `${num}`;
+    const childName = `${orgName} ${suf}`;
+    const childSlug = buildTeamSlug(orgName, code, childPathId);
+    const parentPathForChild = teamsDir;
 
-		// Seed Projects/Initiatives
-		const projects = `${folder}/Projects`;
-		if (!(await app.vault.adapter.exists(projects))) {
-			await app.vault.createFolder(projects);
-		}
-		const initDirName = buildResourceFolderName(
-			"initiatives",
-			code,
-			childPathId
-		);
-		const initDir = `${projects}/${initDirName}`;
-		if (!(await app.vault.adapter.exists(initDir))) {
-			await app.vault.createFolder(initDir);
-		}
-		const completedFile = `${initDir}/${buildResourceFileName(
-			"completed",
-			code,
-			childPathId
-		)}`;
-		const initiativesFile = `${initDir}/${buildResourceFileName(
-			"initiatives",
-			code,
-			childPathId
-		)}`;
-		const prioritiesFile = `${initDir}/${buildResourceFileName(
-			"priorities",
-			code,
-			childPathId
-		)}`;
-		if (!(await app.vault.adapter.exists(completedFile)))
-			await app.vault.create(completedFile, "");
-		if (!(await app.vault.adapter.exists(initiativesFile)))
-			await app.vault.create(initiativesFile, "");
-		if (!(await app.vault.adapter.exists(prioritiesFile)))
-			await app.vault.create(prioritiesFile, "");
-	}
+    // Use the same creation path as "Add Team" and organization children
+    const { info } = await createTeamResources(app, childName, parentPathForChild, childSlug);
+
+    // Safety fallback to ensure Docs/Projects/Initiatives exist
+    const childFolder = info?.rootPath ?? `${parentPathForChild}/${childName} (${childSlug})`;
+    if (!(await vault.adapter.exists(childFolder))) {
+      await vault.createFolder(childFolder);
+    }
+
+    const docs = `${childFolder}/Docs`;
+    if (!(await vault.adapter.exists(docs))) {
+      await vault.createFolder(docs);
+    }
+
+    const projects = `${childFolder}/Projects`;
+    if (!(await vault.adapter.exists(projects))) {
+      await vault.createFolder(projects);
+    }
+
+    const initDirName = buildResourceFolderName("initiatives", code, childPathId);
+    const initDir = `${projects}/${initDirName}`;
+    if (!(await vault.adapter.exists(initDir))) {
+      await vault.createFolder(initDir);
+    }
+
+    const completedFile = `${initDir}/${buildResourceFileName("completed", code, childPathId)}`;
+    const initiativesFile = `${initDir}/${buildResourceFileName("initiatives", code, childPathId)}`;
+    const prioritiesFile = `${initDir}/${buildResourceFileName("priorities", code, childPathId)}`;
+    if (!(await vault.adapter.exists(completedFile))) await vault.create(completedFile, "");
+    if (!(await vault.adapter.exists(initiativesFile))) await vault.create(initiativesFile, "");
+    if (!(await vault.adapter.exists(prioritiesFile))) await vault.create(prioritiesFile, "");
+  }
 }
