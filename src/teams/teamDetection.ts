@@ -42,7 +42,6 @@ export function detectTeamsUnder(vault: Vault, parentPath: string): TeamInfo[] {
 }
 
 /**
- * Updates settings.teams by scanning the parent teams folder.
  * Returns the count of detected teams.
  */
 export function updateSettingsTeams(
