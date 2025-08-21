@@ -283,7 +283,13 @@ export async function createSubteams(
   const code = getBaseCodeFromSlug(slug) as string;
   if (!code) throw new Error("Parent team folder has no code.");
   const orgName = parsed.name;
-  const parentPathId = getPathIdFromSlug(slug, slugifyName(orgName)) || null; // e.g., "a" or "b-2"
+  let parentPathId = getPathIdFromSlug(slug, slugifyName(orgName)) || null; // e.g., "a" or "b-2"
+  // If null (embedded into the visible name), infer simple trailing letter from the name like "... A" -> "a"
+  if (!parentPathId) {
+    const orgBase = slugifyName(orgName);
+    const m = /-([a-z])$/.exec(orgBase);
+    if (m) parentPathId = m[1];
+  }
 
   const teamsDir = `${parentTeam.rootPath}/Teams`;
   if (!(await vault.adapter.exists(teamsDir))) {
