@@ -114,14 +114,14 @@ export async function createOrganizationFromTeam(opts: {
 
 			// Reuse the exact team creation flow as "Add Team"
 			const parentPathForChild = teamsDir;
-			await createTeamResources(
+			const { info } = await createTeamResources(
 				app,
 				childName,
 				parentPathForChild,
 				childSlug
 			);
 
-			createdTeamSlugs.push(childSlug);
+			createdTeamSlugs.push(info.slug);
 		}
 	}
 
@@ -210,7 +210,9 @@ export async function addTeamsToExistingOrganization(
 
 		const pathId = letter;
 		const name = `${orgName} ${suffixes[i]}`;
-		const childSlug = buildTeamSlug(name, code, pathId);
+		const baseNameSlug = slugifyName(name);
+		const canonicalPathId = baseNameSlug.endsWith(`-${pathId}`) ? null : pathId;
+		const childSlug = buildTeamSlug(name, code, canonicalPathId);
 		const folder = `${teamsDir}/${name} (${childSlug})`;
 
 		if (!(await app.vault.adapter.exists(folder))) {

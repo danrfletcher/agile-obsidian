@@ -5,6 +5,7 @@ import {
 	getBaseCodeFromSlug,
 	parseTeamFolderName,
 	buildTeamSlug,
+	slugifyName,
 } from "src/utils/commands/commandUtils";
 
 export async function createTeamResources(
@@ -35,7 +36,10 @@ export async function createTeamResources(
 	// Note: We don’t strictly need to compute pathId for creating the folder name; resource folder name only needs code and the same pathId used in the teamSlug.
 	// We’ll use a helper method: inferPathIdFromTeamSlug
 	const pathId = inferPathIdFromTeamSlug(teamName, teamSlug);
-	const canonicalSlug = buildTeamSlug(teamName, code, pathId);
+	const baseNameSlug = slugifyName(teamName);
+	const canonicalPathId =
+		pathId && baseNameSlug.endsWith(`-${pathId}`) ? null : pathId;
+	const canonicalSlug = buildTeamSlug(teamName, code, canonicalPathId);
 
 	// Create the team root folder: "<Name> (<canonicalSlug>)"
 	const teamFolderName = `${teamName} (${canonicalSlug})`;
