@@ -3,9 +3,9 @@ import { AgileSettingTab } from "./settings/settings.ui";
 import { DEFAULT_SETTINGS } from "./settings/settings.store";
 import type {
 	AgileObsidianSettings,
+	TeamInfo,
 } from "./settings/settings.types";
-import { updateSettingsTeams } from "./teams/teamDetection";
-import type { TeamInfo as DetectedTeamInfo } from "./teams/teamDetection";
+import { hydrateTeamsFromVault } from "./teams/teamDetection";
 import {
 	createOrganizationFromTeam,
 	addTeamsToExistingOrganization,
@@ -28,11 +28,11 @@ export default class AgileObsidianPlugin extends Plugin {
 				this.settings,
 				{
 					detectAndUpdateTeams: async () => {
-						updateSettingsTeams(
+						await hydrateTeamsFromVault(
 							this.app.vault,
 							this.settings as unknown as {
 								teamsFolder: string;
-								teams?: DetectedTeamInfo[];
+								teams?: TeamInfo[]; // type name here just needs compatible shape; settings.types.TeamInfo matches
 								[k: string]: any;
 							}
 						);
@@ -71,7 +71,7 @@ export default class AgileObsidianPlugin extends Plugin {
 							vault: this.app.vault,
 							orgName,
 							orgSlug: slugifyName(orgName),
-							team: team as DetectedTeamInfo,
+							team: team as TeamInfo,
 						});
 					},
 					addTeamsToExistingOrganization: async (
@@ -81,13 +81,17 @@ export default class AgileObsidianPlugin extends Plugin {
 					) => {
 						await addTeamsToExistingOrganization(
 							this.app,
-							org as DetectedTeamInfo,
+							org as TeamInfo,
 							orgName,
-							suffixes,
+							suffixes
 						);
 					},
 					createSubteams: async (parentTeam, suffixes) => {
-						await createSubteams(this.app, parentTeam as DetectedTeamInfo, suffixes);
+						await createSubteams(
+							this.app,
+							parentTeam as TeamInfo,
+							suffixes
+						);
 					},
 				},
 				() => this.saveSettings(),
