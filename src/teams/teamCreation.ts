@@ -4,6 +4,7 @@ import {
 	buildResourceFolderName,
 	buildResourceFileName,
 } from "../utils/commands/commandUtils";
+import { ensureFolder } from "../files/fsUtils";
 import type { TeamInfo } from "../settings/settings.types";
 
 export async function createTeamResources(
@@ -19,6 +20,10 @@ export async function createTeamResources(
 		? `${normalizedParent}/${teamFolderName}`
 		: teamFolderName;
 
+	// Ensure the parent folder exists (e.g., "Teams") before creating the team folder
+	if (normalizedParent) {
+		await ensureFolder(app.vault, normalizedParent);
+	}
 	if (!(await app.vault.adapter.exists(teamFolder))) {
 		await app.vault.createFolder(teamFolder);
 	}

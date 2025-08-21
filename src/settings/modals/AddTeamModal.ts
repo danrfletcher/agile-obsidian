@@ -7,6 +7,7 @@ import {
 export class AddTeamModal extends Modal {
 	constructor(
 		app: App,
+		private defaultParentPath: string | undefined,
 		private onSubmit: (
 			teamName: string,
 			parentPath: string,
@@ -55,6 +56,18 @@ export class AddTeamModal extends Modal {
 			opt.value = p;
 			opt.text = p === "/" ? "(vault root)" : p;
 			selectEl.appendChild(opt);
+		}
+		// Preselect configured Teams folder if provided; add it if missing so it can be created on submit
+		if (this.defaultParentPath) {
+			const preferred = this.defaultParentPath;
+			const hasPreferred = paths.includes(preferred);
+			if (!hasPreferred && preferred !== "/") {
+				const opt = document.createElement("option");
+				opt.value = preferred;
+				opt.text = preferred;
+				selectEl.appendChild(opt);
+			}
+			selectEl.value = preferred;
 		}
 
 		const code = generateShortCode();

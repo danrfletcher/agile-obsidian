@@ -45,6 +45,7 @@ export class AgileSettingTab extends PluginSettingTab {
 			btn.setButtonText("Add Team").onClick(() => {
 				new AddTeamModal(
 					this.app,
+					this.settings.teamsFolder || "Teams",
 					async (teamName, parentPath, teamSlug, code) => {
 						await this.actions.createTeam(
 							teamName,
