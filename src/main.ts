@@ -13,12 +13,17 @@ import {
 } from "./teams/organizations";
 import { createTeamResources } from "./teams/teamCreation";
 import { slugifyName } from "./utils/commands/commandUtils";
+import {
+	injectCheckboxStyles,
+	removeCheckboxStyles,
+} from "./styles/injection";
 
 export default class AgileObsidianPlugin extends Plugin {
 	settings: AgileObsidianSettings;
 
 	async onload() {
 		await this.loadSettings();
+		await this.applyCheckboxStylesSetting();
 
 		// Settings Tab (thin UI shell)
 		this.addSettingTab(
@@ -101,7 +106,9 @@ export default class AgileObsidianPlugin extends Plugin {
 		);
 	}
 
-	onunload() {}
+	onunload() {
+		removeCheckboxStyles(this.manifest.id);
+	}
 
 	async loadSettings() {
 		const data = await this.loadData();
@@ -118,7 +125,10 @@ export default class AgileObsidianPlugin extends Plugin {
 
 	// Toggle bundled checkbox CSS (wired from settings UI)
 	async applyCheckboxStylesSetting() {
-		// Implement your stylesheet injection/removal here if needed.
-		// Kept as a no-op placeholder because settings.ui.ts calls it.
+		if (this.settings.useBundledCheckboxes) {
+			injectCheckboxStyles(this.manifest.id);
+		} else {
+			removeCheckboxStyles(this.manifest.id);
+		}
 	}
 }
