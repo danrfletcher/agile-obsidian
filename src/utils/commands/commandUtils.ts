@@ -79,6 +79,35 @@ export function buildTeamSlug(
 }
 
 /**
+ * Build the root organization slug:
+ *   "<org-name-slug>-<code>"
+ */
+export function buildOrgSlug(orgName: string, code: string): string {
+	return buildTeamSlug(orgName, code);
+}
+
+/**
+ * Build a child team/subteam slug under an organization, preserving the org base name
+ * and appending hierarchical path segments before the code:
+ *   "<org-name-slug>[-<segment>...]-<code>"
+ *
+ * Examples:
+ *   buildOrgChildSlug("Nueral", "6fg1hj", "a")           => "nueral-a-6fg1hj"
+ *   buildOrgChildSlug("Nueral", "6fg1hj", ["a", "1"])    => "nueral-a-1-6fg1hj"
+ */
+export function buildOrgChildSlug(
+	orgName: string,
+	code: string,
+	pathId?: string | string[] | null
+): string {
+	const base = slugifyName(orgName);
+	const pid = Array.isArray(pathId)
+		? pathId.filter(Boolean).join("-")
+		: pathId || null;
+	return pid ? `${base}-${pid}-${code}` : `${base}-${code}`;
+}
+
+/**
  * Parse a folder name "<Name> (<slug>)" to {name, slug, pathId, code, baseNameSlug}.
  * Returns null if not a match or invalid code.
  */

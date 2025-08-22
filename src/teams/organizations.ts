@@ -10,6 +10,7 @@ import {
 	buildResourceFileName,
 	buildResourceFolderName,
 	buildTeamSlug,
+	buildOrgChildSlug,
 	parseTeamFolderName,
 	getBaseCodeFromSlug,
 	getPathIdFromSlug,
@@ -110,7 +111,7 @@ export async function createOrganizationFromTeam(opts: {
 
 			// Child alias and slug based on org base code + pathId
 			const childName = `${orgName} ${displaySuffix}`;
-			const childSlug = buildTeamSlug(childName, code, pid);
+			const childSlug = buildOrgChildSlug(orgName, code, pid);
 
 			// Reuse the exact team creation flow as "Add Team"
 			const parentPathForChild = teamsDir;
@@ -211,9 +212,8 @@ export async function addTeamsToExistingOrganization(
 
 		const pathId = letter;
 		const name = `${orgName} ${suffixes[i]}`;
-		const baseNameSlug = slugifyName(name);
-		const canonicalPathId = baseNameSlug.endsWith(`-${pathId}`) ? null : pathId;
-		const childSlug = buildTeamSlug(name, code, canonicalPathId);
+		const childPathId = pathId;
+		const childSlug = buildOrgChildSlug(orgName, code, childPathId);
 		const folder = `${teamsDir}/${name} (${childSlug})`;
 
 		if (!(await app.vault.adapter.exists(folder))) {
@@ -332,7 +332,7 @@ export async function createSubteams(
     const childName = `${orgName} ${suf}`;
     const suffixSlug = slugifyName(suf);
     const childPathId = parentPathId ? `${parentPathId}-${suffixSlug}` : suffixSlug;
-    const childSlug = buildTeamSlug(childName, code);
+    const childSlug = buildOrgChildSlug(orgName, code, childPathId);
     const parentPathForChild = teamsDir;
 
     // Use the same creation path as "Add Team" and organization children
