@@ -7,6 +7,7 @@ import type {
 import { AddMemberModal } from "../modals/AddMemberModal";
 import { CreateOrganizationModal } from "../modals/CreateOrganizationModal";
 import { CreateSubteamsModal } from "../modals/CreateSubteamsModal";
+import { getDisplayNameFromAlias } from "../../utils/format/nameUtils";
 
 export type TeamsActions = {
 	detectAndUpdateTeams: () => Promise<void>;
@@ -133,7 +134,7 @@ export class TeamsPresenter {
 								type,
 							});
 							team.members.sort((a, b) =>
-								a.name.localeCompare(b.name)
+								getDisplayNameFromAlias(a.alias).localeCompare(getDisplayNameFromAlias(b.alias))
 							);
 							await this.actions.saveSettings();
 							renderMembers();
@@ -287,7 +288,7 @@ export class TeamsPresenter {
 								type,
 							});
 							team.members.sort((a, b) =>
-								a.name.localeCompare(b.name)
+								getDisplayNameFromAlias(a.alias).localeCompare(getDisplayNameFromAlias(b.alias))
 							);
 							await this.actions.saveSettings();
 							renderOrgDetails();
@@ -447,7 +448,9 @@ export class TeamsPresenter {
 			const ra = this.classifyMember(a).rank;
 			const rb = this.classifyMember(b).rank;
 			if (ra !== rb) return ra - rb;
-			return a.name.localeCompare(b.name);
+			const an = getDisplayNameFromAlias(a.alias);
+			const bn = getDisplayNameFromAlias(b.alias);
+			return an.localeCompare(bn);
 		});
 
 		for (const m of sorted) {
@@ -459,7 +462,7 @@ export class TeamsPresenter {
 			const { label: typeLabel } = this.classifyMember(m);
 
 			line.createEl("span", {
-				text: m.name,
+				text: getDisplayNameFromAlias(m.alias),
 				attr: { style: "min-width:160px;" },
 			});
 			line.createEl("span", {
@@ -485,7 +488,9 @@ export class TeamsPresenter {
 				const ra = this.classifyMember(a).rank;
 				const rb = this.classifyMember(b).rank;
 				if (ra !== rb) return ra - rb;
-				return a.name.localeCompare(b.name);
+				const an = getDisplayNameFromAlias(a.alias);
+				const bn = getDisplayNameFromAlias(b.alias);
+				return an.localeCompare(bn);
 			});
 		container.createEl("div", {
 			text: "Members",
@@ -500,7 +505,7 @@ export class TeamsPresenter {
 						style: "display:flex; gap:8px; align-items:center; margin-top:4px;",
 					},
 				});
-				line.createEl("span", { text: m.name });
+				line.createEl("span", { text: getDisplayNameFromAlias(m.alias) });
 				const { label: typeLabel } = this.classifyMember(m);
 				line.createEl("span", {
 					text: `(${typeLabel})`,
@@ -592,7 +597,9 @@ export class TeamsPresenter {
 							const ra = this.classifyMember(a).rank;
 							const rb = this.classifyMember(b).rank;
 							if (ra !== rb) return ra - rb;
-							return a.name.localeCompare(b.name);
+							const an = getDisplayNameFromAlias(a.alias);
+							const bn = getDisplayNameFromAlias(b.alias);
+							return an.localeCompare(bn);
 						});
 					nodeContainer.createEl("div", {
 						text: "Members",
@@ -609,7 +616,7 @@ export class TeamsPresenter {
 									style: "display:flex; gap:8px; align-items:center; margin-top:4px;",
 								},
 							});
-							line.createEl("span", { text: m.name });
+							line.createEl("span", { text: getDisplayNameFromAlias(m.alias) });
 							const { label: typeLabel } = this.classifyMember(m);
 							line.createEl("span", {
 								text: `(${typeLabel})`,
@@ -741,7 +748,7 @@ export class TeamsPresenter {
 												type,
 											});
 											teamRef.members.sort((a, b) =>
-												a.name.localeCompare(b.name)
+												getDisplayNameFromAlias(a.alias).localeCompare(getDisplayNameFromAlias(b.alias))
 											);
 											await this.actions.saveSettings();
 											renderStDetails();
@@ -806,7 +813,7 @@ export class TeamsPresenter {
 								type,
 							});
 							teamRef.members.sort((a, b) =>
-								a.name.localeCompare(b.name)
+								getDisplayNameFromAlias(a.alias).localeCompare(getDisplayNameFromAlias(b.alias))
 							);
 							await this.actions.saveSettings();
 							renderTeamDetails();

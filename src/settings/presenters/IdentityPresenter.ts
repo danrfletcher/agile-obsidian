@@ -1,5 +1,6 @@
 import type { AgileObsidianSettings } from "../settings.types";
 import { Setting } from "obsidian";
+import { getDisplayNameFromAlias } from "../../utils/format/nameUtils";
 
 export class IdentityPresenter {
 	constructor(
@@ -21,7 +22,7 @@ export class IdentityPresenter {
 					lower.endsWith("-int")
 				)
 					continue;
-				if (!uniq.has(alias)) uniq.set(alias, { alias, name: m.name });
+				if (!uniq.has(alias)) uniq.set(alias, { alias, name: getDisplayNameFromAlias(alias) });
 			}
 		}
 		if (uniq.size === 0) {
