@@ -520,11 +520,11 @@ export class TeamsPresenter {
 			const viewBtn = tBtns.createEl("button", {
 				text: "View Members & Subteams",
 			});
-			const addMemberBtn = tBtns.createEl("button", {
-				text: "Add Member",
-			});
 			const createSubBtn = tBtns.createEl("button", {
 				text: "Create Subteams",
+			});
+			const addMemberBtn = tBtns.createEl("button", {
+				text: "Add Member",
 			});
 
 			const tContainer = container.createEl("div", {
@@ -620,6 +620,9 @@ export class TeamsPresenter {
 							const stCreateBtn = stBtns.createEl("button", {
 								text: "Create Subteams",
 							});
+							const stAddMemberBtn = stBtns.createEl("button", {
+								text: "Add Member",
+							});
 
 							const stContainer = nodeContainer.createEl("div", {
 								attr: {
@@ -657,6 +660,58 @@ export class TeamsPresenter {
 										} catch (e) {
 											new Notice(
 												`Failed to create subteams: ${e}`
+											);
+										}
+									}
+								).open();
+							});
+							stAddMemberBtn.addEventListener("click", () => {
+								const { teamNames, internalTeamCodes, existingMembers } =
+									this.buildMemberSources();
+								new AddMemberModal(
+									this.app,
+									st.name,
+									teamNames,
+									existingMembers,
+									internalTeamCodes,
+									async (memberName, memberAlias) => {
+										const idx = this.settings.teams.findIndex(
+											(x) =>
+												x.name === st.name &&
+												x.rootPath === st.rootPath
+										);
+										if (idx === -1) return;
+										const teamRef = this.settings.teams[idx];
+										teamRef.members = teamRef.members || [];
+										if (
+											!teamRef.members.find(
+												(mm) => mm.alias === memberAlias
+											)
+										) {
+											const lower = memberAlias.toLowerCase();
+											const type: MemberInfo["type"] = lower.endsWith(
+												"-ext"
+											)
+												? "external"
+												: lower.endsWith("-team")
+												? "team"
+												: lower.endsWith("-int")
+												? "internal-team-member"
+												: "member";
+											teamRef.members.push({
+												alias: memberAlias,
+												name: memberName,
+												type,
+											});
+											teamRef.members.sort((a, b) =>
+												a.name.localeCompare(b.name)
+											);
+											await this.actions.saveSettings();
+											renderStDetails();
+											onRefreshUI();
+										} else {
+											new Notice(
+												"A member with the same alias already exists for this team."
 											);
 										}
 									}
