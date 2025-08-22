@@ -349,12 +349,10 @@ export class TeamsPresenter {
 				if (!isChildSlugOf(parentSlug, childSlug)) continue;
 
 				const childRoot = child.rootPath.replace(/\/+$/g, "");
-				let inTeamsFolder = childRoot.startsWith(teamsFolderPrefix);
-				// Fallback: accept if child resides under any Teams/ folder (handles legacy rootPath overrides)
-				if (!inTeamsFolder && childRoot.includes("/Teams/")) {
-					inTeamsFolder = true;
-				}
-				if (!inTeamsFolder) continue;
+				if (!childRoot.startsWith(teamsFolderPrefix)) continue;
+				const remainder = childRoot.slice(teamsFolderPrefix.length);
+				// Only include direct subteams (single folder immediately under the parent's Teams/ folder)
+				if (remainder.length === 0 || remainder.includes("/")) continue;
 
 				if (!children.has(parent.rootPath))
 					children.set(parent.rootPath, []);
