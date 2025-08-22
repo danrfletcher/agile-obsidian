@@ -391,6 +391,51 @@ export class TeamsPresenter {
 		return { orgs, orphanTeams, children };
 	}
 
+	private classifyMember(m: MemberInfo): {
+		kind: "member" | "internal-team-member" | "team" | "external";
+		label: string;
+		rank: number;
+	} {
+		const alias = (m.alias || "").toLowerCase();
+		const isExternal = alias.endsWith("-ext");
+		const isTeam = alias.endsWith("-team");
+		const isInternalMember = alias.endsWith("-int");
+		const hasCode = /-[0-9][a-z0-9]{5}$/i.test(alias);
+
+		let kind: "member" | "internal-team-member" | "team" | "external";
+		if (hasCode && !isExternal && !isTeam && !isInternalMember) {
+			kind = "member";
+		} else if (isInternalMember) {
+			kind = "internal-team-member";
+		} else if (isTeam) {
+			kind = "team";
+		} else if (isExternal) {
+			kind = "external";
+		} else {
+			kind =
+				(m.type as any) === "external" ||
+				(m.type as any) === "team" ||
+				(m.type as any) === "internal-team-member" ||
+				(m.type as any) === "member"
+					? (m.type as any)
+					: "member";
+		}
+
+		const label =
+			kind === "external"
+				? "External Delegate"
+				: kind === "team"
+				? "Internal Team"
+				: kind === "internal-team-member"
+				? "Internal Team Member"
+				: "Team Member";
+
+		const rank =
+			kind === "member" ? 0 : kind === "internal-team-member" ? 1 : kind === "team" ? 2 : 3;
+
+		return { kind, label, rank };
+	}
+
 	private renderTeamMembers(container: HTMLElement, t: TeamInfo) {
 		container.empty();
 		const raw = t.members ?? [];
@@ -399,25 +444,8 @@ export class TeamsPresenter {
 			return;
 		}
 		const sorted = raw.slice().sort((a, b) => {
-			const typeFrom = (m: MemberInfo) => {
-				const alias = (m.alias || "").toLowerCase();
-				if (alias.endsWith("-ext")) return "external";
-				if (alias.endsWith("-team")) return "team";
-				if (alias.endsWith("-int")) return "internal-team-member";
-				return m.type ?? "member";
-			};
-			const rank = (t: string) =>
-				t === "member"
-					? 0
-					: t === "internal-team-member"
-					? 1
-					: t === "team"
-					? 2
-					: 3;
-			const ta = typeFrom(a) as string;
-			const tb = typeFrom(b) as string;
-			const ra = rank(ta);
-			const rb = rank(tb);
+			const ra = this.classifyMember(a).rank;
+			const rb = this.classifyMember(b).rank;
 			if (ra !== rb) return ra - rb;
 			return a.name.localeCompare(b.name);
 		});
@@ -428,22 +456,7 @@ export class TeamsPresenter {
 					style: "display:flex; gap:8px; align-items:center; margin:3px 0;",
 				},
 			});
-			const alias = (m.alias || "").toLowerCase();
-			const type = alias.endsWith("-ext")
-				? "external"
-				: alias.endsWith("-team")
-				? "team"
-				: alias.endsWith("-int")
-				? "internal-team-member"
-				: m.type ?? "member";
-			const typeLabel =
-				type === "external"
-					? "External Delegate"
-					: type === "team"
-					? "Internal Team"
-					: type === "internal-team-member"
-					? "Internal Team Member"
-					: "Team Member";
+			const { label: typeLabel } = this.classifyMember(m);
 
 			line.createEl("span", {
 				text: m.name,
@@ -468,7 +481,12 @@ export class TeamsPresenter {
 	private renderOrgMembers(container: HTMLElement, org: TeamInfo) {
 		const members = (org.members ?? [])
 			.slice()
-			.sort((a, b) => a.name.localeCompare(b.name));
+			.sort((a, b) => {
+				const ra = this.classifyMember(a).rank;
+				const rb = this.classifyMember(b).rank;
+				if (ra !== rb) return ra - rb;
+				return a.name.localeCompare(b.name);
+			});
 		container.createEl("div", {
 			text: "Members",
 			attr: { style: "font-weight:600; margin-top:6px;" },
@@ -483,6 +501,11 @@ export class TeamsPresenter {
 					},
 				});
 				line.createEl("span", { text: m.name });
+				const { label: typeLabel } = this.classifyMember(m);
+				line.createEl("span", {
+					text: `(${typeLabel})`,
+					attr: { style: "color: var(--text-muted);" },
+				});
 				const aliasInput = line.createEl("input", {
 					type: "text",
 					attr: {
@@ -565,7 +588,12 @@ export class TeamsPresenter {
 					// Members
 					const members = (node.members ?? [])
 						.slice()
-						.sort((a, b) => a.name.localeCompare(b.name));
+						.sort((a, b) => {
+							const ra = this.classifyMember(a).rank;
+							const rb = this.classifyMember(b).rank;
+							if (ra !== rb) return ra - rb;
+							return a.name.localeCompare(b.name);
+						});
 					nodeContainer.createEl("div", {
 						text: "Members",
 						attr: { style: "font-weight:600; margin-top:6px;" },
@@ -582,6 +610,11 @@ export class TeamsPresenter {
 								},
 							});
 							line.createEl("span", { text: m.name });
+							const { label: typeLabel } = this.classifyMember(m);
+							line.createEl("span", {
+								text: `(${typeLabel})`,
+								attr: { style: "color: var(--text-muted);" },
+							});
 							const aliasInput = line.createEl("input", {
 								type: "text",
 								attr: {
