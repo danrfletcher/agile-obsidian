@@ -520,6 +520,9 @@ export class TeamsPresenter {
 			const viewBtn = tBtns.createEl("button", {
 				text: "View Members & Subteams",
 			});
+			const addMemberBtn = tBtns.createEl("button", {
+				text: "Add Member",
+			});
 			const createSubBtn = tBtns.createEl("button", {
 				text: "Create Subteams",
 			});
@@ -532,72 +535,197 @@ export class TeamsPresenter {
 
 			const renderTeamDetails = () => {
 				tContainer.empty();
-				// Members
-				const tm = (team.members ?? [])
-					.slice()
-					.sort((a, b) => a.name.localeCompare(b.name));
-				tContainer.createEl("div", {
-					text: "Members",
-					attr: { style: "font-weight:600; margin-top:6px;" },
-				});
-				if (tm.length === 0) {
-					tContainer.createEl("em", { text: "No members yet." });
-				} else {
-					for (const m of tm) {
-						const line = tContainer.createEl("div", {
-							attr: {
-								style: "display:flex; gap:8px; align-items:center; margin-top:4px;",
-							},
+
+				const listDirectSubteams = (parent: TeamInfo): TeamInfo[] => {
+					const prefix =
+						parent.rootPath.replace(/\/+$/g, "") + "/Teams/";
+					return (this.settings.teams ?? [])
+						.filter((st) => {
+							const root = (st.rootPath || "").replace(
+								/\/+$/g,
+								""
+							);
+							if (!root.startsWith(prefix)) return false;
+							const rest = root.slice(prefix.length);
+							return rest.length > 0 && !rest.includes("/Teams/");
+						})
+						.sort((a, b) => a.name.localeCompare(b.name));
+				};
+
+				const renderNode = (
+					node: TeamInfo,
+					nodeContainer: HTMLElement
+				) => {
+					nodeContainer.empty();
+
+					// Members
+					const members = (node.members ?? [])
+						.slice()
+						.sort((a, b) => a.name.localeCompare(b.name));
+					nodeContainer.createEl("div", {
+						text: "Members",
+						attr: { style: "font-weight:600; margin-top:6px;" },
+					});
+					if (members.length === 0) {
+						nodeContainer.createEl("em", {
+							text: "No members yet.",
 						});
-						line.createEl("span", { text: m.name });
-						const aliasInput = line.createEl("input", {
-							type: "text",
-							attr: {
-								style: "flex:1; min-width:0; white-space:nowrap; overflow-x:auto; padding:2px 6px;",
-							},
-						}) as HTMLInputElement;
-						aliasInput.value = m.alias;
-						aliasInput.readOnly = true;
-						aliasInput.disabled = true;
+					} else {
+						for (const m of members) {
+							const line = nodeContainer.createEl("div", {
+								attr: {
+									style: "display:flex; gap:8px; align-items:center; margin-top:4px;",
+								},
+							});
+							line.createEl("span", { text: m.name });
+							const aliasInput = line.createEl("input", {
+								type: "text",
+								attr: {
+									style: "flex:1; min-width:0; white-space:nowrap; overflow-x:auto; padding:2px 6px;",
+								},
+							}) as HTMLInputElement;
+							aliasInput.value = m.alias;
+							aliasInput.readOnly = true;
+							aliasInput.disabled = true;
+						}
 					}
-				}
-				// Subteams listing
-				const subteams = (this.settings.teams ?? [])
-					.filter((st) =>
-						st.rootPath.startsWith(team.rootPath + "/Teams/")
-					)
-					.sort((a, b) => a.name.localeCompare(b.name));
-				tContainer.createEl("div", {
-					text: "Subteams",
-					attr: { style: "font-weight:600; margin-top:10px;" },
-				});
-				if (subteams.length === 0) {
-					tContainer.createEl("em", { text: "No subteams yet." });
-				} else {
-					for (const st of subteams) {
-						const stRow = tContainer.createEl("div", {
-							attr: {
-								style: "display:flex; gap:8px; align-items:center; margin-top:4px;",
-							},
+
+					// Subteams (recursive)
+					const subs = listDirectSubteams(node);
+					nodeContainer.createEl("div", {
+						text: "Subteams",
+						attr: { style: "font-weight:600; margin-top:10px;" },
+					});
+					if (subs.length === 0) {
+						nodeContainer.createEl("em", {
+							text: "No subteams yet.",
 						});
-						stRow.createEl("span", { text: st.name });
-						const stPath = stRow.createEl("input", {
-							type: "text",
-							attr: {
-								style: "flex:1; min-width:0; white-space:nowrap; overflow-x:auto; padding:2px 6px;",
-							},
-						}) as HTMLInputElement;
-						stPath.value = st.rootPath;
-						stPath.readOnly = true;
-						stPath.disabled = true;
+					} else {
+						for (const st of subs) {
+							const stRow = nodeContainer.createEl("div", {
+								attr: {
+									style: "display:flex; gap:8px; align-items:center; margin-top:4px;",
+								},
+							});
+							stRow.createEl("span", { text: st.name });
+
+							const stBtns = stRow.createEl("div", {
+								attr: {
+									style: "display:flex; gap:6px; align-items:center;",
+								},
+							});
+							const stViewBtn = stBtns.createEl("button", {
+								text: "View Members & Subteams",
+							});
+							const stCreateBtn = stBtns.createEl("button", {
+								text: "Create Subteams",
+							});
+
+							const stContainer = nodeContainer.createEl("div", {
+								attr: {
+									style: "margin:6px 0 8px 16px; display:none; border-left:2px solid var(--background-modifier-border); padding-left:10px;",
+								},
+							});
+
+							const renderStDetails = () => {
+								renderNode(st, stContainer);
+							};
+							renderStDetails();
+
+							stViewBtn.addEventListener("click", () => {
+								stContainer.style.display =
+									stContainer.style.display === "none"
+										? "block"
+										: "none";
+							});
+
+							stCreateBtn.addEventListener("click", () => {
+								new CreateSubteamsModal(
+									this.app,
+									st.name,
+									async (suffixes) => {
+										try {
+											await this.actions.createSubteams(
+												st,
+												suffixes
+											);
+											await this.actions.detectAndUpdateTeams();
+											onRefreshUI();
+											new Notice(
+												`Created ${suffixes.length} subteam(s) under ${st.name}.`
+											);
+										} catch (e) {
+											new Notice(
+												`Failed to create subteams: ${e}`
+											);
+										}
+									}
+								).open();
+							});
+						}
 					}
-				}
+				};
+
+				renderNode(team, tContainer);
 			};
 			renderTeamDetails();
 
 			viewBtn.addEventListener("click", () => {
 				tContainer.style.display =
 					tContainer.style.display === "none" ? "block" : "none";
+			});
+
+			addMemberBtn.addEventListener("click", () => {
+				const { teamNames, internalTeamCodes, existingMembers } =
+					this.buildMemberSources();
+				new AddMemberModal(
+					this.app,
+					team.name,
+					teamNames,
+					existingMembers,
+					internalTeamCodes,
+					async (memberName, memberAlias) => {
+						const idx = this.settings.teams.findIndex(
+							(x) =>
+								x.name === team.name &&
+								x.rootPath === team.rootPath
+						);
+						if (idx === -1) return;
+						const teamRef = this.settings.teams[idx];
+						teamRef.members = teamRef.members || [];
+						if (
+							!teamRef.members.find(
+								(mm) => mm.alias === memberAlias
+							)
+						) {
+							const lower = memberAlias.toLowerCase();
+							const type: MemberInfo["type"] = lower.endsWith(
+								"-ext"
+							)
+								? "external"
+								: lower.endsWith("-team")
+								? "team"
+								: lower.endsWith("-int")
+								? "internal-team-member"
+								: "member";
+							teamRef.members.push({
+								alias: memberAlias,
+								name: memberName,
+								type,
+							});
+							teamRef.members.sort((a, b) =>
+								a.name.localeCompare(b.name)
+							);
+							await this.actions.saveSettings();
+							renderTeamDetails();
+							onRefreshUI();
+						} else {
+							new Notice(
+								"A member with the same alias already exists for this team."
+							);
+						}
+					}
+				).open();
 			});
 
 			createSubBtn.addEventListener("click", () => {
