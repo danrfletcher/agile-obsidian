@@ -265,7 +265,7 @@ export async function addTeamsToExistingOrganization(
 
 /**
  * Create subteams under an existing team.
- * Produces Teams/<OrgName Suffix> (...) under the parent, with numeric suffix in pathId: a-1, a-2, etc.
+ * Produces Teams/<OrgName Suffix> (...) under the parent, without a pathId in the slug; resources also omit pathId.
  * This now mirrors the organization child creation flow and reuses createTeamResources.
  */
 export async function createSubteams(
@@ -328,10 +328,8 @@ export async function createSubteams(
   };
 
   for (const suf of suffixes) {
-    const num = nextNum();
-    const childPathId = parentPathId ? `${parentPathId}-${num}` : `${num}`;
     const childName = `${orgName} ${suf}`;
-    const childSlug = buildTeamSlug(childName, code, childPathId);
+    const childSlug = buildTeamSlug(childName, code);
     const parentPathForChild = teamsDir;
 
     // Use the same creation path as "Add Team" and organization children
