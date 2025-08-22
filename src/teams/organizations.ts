@@ -158,22 +158,8 @@ export async function addTeamsToExistingOrganization(
 		await app.vault.createFolder(teamsDir);
 	}
 
-	const letters = "abcdefghijklmnopqrstuvwxyz";
-
-	// Determine already-used first-segment letters from existing child team slugs
-	const existingChildren = app.vault
-		.getAllLoadedFiles()
-		.filter(
-			(f: any) =>
-				f?.path?.startsWith?.(teamsDir + "/") &&
-				f.children === undefined
-		);
-	void existingChildren; // not used directly here; we use adapter.list below.
-
-	// Prefer using known teams from your settings if passed around elsewhere; here we rely on folder parsing:
-	const usedLetters = new Set<string>();
-
-	// Fallback strategy: quickly scan subfolder names via adapter.list (if available)
+	// Collect used pathIds from existing children to avoid collisions
+	const usedPathIds = new Set<string>();
 	try {
 		const list = await (app.vault.adapter as any).list(teamsDir);
 		const folders: string[] = Array.isArray(list?.folders)
@@ -183,35 +169,30 @@ export async function addTeamsToExistingOrganization(
 			const name = full.split("/").filter(Boolean).pop()!;
 			const p = parseTeamFolderName(name);
 			if (p) {
-				const base = slugifyName(p.name);
+				const base = slugifyName(orgName);
 				const pid = getPathIdFromSlug(p.slug, base);
-				if (pid) {
-					const first = pid.split("-")[0];
-					if (first) usedLetters.add(first);
-				}
+				if (pid) usedPathIds.add(pid);
 			}
 		}
 	} catch {
-		// If adapter.list is not available, we proceed with empty usedLetters and let slug generation pick earliest letters.
+		// listing failed; proceed with empty set
 	}
 
-	let letterIdx = 0;
-	while (letterIdx < letters.length && usedLetters.has(letters[letterIdx])) {
-		letterIdx++;
-	}
+	// Using slugified team names for pathIds; no letter index allocation required.
 
 	for (let i = 0; i < suffixes.length; i++) {
-		const letter = letters[letterIdx] || `x${letterIdx}`;
-		letterIdx++;
-		while (
-			letterIdx < letters.length &&
-			usedLetters.has(letters[letterIdx])
-		) {
-			letterIdx++;
+		const rawSuffix = (suffixes[i] ?? "").trim();
+		const displaySuffix = rawSuffix || `${i + 1}`;
+		const baseCandidate = slugifyName(displaySuffix) || `${i + 1}`;
+		let pathId = baseCandidate;
+		let n = 1;
+		while (usedPathIds.has(pathId)) {
+			n++;
+			pathId = `${baseCandidate}-${n}`;
 		}
+		usedPathIds.add(pathId);
 
-		const pathId = letter;
-		const name = `${orgName} ${suffixes[i]}`;
+		const name = `${orgName} ${displaySuffix}`;
 		const childPathId = pathId;
 		const childSlug = buildOrgChildSlug(orgName, code, childPathId);
 		const folder = `${teamsDir}/${name} (${childSlug})`;
