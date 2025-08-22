@@ -12,7 +12,8 @@ export async function createTeamResources(
 	app: App,
 	teamName: string,
 	parentPath: string,
-	teamSlug: string
+	teamSlug: string,
+	resourcePathIdOverride?: string | null
 ): Promise<{ info: { name: string; slug: string; rootPath: string } }> {
 	const vault = app.vault;
 
@@ -35,10 +36,11 @@ export async function createTeamResources(
 	// Get pathId by comparing teamSlug to base team name
 	// Note: We don’t strictly need to compute pathId for creating the folder name; resource folder name only needs code and the same pathId used in the teamSlug.
 	// We’ll use a helper method: inferPathIdFromTeamSlug
-	const pathId = inferPathIdFromTeamSlug(teamName, teamSlug);
+	const inferredPathId = inferPathIdFromTeamSlug(teamName, teamSlug);
+	const effectivePathId = resourcePathIdOverride ?? inferredPathId;
 	const baseNameSlug = slugifyName(teamName);
 	const canonicalPathId =
-		pathId && baseNameSlug.endsWith(`-${pathId}`) ? null : pathId;
+		effectivePathId && baseNameSlug.endsWith(`-${effectivePathId}`) ? null : effectivePathId;
 	const canonicalSlug = buildTeamSlug(teamName, code, canonicalPathId);
 
 	// Create the team root folder: "<Name> (<canonicalSlug>)"
@@ -54,7 +56,7 @@ export async function createTeamResources(
 		await vault.createFolder(docs);
 	}
 
-	const initDirName = buildResourceFolderName("initiatives", code, pathId);
+	const initDirName = buildResourceFolderName("initiatives", code, effectivePathId);
 	const initDir = `${teamRoot}/${initDirName}`;
 	if (!(await vault.adapter.exists(initDir))) {
 		await vault.createFolder(initDir);
@@ -64,17 +66,17 @@ export async function createTeamResources(
 	const completedFile = `${initDir}/${buildResourceFileName(
 		"completed",
 		code,
-		pathId
+		effectivePathId
 	)}`;
 	const initiativesFile = `${initDir}/${buildResourceFileName(
 		"initiatives",
 		code,
-		pathId
+		effectivePathId
 	)}`;
 	const prioritiesFile = `${initDir}/${buildResourceFileName(
 		"priorities",
 		code,
-		pathId
+		effectivePathId
 	)}`;
 	if (!(await vault.adapter.exists(completedFile)))
 		await vault.create(completedFile, "");

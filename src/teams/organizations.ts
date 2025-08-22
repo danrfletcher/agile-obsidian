@@ -118,7 +118,8 @@ export async function createOrganizationFromTeam(opts: {
 				app,
 				childName,
 				parentPathForChild,
-				childSlug
+				childSlug,
+				pid
 			);
 
 			createdTeamSlugs.push(info.slug);
@@ -329,10 +330,12 @@ export async function createSubteams(
 
   for (const suf of suffixes) {
     const childName = `${orgName} ${suf}`;
+    const suffixSlug = slugifyName(suf);
+    const childPathId = parentPathId ? `${parentPathId}-${suffixSlug}` : suffixSlug;
     const childSlug = buildTeamSlug(childName, code);
     const parentPathForChild = teamsDir;
 
     // Use the same creation path as "Add Team" and organization children
-    await createTeamResources(app, childName, parentPathForChild, childSlug);
+    await createTeamResources(app, childName, parentPathForChild, childSlug, childPathId);
   }
 }
