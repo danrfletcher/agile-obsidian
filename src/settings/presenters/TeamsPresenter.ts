@@ -199,7 +199,7 @@ export class TeamsPresenter {
 			const toggleBtn = btns.createEl("button", {
 				text: "View Members & Teams",
 			});
-			const addTeamBtn = btns.createEl("button", { text: "Add Team" });
+			const addTeamsBtn = btns.createEl("button", { text: "Add Teams" });
 			const addMemberBtn = btns.createEl("button", {
 				text: "Add Member",
 			});
@@ -221,25 +221,31 @@ export class TeamsPresenter {
 					orgContainer.style.display === "none" ? "block" : "none";
 			});
 
-			addTeamBtn.addEventListener("click", () => {
-				new CreateOrganizationModal(
+			addTeamsBtn.addEventListener("click", () => {
+				new CreateSubteamsModal(
 					this.app,
 					org.name,
-					async (orgName, suffixes) => {
+					async (suffixes) => {
 						try {
 							await this.actions.addTeamsToExistingOrganization(
 								org,
-								orgName,
+								org.name,
 								suffixes
 							);
 							await this.actions.detectAndUpdateTeams();
 							onRefreshUI();
 							new Notice(
-								`Added ${suffixes.length} team(s) to ${orgName}.`
+								`Added ${suffixes.length} team(s) to ${org.name}.`
 							);
 						} catch (e) {
 							new Notice(`Failed to add team(s): ${e}`);
 						}
+					},
+					{
+						title: "Add Teams",
+						addRowText: "Add Team",
+						submitText: "Add Teams",
+						emptyNoticeText: "Add at least one team.",
 					}
 				).open();
 			});

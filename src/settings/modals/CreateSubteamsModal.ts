@@ -3,22 +3,43 @@ import { App, Modal, Notice } from "obsidian";
 export class CreateSubteamsModal extends Modal {
 	private parentTeamName: string;
 	private onSubmit: (suffixes: string[]) => void | Promise<void>;
+	private ui: {
+		title: string;
+		addRowText: string;
+		submitText: string;
+		emptyNoticeText: string;
+	};
 
 	constructor(
 		app: App,
 		parentTeamName: string,
-		onSubmit: (suffixes: string[]) => void | Promise<void>
+		onSubmit: (suffixes: string[]) => void | Promise<void>,
+		uiOverrides?: Partial<{
+			title: string;
+			addRowText: string;
+			submitText: string;
+			emptyNoticeText: string;
+		}>
 	) {
 		super(app);
 		this.parentTeamName = parentTeamName;
 		this.onSubmit = onSubmit;
+		this.ui = Object.assign(
+			{
+				title: "Add Subteams",
+				addRowText: "Add Subteam",
+				submitText: "Create Subteams",
+				emptyNoticeText: "Add at least one subteam.",
+			},
+			uiOverrides || {}
+		);
 	}
 
 	onOpen(): void {
 		const { contentEl } = this;
 		contentEl.empty();
 
-		contentEl.createEl("h3", { text: "Add Subteams" });
+		contentEl.createEl("h3", { text: this.ui.title });
 
 		const info = contentEl.createEl("div", {
 			attr: { style: "margin-bottom: 8px; color: var(--text-muted);" },
@@ -30,7 +51,7 @@ export class CreateSubteamsModal extends Modal {
 			attr: { style: "margin-top: 6px;" },
 		});
 		const addTeamBtn = addBtnWrap.createEl("button", {
-			text: "Add Subteam",
+			text: this.ui.addRowText,
 		});
 
 		type Row = {
@@ -85,13 +106,13 @@ export class CreateSubteamsModal extends Modal {
 		});
 		const cancel = btns.createEl("button", { text: "Cancel" });
 		cancel.addEventListener("click", () => this.close());
-		const create = btns.createEl("button", { text: "Create Subteams" });
+		const create = btns.createEl("button", { text: this.ui.submitText });
 		create.addEventListener("click", async () => {
 			const suffixes = rows
 				.map((r) => r.suffixInput.value.trim())
 				.filter(Boolean);
 			if (suffixes.length === 0) {
-				new Notice("Add at least one subteam.");
+				new Notice(this.ui.emptyNoticeText);
 				return;
 			}
 			await this.onSubmit(suffixes);
