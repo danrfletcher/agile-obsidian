@@ -265,12 +265,18 @@ export async function createSubteams(
   const code = getBaseCodeFromSlug(slug) as string;
   if (!code) throw new Error("Parent team folder has no code.");
   const orgName = parsed.name;
-  let parentPathId = getPathIdFromSlug(slug, slugifyName(orgName)) || null; // e.g., "a" or "b-2"
-  // If null (embedded into the visible name), infer simple trailing letter from the name like "... A" -> "a"
-  if (!parentPathId) {
-    const orgBase = slugifyName(orgName);
-    const m = /-([a-z])$/.exec(orgBase);
-    if (m) parentPathId = m[1];
+
+  // Get full hierarchical pathId for the parent from its slug (e.g., "a", "a-1", "a-aa")
+  let parentPathId = getPathIdFromSlug(slug) || null;
+
+  // Resolve the root organization name (segment before the first "Teams" in the path)
+  let orgRootNameForSlug = orgName;
+  const segsForRoot = parentTeam.rootPath.split("/").filter(Boolean);
+  const firstTeamsIdx = segsForRoot.indexOf("Teams");
+  if (firstTeamsIdx > 0) {
+    const orgFolder = segsForRoot[firstTeamsIdx - 1];
+    const orgParsed = parseTeamFolderName(orgFolder);
+    if (orgParsed?.name) orgRootNameForSlug = orgParsed.name;
   }
 
   const teamsDir = `${parentTeam.rootPath}/Teams`;
@@ -313,7 +319,7 @@ export async function createSubteams(
     const childName = `${orgName} ${suf}`;
     const suffixSlug = slugifyName(suf);
     const childPathId = parentPathId ? `${parentPathId}-${suffixSlug}` : suffixSlug;
-    const childSlug = buildOrgChildSlug(orgName, code, childPathId);
+    const childSlug = buildOrgChildSlug(orgRootNameForSlug, code, childPathId);
     const parentPathForChild = teamsDir;
 
     // Use the same creation path as "Add Team" and organization children
