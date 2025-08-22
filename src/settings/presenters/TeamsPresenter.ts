@@ -368,9 +368,12 @@ export class TeamsPresenter {
 		for (const t of teams) {
 			const isParent = (children.get(t.rootPath)?.length ?? 0) > 0;
 			const isChild = isChildPath.has(t.rootPath);
-			if (isParent) {
+			// Only top-level parents (not children) are organizations.
+			if (isParent && !isChild) {
 				orgs.push(t);
-			} else if (!isChild) {
+			}
+			// Only teams that are neither parents nor children are orphans.
+			else if (!isParent && !isChild) {
 				orphanTeams.push(t);
 			}
 		}
