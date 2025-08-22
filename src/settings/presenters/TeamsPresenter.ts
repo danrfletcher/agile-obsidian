@@ -521,7 +521,7 @@ export class TeamsPresenter {
 				text: "View Members & Subteams",
 			});
 			const createSubBtn = tBtns.createEl("button", {
-				text: "Create Subteams",
+				text: "Add Subteams",
 			});
 			const addMemberBtn = tBtns.createEl("button", {
 				text: "Add Member",
@@ -618,7 +618,7 @@ export class TeamsPresenter {
 								text: "View Members & Subteams",
 							});
 							const stCreateBtn = stBtns.createEl("button", {
-								text: "Create Subteams",
+								text: "Add Subteams",
 							});
 							const stAddMemberBtn = stBtns.createEl("button", {
 								text: "Add Member",

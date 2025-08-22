@@ -18,7 +18,7 @@ export class CreateSubteamsModal extends Modal {
 		const { contentEl } = this;
 		contentEl.empty();
 
-		contentEl.createEl("h3", { text: "Create Subteams" });
+		contentEl.createEl("h3", { text: "Add Subteams" });
 
 		const info = contentEl.createEl("div", {
 			attr: { style: "margin-bottom: 8px; color: var(--text-muted);" },
