@@ -45,7 +45,8 @@ export async function createTeamResources(
 
 	// Create the team root folder: "<Name> (<canonicalSlug>)"
 	const teamFolderName = `${teamName} (${canonicalSlug})`;
-	const teamRoot = `${parentPath}/${teamFolderName}`;
+	const normalizedParent = (parentPath || "").replace(/\/+$/g, "");
+	const teamRoot = normalizedParent ? `${normalizedParent}/${teamFolderName}` : teamFolderName;
 	if (!(await vault.adapter.exists(teamRoot))) {
 		await vault.createFolder(teamRoot);
 	}
