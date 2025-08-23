@@ -51,7 +51,8 @@ export class DelegateSlashSuggest extends EditorSuggest<Candidate> {
 			if (!this.deps.isUncheckedTaskLine(line)) return null;
 			// Suppress when task is assigned to Everyone
 			if (
-				/\bclass=["'][^"']*\b(?:active|inactive)-team\b[^"']*["']/i.test(line)
+				/\bclass=["'][^"']*\b(?:active|inactive)-team\b[^"']*["']/i.test(line) ||
+				/<strong>\s*🤝\s*Everyone\s*<\/strong>/i.test(line)
 			)
 				return null;
 
@@ -87,7 +88,8 @@ export class DelegateSlashSuggest extends EditorSuggest<Candidate> {
 						context.start?.line ?? view.editor.getCursor().line
 					);
 				if (
-					/\bclass=["'][^"']*\b(?:active|inactive)-team\b[^"']*["']/i.test(ln)
+					/\bclass=["'][^"']*\b(?:active|inactive)-team\b[^"']*["']/i.test(ln) ||
+					/<strong>\s*🤝\s*Everyone\s*<\/strong>/i.test(ln)
 				) {
 					return [];
 				}
@@ -100,7 +102,13 @@ export class DelegateSlashSuggest extends EditorSuggest<Candidate> {
 					const alias = (m.alias || "").toLowerCase();
 					if (!alias) continue;
 					if (!uniq.has(alias)) {
-						uniq.set(alias, { alias, name: getDisplayNameFromAlias(alias) });
+						const base = getDisplayNameFromAlias(alias);
+						const name = base
+							// Keep "Team" but drop the 6-char code before it
+							.replace(/\s+[0-9][a-z0-9]{5}\b\s*(?=Team\b)/i, " ")
+							// Otherwise drop the code and everything after it (e.g., "ext", "int")
+							.replace(/\s+[0-9][a-z0-9]{5}\b.*$/i, "");
+						uniq.set(alias, { alias, name });
 					}
 				}
 			}
@@ -164,9 +172,8 @@ export class DelegateSlashSuggest extends EditorSuggest<Candidate> {
 
 			// Disallow when Everyone is assigned
 			if (
-				/\bclass=["'][^"']*\b(?:active|inactive)-team\b[^"']*["']/i.test(
-					original
-				)
+				/\bclass=["'][^"']*\b(?:active|inactive)-team\b[^"']*["']/i.test(original) ||
+				/<strong>\s*🤝\s*Everyone\s*<\/strong>/i.test(original)
 			) {
 				// Simply do nothing; mirrors command behavior
 				return;
@@ -181,7 +188,11 @@ export class DelegateSlashSuggest extends EditorSuggest<Candidate> {
 				base = left + right;
 			}
 
-			const cleanName = getDisplayNameFromAlias(value.display || value.alias);
+			const cleanName = getDisplayNameFromAlias(value.alias)
+				// Keep "Team" but drop the 6-char code before it
+				.replace(/\s+[0-9][a-z0-9]{5}\b\s*(?=Team\b)/i, " ")
+				// Otherwise drop the code and everything after it (e.g., "ext", "int")
+				.replace(/\s+[0-9][a-z0-9]{5}\b.*$/i, "");
 			const mark = this.deps.renderDelegateMark(
 				value.alias,
 				cleanName,

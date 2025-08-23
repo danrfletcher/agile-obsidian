@@ -76,7 +76,13 @@ export function renderDelegateMark(
 				: "#FA9684"
 			: "#CACFD9A6";
 
-	const label = toTitleCase(displayName || "");
+	const label = toTitleCase(
+		getDisplayNameFromAlias(displayName || alias)
+			// Keep "Team" but drop the 6-char code before it
+			.replace(/\s+[0-9][a-z0-9]{5}\b\s*(?=Team\b)/i, " ")
+			// Otherwise drop the code and everything after it (e.g., "ext", "int")
+			.replace(/\s+[0-9][a-z0-9]{5}\b.*$/i, "")
+	);
 
 	return `<mark class="${variant}-${alias}" style="background: ${bg};"><strong>${emoji} ${label}</strong></mark>`;
 }
