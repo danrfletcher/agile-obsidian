@@ -40,7 +40,7 @@ export function renderAssigneeMark(
 	}
 
 	const bg = variant === "active" ? "#BBFABBA6" : "#CACFD9A6";
-	const label = toTitleCase(displayName || "");
+	const label = toTitleCase(getDisplayNameFromAlias(displayName || alias));
 
 	return `<mark class="${variant}-${alias}" style="background: ${bg};"><strong>👋 ${label}</strong></mark>`;
 }

@@ -50,7 +50,10 @@ export class DelegateSlashSuggest extends EditorSuggest<Candidate> {
 			// Only trigger inside unchecked task lines
 			if (!this.deps.isUncheckedTaskLine(line)) return null;
 			// Suppress when task is assigned to Everyone
-			if (/\bclass="(?:active|inactive)-team"\b/i.test(line)) return null;
+			if (
+				/\bclass=["'][^"']*\b(?:active|inactive)-team\b[^"']*["']/i.test(line)
+			)
+				return null;
 
 			const before = line.slice(0, cursor.ch);
 			// Match "/delegate" optionally followed by a query
@@ -75,6 +78,20 @@ export class DelegateSlashSuggest extends EditorSuggest<Candidate> {
 			const q = (context.query || "").toLowerCase();
 			const settings = this.getSettings() || {};
 			const teams: any[] = settings.teams ?? [];
+
+			// Suppress suggestions when the current line is assigned to Everyone
+			const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+			if (view) {
+				const ln =
+					view.editor.getLine(
+						context.start?.line ?? view.editor.getCursor().line
+					);
+				if (
+					/\bclass=["'][^"']*\b(?:active|inactive)-team\b[^"']*["']/i.test(ln)
+				) {
+					return [];
+				}
+			}
 
 			// Build unique alias->name map across all teams
 			const uniq = new Map<string, { alias: string; name: string }>();
@@ -146,7 +163,11 @@ export class DelegateSlashSuggest extends EditorSuggest<Candidate> {
 			const original = editor.getLine(lineNo);
 
 			// Disallow when Everyone is assigned
-			if (/\bclass="(?:active|inactive)-team"\b/i.test(original)) {
+			if (
+				/\bclass=["'][^"']*\b(?:active|inactive)-team\b[^"']*["']/i.test(
+					original
+				)
+			) {
 				// Simply do nothing; mirrors command behavior
 				return;
 			}
@@ -160,9 +181,10 @@ export class DelegateSlashSuggest extends EditorSuggest<Candidate> {
 				base = left + right;
 			}
 
+			const cleanName = getDisplayNameFromAlias(value.display || value.alias);
 			const mark = this.deps.renderDelegateMark(
 				value.alias,
-				value.display,
+				cleanName,
 				"active",
 				value.targetType
 			);

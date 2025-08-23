@@ -60,8 +60,14 @@ export async function applyAssigneeChangeWithCascade(
 	const newMark = newAlias
 		? deps.buildAssigneeMarkForAlias(newAlias, variant, team)
 		: null;
+	const forceClearDelegate =
+		!newMark ||
+		/\bclass=["'][^"']*\b(?:active|inactive)-team\b[^"']*["']/.test(
+			newMark
+		);
 	let updated = deps.normalizeTaskLine(originalLine, {
 		newAssigneeMark: newMark,
+		...(forceClearDelegate ? { newDelegateMark: null } : {}),
 	});
 	if (/<\/mark>\s*$/.test(updated)) updated = updated.replace(/\s*$/, " ");
 	editor.replaceRange(
@@ -440,6 +446,23 @@ export async function applyCascadeAfterExternalChange(
 		// After content (we'll apply our cascade edits on top of this)
 		const afterContent = await (deps.app.vault as any).cachedRead(af);
 		const lines = afterContent.split("\n");
+
+		// If newly assigned to Everyone or cleared, remove any delegate on the parent line
+		if (
+			newAlias === null ||
+			(typeof newAlias === "string" &&
+				newAlias.toLowerCase() === "team")
+		) {
+			const origParent = lines[parentLine0] ?? "";
+			let updParent = deps.normalizeTaskLine(origParent, {
+				newDelegateMark: null,
+			});
+			if (/<\/mark>\s*$/.test(updParent))
+				updParent = updParent.replace(/\s*$/, " ");
+			if (updParent !== origParent) {
+				lines[parentLine0] = updParent;
+			}
+		}
 
 		const explicitOn = (ln: string): string | null =>
 			isReassignableTaskLine(ln)

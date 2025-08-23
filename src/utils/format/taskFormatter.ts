@@ -114,6 +114,11 @@ export function normalizeTaskLine(
 			delegateMark = null;
 		}
 
+		// If no assignee is present, delegates are invalid and must be removed
+		if (!assigneeMark) {
+			delegateMark = null;
+		}
+
 		// If overriding assignee, ensure no stray assignee/everyone marks remain in metadata marks
 		if (hasOverrideAssignee) {
 			const filtered = metadataMarks.filter(
