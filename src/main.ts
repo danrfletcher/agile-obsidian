@@ -29,6 +29,7 @@ import {
 } from "./assignees/assigneeMarks";
 import { applyAssigneeChangeWithCascade } from "./assignees/assignmentCascade";
 import { renderDelegateMark } from "./mdRenderers/markTemplates";
+import { DelegateSlashSuggest } from "./utils/commands/slashDelegate";
 
 export default class AgileObsidianPlugin extends Plugin {
 	settings: AgileObsidianSettings;
@@ -242,6 +243,16 @@ export default class AgileObsidianPlugin extends Plugin {
 			}
 		);
 		this.register(() => disposer());
+
+		// Register slash command for delegation (/delegate ...)
+		this.registerEditorSuggest(
+			new DelegateSlashSuggest(this.app, () => this.settings, {
+				normalizeTaskLine,
+				renderDelegateMark,
+				resolveTeamForPath,
+				isUncheckedTaskLine,
+			})
+		);
 
 		// Dynamic commands for assign/delegate
 		this.buildDynamicCommands();
