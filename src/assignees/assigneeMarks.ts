@@ -10,7 +10,7 @@
  */
 
 import { aliasToName } from "../utils/commands/commandUtils";
-import { renderAssigneeMark } from "../samples/markTemplates";
+import { renderAssigneeMark } from "../mdRenderers/markTemplates";
 
 /**
  * Extract the explicit assignee alias from a single task line.
@@ -29,7 +29,10 @@ export function getExplicitAssigneeAliasFromText(line: string): string | null {
 		// Everyone (alias exactly "team")
 		if (/\bclass="(?:active|inactive)-team"\b/i.test(line)) return "team";
 		// Member assignee (👋 ...)
-		const m = /\bclass="(?:active|inactive)-([a-z0-9-]+)"[^>]*>\s*<strong>👋/i.exec(line);
+		const m =
+			/\bclass="(?:active|inactive)-([a-z0-9-]+)"[^>]*>\s*<strong>👋/i.exec(
+				line
+			);
 		return m ? m[1].toLowerCase() : null;
 	} catch {
 		return null;
@@ -59,7 +62,9 @@ export function buildAssigneeMarkForAlias(
 
 	if (lower === "team") {
 		// Special case for "Everyone"
-		return renderAssigneeMark("team", "Everyone", variant, { everyone: true });
+		return renderAssigneeMark("team", "Everyone", variant, {
+			everyone: true,
+		});
 	}
 
 	const member = (team?.members ?? []).find(

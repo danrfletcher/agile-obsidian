@@ -9,13 +9,17 @@
  */
 
 import { App, MarkdownView, Menu } from "obsidian";
-import { renderDelegateMark } from "../samples/markTemplates";
+import { renderDelegateMark } from "../mdRenderers/markTemplates";
 
 type Ctx = {
 	resolveTeamForPath: (filePath: string, teams: any[]) => any;
 	isUncheckedTaskLine: (line: string) => boolean;
 	normalizeTaskLine: (line: string, opts?: any) => string;
-	findTargetLineFromClick: (editor: any, evt: MouseEvent, alias: string) => number;
+	findTargetLineFromClick: (
+		editor: any,
+		evt: MouseEvent,
+		alias: string
+	) => number;
 	getExplicitAssigneeAliasFromText: (line: string) => string | null;
 	applyAssigneeChangeWithCascade: (
 		filePath: string,
@@ -42,7 +46,51 @@ type Ctx = {
  * @param ctx Helper functions and cascade operation bound with dependencies.
  * @returns Disposer to remove the event listeners.
  */
-export function registerMarkClickHandlers(app: App, getSettings: () => any, ctx: Ctx): () => void {
+export function registerMarkClickHandlers(
+	app: App,
+	getSettings: () => any,
+	ctx: Ctx
+): () => void {
+	// Title Case helper for display names
+	const toTitleCase = (s: string) =>
+		s.replace(
+			/\S+/g,
+			(w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+		);
+
+	// After we mutate the line, keep exactly one space after </mark> and put cursor there
+	const setCursorAfterLastMark = (editor: any, lineNo: number) => {
+		let line = editor.getLine(lineNo);
+
+		// Ensure exactly one space after a trailing </mark>
+		if (/<\/mark>\s*$/i.test(line)) {
+			line = line.replace(/\s*$/, " ");
+			editor.replaceRange(
+				line,
+				{ line: lineNo, ch: 0 },
+				{ line: lineNo, ch: editor.getLine(lineNo).length }
+			);
+		}
+
+		const lastClose = line.lastIndexOf("</mark>");
+		if (lastClose >= 0) {
+			// Cursor after </mark> and after a single trailing space
+			const ch = lastClose + "</mark>".length + 1; // the one trailing space
+			editor.setCursor({ line: lineNo, ch });
+		} else {
+			// Fallback: end of line
+			editor.setCursor({ line: lineNo, ch: line.length });
+		}
+	};
+
+	// Allow reassignment on any task status except done "x" and cancelled "-"
+	const isReassignableTaskLine = (line: string): boolean => {
+		const m = /^\s*[-*]\s*\[\s*([^\]]?)\s*\]\s+/i.exec(line);
+		if (!m) return false;
+		const status = (m[1] ?? "").trim().toLowerCase();
+		return status !== "x" && status !== "-";
+	};
+
 	const mousedown = async (evt: MouseEvent) => {
 		const target = evt.target as HTMLElement | null;
 		if (!target) return;
@@ -53,7 +101,7 @@ export function registerMarkClickHandlers(app: App, getSettings: () => any, ctx:
 		const cls = markEl.getAttribute("class") || "";
 		if (!/\b(?:active|inactive)-[a-z0-9-]+\b/i.test(cls)) return;
 
-		// Single-click: prevent default selection/opening and show menu
+		// Single-click
 		if (evt.detail < 2) {
 			evt.preventDefault();
 			evt.stopPropagation();
@@ -66,19 +114,26 @@ export function registerMarkClickHandlers(app: App, getSettings: () => any, ctx:
 			const filePath = (view as any)?.file?.path ?? null;
 			if (!filePath) return;
 
-			const variant = ((/\bactive-/i.test(cls) ? "active" : "inactive") as "active" | "inactive");
-			const alias = (/\b(?:active|inactive)-([a-z0-9-]+)\b/i.exec(cls)?.[1] || "").toLowerCase();
+			const variant = (/\bactive-/i.test(cls) ? "active" : "inactive") as
+				| "active"
+				| "inactive";
+			const alias = (
+				/\b(?:active|inactive)-([a-z0-9-]+)\b/i.exec(cls)?.[1] || ""
+			).toLowerCase();
 
-			const team = ctx.resolveTeamForPath(filePath, (getSettings() as any)?.teams ?? []);
+			const team = ctx.resolveTeamForPath(
+				filePath,
+				(getSettings() as any)?.teams ?? []
+			);
 			if (!team) return;
 
-			// Determine the actual line for the clicked mark and preserve the current cursor
+			// Determine the actual line
 			const savedCursor = editor.getCursor();
 			const lineNo = ctx.findTargetLineFromClick(editor, evt, alias);
 			const currentLine = editor.getLine(lineNo);
-			if (!ctx.isUncheckedTaskLine(currentLine)) return;
+			if (!isReassignableTaskLine(currentLine)) return;
 
-			// Determine if this mark is an assignee or delegate based on content/alias
+			// Determine assignee vs delegate mark
 			const text = (markEl.textContent || "").trim();
 			const isAssignee = alias === "team" || text.includes("👋");
 			const isDelegate = !isAssignee;
@@ -86,14 +141,26 @@ export function registerMarkClickHandlers(app: App, getSettings: () => any, ctx:
 			const menu = new Menu();
 
 			if (isAssignee) {
-				// Remove Assignee option
+				// Remove Assignee
 				menu.addItem((i) => {
 					i.setTitle("Remove Assignee");
 					i.onClick(() => {
 						const before = editor.getLine(lineNo);
-						const oldAlias = ctx.getExplicitAssigneeAliasFromText(before);
-						ctx.applyAssigneeChangeWithCascade(filePath, editor, lineNo, oldAlias, null, "active", team)
-							.finally(() => editor.setCursor(savedCursor));
+						if (!isReassignableTaskLine(before)) {
+							setCursorAfterLastMark(editor, lineNo);
+							return;
+						}
+						const oldAlias =
+							ctx.getExplicitAssigneeAliasFromText(before);
+						ctx.applyAssigneeChangeWithCascade(
+							filePath,
+							editor,
+							lineNo,
+							oldAlias,
+							null,
+							"active",
+							team
+						).finally(() => setCursorAfterLastMark(editor, lineNo));
 					});
 				});
 
@@ -103,14 +170,29 @@ export function registerMarkClickHandlers(app: App, getSettings: () => any, ctx:
 						i.setTitle(`Everyone (${v})`);
 						i.onClick(() => {
 							const before = editor.getLine(lineNo);
-							const oldAlias = ctx.getExplicitAssigneeAliasFromText(before);
-							ctx.applyAssigneeChangeWithCascade(filePath, editor, lineNo, oldAlias, "team", v, team)
-								.finally(() => editor.setCursor(savedCursor));
+							if (!isReassignableTaskLine(before)) {
+								setCursorAfterLastMark(editor, lineNo);
+								return;
+							}
+							const oldAlias =
+								ctx.getExplicitAssigneeAliasFromText(before);
+							ctx.applyAssigneeChangeWithCascade(
+								filePath,
+								editor,
+								lineNo,
+								oldAlias,
+								"team",
+								v,
+								team
+							).finally(() =>
+								setCursorAfterLastMark(editor, lineNo)
+							);
 						});
 					});
 				};
+
 				if (alias === "team") {
-					addEveryone(variant === "active" ? "inactive" : "active"); // opposite only for current
+					addEveryone(variant === "active" ? "inactive" : "active");
 				} else {
 					addEveryone("active");
 					addEveryone("inactive");
@@ -119,27 +201,51 @@ export function registerMarkClickHandlers(app: App, getSettings: () => any, ctx:
 				// Team members (non -ext/-team/-int)
 				const members: any[] = (team.members ?? []).filter((m: any) => {
 					const a = (m.alias || "").toLowerCase();
-					return a && !a.endsWith("-ext") && !a.endsWith("-team") && !a.endsWith("-int");
+					return (
+						a &&
+						!a.endsWith("-ext") &&
+						!a.endsWith("-team") &&
+						!a.endsWith("-int")
+					);
 				});
 
 				const addMember = (mem: any, v: "active" | "inactive") => {
+					const displayName = toTitleCase(
+						mem.name || mem.alias || ""
+					);
 					menu.addItem((i) => {
-						i.setTitle(`${mem.name} (${v})`);
+						i.setTitle(`${displayName} (${v})`);
 						i.onClick(() => {
 							const before = editor.getLine(lineNo);
-							const oldAlias = ctx.getExplicitAssigneeAliasFromText(before);
-							ctx.applyAssigneeChangeWithCascade(filePath, editor, lineNo, oldAlias, mem.alias, v, team)
-								.finally(() => editor.setCursor(savedCursor));
+							if (!isReassignableTaskLine(before)) {
+								setCursorAfterLastMark(editor, lineNo);
+								return;
+							}
+							const oldAlias =
+								ctx.getExplicitAssigneeAliasFromText(before);
+							const memAlias = (mem.alias || "").toLowerCase();
+							ctx.applyAssigneeChangeWithCascade(
+								filePath,
+								editor,
+								lineNo,
+								oldAlias,
+								memAlias,
+								v,
+								team
+							).finally(() =>
+								setCursorAfterLastMark(editor, lineNo)
+							);
 						});
 					});
 				};
 
 				for (const mem of members) {
 					if ((mem.alias || "").toLowerCase() === alias) {
-						// Current member: offer opposite variant only
-						addMember(mem, variant === "active" ? "inactive" : "active");
+						addMember(
+							mem,
+							variant === "active" ? "inactive" : "active"
+						);
 					} else {
-						// Other members: offer both variants
 						addMember(mem, "active");
 						addMember(mem, "inactive");
 					}
@@ -150,55 +256,98 @@ export function registerMarkClickHandlers(app: App, getSettings: () => any, ctx:
 					return;
 				}
 
-				// Remove Delegation option
+				// Remove Delegation
 				menu.addItem((i) => {
 					i.setTitle("Remove Delegation");
 					i.onClick(() => {
 						const before = editor.getLine(lineNo);
-						let updated = ctx.normalizeTaskLine(before, { newDelegateMark: null });
-						if (/<\/mark>\s*$/.test(updated)) updated = updated.replace(/\s*$/, " ");
-						editor.replaceRange(updated, { line: lineNo, ch: 0 }, { line: lineNo, ch: before.length });
-						editor.setCursor(savedCursor);
+						if (!isReassignableTaskLine(before)) {
+							setCursorAfterLastMark(editor, lineNo);
+							return;
+						}
+						let updated = ctx.normalizeTaskLine(before, {
+							newDelegateMark: null,
+						});
+						if (/<\/mark>\s*$/.test(updated))
+							updated = updated.replace(/\s*$/, " ");
+						editor.replaceRange(
+							updated,
+							{ line: lineNo, ch: 0 },
+							{ line: lineNo, ch: before.length }
+						);
+						setCursorAfterLastMark(editor, lineNo);
 					});
 				});
 
 				const dVariant = "active" as const; // Delegates can only be active
 
 				// Internal Teams (-team but not bare 'team')
-				const internalTeams: any[] = (team.members ?? []).filter((m: any) => {
-					const a = (m.alias || "").toLowerCase();
-					return a.endsWith("-team") && a !== "team";
-				});
+				const internalTeams: any[] = (team.members ?? []).filter(
+					(m: any) => {
+						const a = (m.alias || "").toLowerCase();
+						return a.endsWith("-team") && a !== "team";
+					}
+				);
 				for (const t of internalTeams) {
+					const displayName = toTitleCase(t.name || t.alias || "");
 					menu.addItem((i) => {
-						i.setTitle(t.name);
+						i.setTitle(displayName);
 						i.onClick(() => {
 							const before = editor.getLine(lineNo);
+							if (!isReassignableTaskLine(before)) {
+								setCursorAfterLastMark(editor, lineNo);
+								return;
+							}
 							let updated = ctx.normalizeTaskLine(before, {
-								newDelegateMark: renderDelegateMark(t.alias, t.name, dVariant, "team"),
+								newDelegateMark: renderDelegateMark(
+									t.alias,
+									displayName,
+									dVariant,
+									"team"
+								),
 							});
-							if (/<\/mark>\s*$/.test(updated)) updated = updated.replace(/\s*$/, " ");
-							editor.replaceRange(updated, { line: lineNo, ch: 0 }, { line: lineNo, ch: before.length });
-							editor.setCursor(savedCursor);
+							if (/<\/mark>\s*$/.test(updated))
+								updated = updated.replace(/\s*$/, " ");
+							editor.replaceRange(
+								updated,
+								{ line: lineNo, ch: 0 },
+								{ line: lineNo, ch: before.length }
+							);
+							setCursorAfterLastMark(editor, lineNo);
 						});
 					});
 				}
 
 				// Internal Members (-int)
-				const internalMembers: any[] = (team.members ?? []).filter((m: any) =>
-					(m.alias || "").toLowerCase().endsWith("-int")
+				const internalMembers: any[] = (team.members ?? []).filter(
+					(m: any) => (m.alias || "").toLowerCase().endsWith("-int")
 				);
 				for (const im of internalMembers) {
+					const displayName = toTitleCase(im.name || im.alias || "");
 					menu.addItem((i) => {
-						i.setTitle(im.name);
+						i.setTitle(displayName);
 						i.onClick(() => {
 							const before = editor.getLine(lineNo);
+							if (!isReassignableTaskLine(before)) {
+								setCursorAfterLastMark(editor, lineNo);
+								return;
+							}
 							let updated = ctx.normalizeTaskLine(before, {
-								newDelegateMark: renderDelegateMark(im.alias, im.name, dVariant, "internal"),
+								newDelegateMark: renderDelegateMark(
+									im.alias,
+									displayName,
+									dVariant,
+									"internal"
+								),
 							});
-							if (/<\/mark>\s*$/.test(updated)) updated = updated.replace(/\s*$/, " ");
-							editor.replaceRange(updated, { line: lineNo, ch: 0 }, { line: lineNo, ch: before.length });
-							editor.setCursor(savedCursor);
+							if (/<\/mark>\s*$/.test(updated))
+								updated = updated.replace(/\s*$/, " ");
+							editor.replaceRange(
+								updated,
+								{ line: lineNo, ch: 0 },
+								{ line: lineNo, ch: before.length }
+							);
+							setCursorAfterLastMark(editor, lineNo);
 						});
 					});
 				}
@@ -208,16 +357,31 @@ export function registerMarkClickHandlers(app: App, getSettings: () => any, ctx:
 					(m.alias || "").toLowerCase().endsWith("-ext")
 				);
 				for (const ex of externals) {
+					const displayName = toTitleCase(ex.name || ex.alias || "");
 					menu.addItem((i) => {
-						i.setTitle(ex.name);
+						i.setTitle(displayName);
 						i.onClick(() => {
 							const before = editor.getLine(lineNo);
+							if (!isReassignableTaskLine(before)) {
+								setCursorAfterLastMark(editor, lineNo);
+								return;
+							}
 							let updated = ctx.normalizeTaskLine(before, {
-								newDelegateMark: renderDelegateMark(ex.alias, ex.name, dVariant, "external"),
+								newDelegateMark: renderDelegateMark(
+									ex.alias,
+									displayName,
+									dVariant,
+									"external"
+								),
 							});
-							if (/<\/mark>\s*$/.test(updated)) updated = updated.replace(/\s*$/, " ");
-							editor.replaceRange(updated, { line: lineNo, ch: 0 }, { line: lineNo, ch: before.length });
-							editor.setCursor(savedCursor);
+							if (/<\/mark>\s*$/.test(updated))
+								updated = updated.replace(/\s*$/, " ");
+							editor.replaceRange(
+								updated,
+								{ line: lineNo, ch: 0 },
+								{ line: lineNo, ch: before.length }
+							);
+							setCursorAfterLastMark(editor, lineNo);
 						});
 					});
 				}
@@ -247,11 +411,23 @@ export function registerMarkClickHandlers(app: App, getSettings: () => any, ctx:
 		}
 	};
 
-	document.addEventListener("mousedown", mousedown as EventListener, { capture: true });
-	document.addEventListener("click", click as EventListener, { capture: true });
+	document.addEventListener("mousedown", mousedown as EventListener, {
+		capture: true,
+	});
+	document.addEventListener("click", click as EventListener, {
+		capture: true,
+	});
 
 	return () => {
-		document.removeEventListener("mousedown", mousedown as EventListener, { capture: true } as any);
-		document.removeEventListener("click", click as EventListener, { capture: true } as any);
+		document.removeEventListener(
+			"mousedown",
+			mousedown as EventListener,
+			{ capture: true } as any
+		);
+		document.removeEventListener(
+			"click",
+			click as EventListener,
+			{ capture: true } as any
+		);
 	};
 }

@@ -8,6 +8,13 @@
  * - Single source of truth for markup, emojis, and colors used across commands, menus, and cascades.
  */
 
+// Local helper for visible label formatting
+const toTitleCase = (s: string) =>
+	s.replace(
+		/\S+/g,
+		(w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+	);
+
 /**
  * Render an assignee mark.
  *
@@ -28,10 +35,14 @@ export function renderAssigneeMark(
 ): string {
 	if (opts.everyone) {
 		const bg = variant === "active" ? "#FFFFFF" : "#CACFD9A6";
+		// Everyone uses a fixed label
 		return `<mark class="${variant}-team" style="background: ${bg}; color: #000000"><strong>🤝 Everyone</strong></mark>`;
 	}
+
 	const bg = variant === "active" ? "#BBFABBA6" : "#CACFD9A6";
-	return `<mark class="${variant}-${alias}" style="background: ${bg};"><strong>👋 ${displayName}</strong></mark>`;
+	const label = toTitleCase(displayName || "");
+
+	return `<mark class="${variant}-${alias}" style="background: ${bg};"><strong>👋 ${label}</strong></mark>`;
 }
 
 /**
@@ -52,7 +63,8 @@ export function renderDelegateMark(
 	variant: "active" | "inactive",
 	targetType: "team" | "internal" | "external"
 ): string {
-	const emoji = targetType === "team" ? "🤝" : targetType === "internal" ? "👥" : "👤";
+	const emoji =
+		targetType === "team" ? "🤝" : targetType === "internal" ? "👥" : "👤";
 	const bg =
 		variant === "active"
 			? targetType === "team"
@@ -62,5 +74,7 @@ export function renderDelegateMark(
 				: "#FA9684"
 			: "#CACFD9A6";
 
-	return `<mark class="${variant}-${alias}" style="background: ${bg};"><strong>${emoji} ${displayName}</strong></mark>`;
+	const label = toTitleCase(displayName || "");
+
+	return `<mark class="${variant}-${alias}" style="background: ${bg};"><strong>${emoji} ${label}</strong></mark>`;
 }
