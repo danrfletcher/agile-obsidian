@@ -16,9 +16,13 @@ export type CascadeDeps = {
 	app: App;
 	taskIndex: TaskIndex;
 	normalizeTaskLine: (line: string, opts?: any) => string;
-	isUncheckedTaskLine: (line: string) => boolean;
+	isUncheckedTaskLine: (line: string) => boolean; // retained for backward compat; not used in cascade anymore
 	getExplicitAssigneeAliasFromText: (line: string) => string | null;
-	buildAssigneeMarkForAlias: (alias: string, variant: "active" | "inactive", team: any) => string;
+	buildAssigneeMarkForAlias: (
+		alias: string,
+		variant: "active" | "inactive",
+		team: any
+	) => string;
 };
 
 /**
@@ -40,34 +44,47 @@ export async function applyAssigneeChangeWithCascade(
 	team: any,
 	deps: CascadeDeps
 ): Promise<void> {
-	// Capture content BEFORE making any edits, to compute cascade correctly
+	// Local, status-agnostic task detector: allow any status except x and -
+	const isReassignableTaskLine = (line: string): boolean => {
+		const m = /^\s*[-*]\s*\[\s*([^\]]?)\s*\]/i.exec(line);
+		if (!m) return false;
+		const status = (m[1] ?? "").trim().toLowerCase();
+		return status !== "x" && status !== "-";
+	};
+
+	// Snapshot before edits for cascade
 	const beforeLines = editor.getValue().split("\n");
 
 	// Update the target line first
 	const originalLine = editor.getLine(lineNo);
-	const newMark = newAlias ? deps.buildAssigneeMarkForAlias(newAlias, variant, team) : null;
-	let updated = deps.normalizeTaskLine(originalLine, { newAssigneeMark: newMark });
+	const newMark = newAlias
+		? deps.buildAssigneeMarkForAlias(newAlias, variant, team)
+		: null;
+	let updated = deps.normalizeTaskLine(originalLine, {
+		newAssigneeMark: newMark,
+	});
 	if (/<\/mark>\s*$/.test(updated)) updated = updated.replace(/\s*$/, " ");
-	editor.replaceRange(updated, { line: lineNo, ch: 0 }, { line: lineNo, ch: originalLine.length });
+	editor.replaceRange(
+		updated,
+		{ line: lineNo, ch: 0 },
+		{ line: lineNo, ch: originalLine.length }
+	);
 
-	// Ensure TaskIndex is up-to-date for this file structure before cascade/redundancy checks
+	// Update TaskIndex to current file before cascade/redundancy checks
 	try {
 		const af = deps.app.vault.getAbstractFileByPath(filePath);
-		if (af instanceof (deps.app.vault.constructor as any).TFile || (af as any)?.extension === "md") {
-			if ((af as any).extension === "md") {
-				await deps.taskIndex.updateFile(af as unknown as TFile);
-			}
+		if (af && (af as any).extension === "md") {
+			await deps.taskIndex.updateFile(af as unknown as TFile);
 		}
-	} catch (err) {
-		void err;
+	} catch {
+		/* no-op */
 	}
 
-	// If the new explicit assignee equals the inherited value from ancestors, remove the explicit mark (redundant)
+	// Redundancy cleanup (explicit equals inherited)
 	try {
 		const fileEntry = (deps.taskIndex.getIndex() as any)?.[filePath];
 		if (fileEntry) {
-			const allTextNow = editor.getValue();
-			const linesNow = allTextNow.split("\n");
+			const linesNow = editor.getValue().split("\n");
 
 			// Build line->item and id->item maps from index
 			const byLine = new Map<number, any>();
@@ -82,11 +99,17 @@ export async function applyAssigneeChangeWithCascade(
 			};
 			collect(fileEntry.lists || []);
 
+			// Status-agnostic alias capture: consider all reassignable lines
 			const aliasNow: (string | null)[] = linesNow.map((ln) =>
-				deps.isUncheckedTaskLine(ln) ? deps.getExplicitAssigneeAliasFromText(ln) : null
+				isReassignableTaskLine(ln)
+					? deps.getExplicitAssigneeAliasFromText(ln)
+					: null
 			);
 
-			const nearestUp = (l0: number, aliasMap: (string | null)[]): string | null => {
+			const nearestUp = (
+				l0: number,
+				aliasMap: (string | null)[]
+			): string | null => {
 				let cur = byLine.get(l0);
 				while (cur) {
 					const parentId = cur._parentId;
@@ -109,20 +132,39 @@ export async function applyAssigneeChangeWithCascade(
 				const inherited = nearestUp(lineNo, aliasNow);
 				aliasNow[lineNo] = saved;
 
-				if (inherited && inherited.toLowerCase() === explicitOnLine.toLowerCase()) {
+				if (
+					inherited &&
+					inherited.toLowerCase() === explicitOnLine.toLowerCase()
+				) {
 					const after = editor.getLine(lineNo);
-					let cleaned = deps.normalizeTaskLine(after, { newAssigneeMark: null });
-					if (/<\/mark>\s*$/.test(cleaned)) cleaned = cleaned.replace(/\s*$/, " ");
-					editor.replaceRange(cleaned, { line: lineNo, ch: 0 }, { line: lineNo, ch: after.length });
+					let cleaned = deps.normalizeTaskLine(after, {
+						newAssigneeMark: null,
+					});
+					if (/<\/mark>\s*$/.test(cleaned))
+						cleaned = cleaned.replace(/\s*$/, " ");
+					editor.replaceRange(
+						cleaned,
+						{ line: lineNo, ch: 0 },
+						{ line: lineNo, ch: after.length }
+					);
 				}
 			}
 		}
-	} catch (err) {
-		void err;
+	} catch {
+		/* no-op */
 	}
 
-	// Then cascade adjustments (computed against the pre-edit snapshot)
-	await applyAssigneeCascade(filePath, editor, lineNo, oldAlias, newAlias, team, deps, beforeLines);
+	// Then cascade adjustments (computed against pre-edit snapshot)
+	await applyAssigneeCascade(
+		filePath,
+		editor,
+		lineNo,
+		oldAlias,
+		newAlias,
+		team,
+		deps,
+		beforeLines
+	);
 }
 
 /**
@@ -147,13 +189,24 @@ export async function applyAssigneeCascade(
 	try {
 		if (oldAlias === newAlias) return;
 
+		// Local, status-agnostic task detector: allow any status except x and -
+		const isReassignableTaskLine = (line: string): boolean => {
+			const m = /^\s*[-*]\s*\[\s*([^\]]?)\s*\]/i.exec(line);
+			if (!m) return false;
+			const status = (m[1] ?? "").trim().toLowerCase();
+			return status !== "x" && status !== "-";
+		};
+
 		// Build alias maps before and after parent change (use pre-edit snapshot if provided)
 		const lines = beforeLines ?? editor.getValue().split("\n");
 
 		// Ensure we have an index entry for this file before proceeding
 		try {
 			const af = deps.app.vault.getAbstractFileByPath(filePath);
-			if (af instanceof (deps.app.vault.constructor as any).TFile || (af as any)?.extension === "md") {
+			if (
+				af instanceof (deps.app.vault.constructor as any).TFile ||
+				(af as any)?.extension === "md"
+			) {
 				if ((af as any).extension === "md") {
 					await deps.taskIndex.updateFile(af as unknown as TFile);
 				}
@@ -193,16 +246,23 @@ export async function applyAssigneeCascade(
 		};
 		dfs(parentItem);
 
-		// Helper: explicit alias on a line
+		// Helper: explicit alias on a line (status-agnostic)
 		const explicitAliasOn = (l0: number) =>
-			deps.isUncheckedTaskLine(lines[l0] || "") ? deps.getExplicitAssigneeAliasFromText(lines[l0] || "") : null;
+			isReassignableTaskLine(lines[l0] || "")
+				? deps.getExplicitAssigneeAliasFromText(lines[l0] || "")
+				: null;
 
-		const aliasBefore: (string | null)[] = lines.map((_, i) => explicitAliasOn(i));
+		const aliasBefore: (string | null)[] = lines.map((_, i) =>
+			explicitAliasOn(i)
+		);
 		const aliasAfter: (string | null)[] = aliasBefore.slice();
 		aliasAfter[parentLineNo] = newAlias; // parent updated
 
 		// Resolve nearest ancestor explicit alias for a given line, using a given alias map
-		const nearestUp = (l0: number, aliasMap: (string | null)[]): string | null => {
+		const nearestUp = (
+			l0: number,
+			aliasMap: (string | null)[]
+		): string | null => {
 			let cur = byLine.get(l0);
 			while (cur) {
 				const line0 = (cur.line ?? 1) - 1;
@@ -232,11 +292,12 @@ export async function applyAssigneeCascade(
 		// Pass 1: preserve previous effective assignment for each descendant
 		const toSetExplicit = new Map<number, string>(); // line -> alias to set
 		for (const d of descendants) {
-			if (!deps.isUncheckedTaskLine(lines[d] || "")) continue;
+			if (!isReassignableTaskLine(lines[d] || "")) continue;
 
 			const explicitD = aliasBefore[d];
 			const prevEff = explicitD ?? nearestUp(d, aliasBefore);
-			const newEffCandidate = (explicitD ?? nearestUp(d, aliasAfter)) || null;
+			const newEffCandidate =
+				(explicitD ?? nearestUp(d, aliasAfter)) || null;
 
 			if (prevEff !== newEffCandidate) {
 				if (prevEff) {
@@ -247,7 +308,10 @@ export async function applyAssigneeCascade(
 				// If effective assignment stayed the same, but it was previously INFERRED
 				// from the changed ancestor (parentLineNo), make it explicit to preserve intent.
 				if (!explicitD && prevEff) {
-					const beforeSrc = nearestUpWithSource(d, aliasBefore).source;
+					const beforeSrc = nearestUpWithSource(
+						d,
+						aliasBefore
+					).source;
 					if (beforeSrc === parentLineNo) {
 						toSetExplicit.set(d, prevEff);
 						aliasAfter[d] = prevEff;
@@ -259,7 +323,7 @@ export async function applyAssigneeCascade(
 		// Pass 2: remove redundant explicits that now match inherited value
 		const toRemoveExplicit = new Set<number>();
 		for (const d of descendants) {
-			if (!deps.isUncheckedTaskLine(lines[d] || "")) continue;
+			if (!isReassignableTaskLine(lines[d] || "")) continue;
 
 			const explicitD = aliasAfter[d];
 			if (!explicitD) continue;
@@ -283,14 +347,22 @@ export async function applyAssigneeCascade(
 			const mark = deps.buildAssigneeMarkForAlias(alias, "active", team);
 			let upd = deps.normalizeTaskLine(orig, { newAssigneeMark: mark });
 			if (/<\/mark>\s*$/.test(upd)) upd = upd.replace(/\s*$/, " ");
-			editor.replaceRange(upd, { line: lineNo, ch: 0 }, { line: lineNo, ch: orig.length });
+			editor.replaceRange(
+				upd,
+				{ line: lineNo, ch: 0 },
+				{ line: lineNo, ch: orig.length }
+			);
 		}
 
 		for (const lineNo of toRemoveExplicit) {
 			const orig = editor.getLine(lineNo);
 			let upd = deps.normalizeTaskLine(orig, { newAssigneeMark: null });
 			if (/<\/mark>\s*$/.test(upd)) upd = upd.replace(/\s*$/, " ");
-			editor.replaceRange(upd, { line: lineNo, ch: 0 }, { line: lineNo, ch: orig.length });
+			editor.replaceRange(
+				upd,
+				{ line: lineNo, ch: 0 },
+				{ line: lineNo, ch: orig.length }
+			);
 		}
 	} catch (err) {
 		void err;
@@ -353,23 +425,42 @@ export async function applyCascadeAfterExternalChange(
 		};
 		dfs(parentItem);
 
+		// Local, status-agnostic task detector: allow any status except x and -
+		const isReassignableTaskLine = (line: string): boolean => {
+			const m = /^\s*[-*]\s*\[\s*([^\]]?)\s*\]/i.exec(line);
+			if (!m) return false;
+			const status = (m[1] ?? "").trim().toLowerCase();
+			return status !== "x" && status !== "-";
+		};
+
 		// Before snapshot (for computing previous effective assignments)
-		const before = beforeLines ?? (await (deps.app.vault as any).cachedRead(af)).split("\n");
+		const before =
+			beforeLines ??
+			(await (deps.app.vault as any).cachedRead(af)).split("\n");
 		// After content (we'll apply our cascade edits on top of this)
 		const afterContent = await (deps.app.vault as any).cachedRead(af);
 		const lines = afterContent.split("\n");
 
 		const explicitOn = (ln: string): string | null =>
-			deps.isUncheckedTaskLine(ln) ? deps.getExplicitAssigneeAliasFromText(ln) : null;
+			isReassignableTaskLine(ln)
+				? deps.getExplicitAssigneeAliasFromText(ln)
+				: null;
 
-		const aliasBefore: (string | null)[] = before.map((ln: string) => explicitOn(ln));
-		const aliasAfter: (string | null)[] = lines.map((ln: string) => explicitOn(ln));
+		const aliasBefore: (string | null)[] = before.map((ln: string) =>
+			explicitOn(ln)
+		);
+		const aliasAfter: (string | null)[] = lines.map((ln: string) =>
+			explicitOn(ln)
+		);
 
 		// Reflect the changed parent explicit alias in aliasAfter for accurate inheritance
 		aliasAfter[parentLine0] = newAlias;
 
 		// Resolve nearest ancestor explicit alias for a given line, using a given alias map
-		const nearestUp = (l0: number, aliasMap: (string | null)[]): string | null => {
+		const nearestUp = (
+			l0: number,
+			aliasMap: (string | null)[]
+		): string | null => {
 			let cur = byLine.get(l0);
 			while (cur) {
 				const line0 = (cur.line ?? 1) - 1;
@@ -398,7 +489,7 @@ export async function applyCascadeAfterExternalChange(
 
 		const toSetExplicit = new Map<number, string>(); // line -> alias to set explicitly
 		for (const d of descendants) {
-			if (!deps.isUncheckedTaskLine(lines[d] || "")) continue;
+			if (!isReassignableTaskLine(lines[d] || "")) continue;
 
 			// Previous effective assignment (explicit or inherited)
 			const explicitD = aliasBefore[d];
@@ -415,7 +506,10 @@ export async function applyCascadeAfterExternalChange(
 				// If effective assignment stayed same but was previously inferred from the changed ancestor,
 				// convert it to an explicit assignment to preserve intent.
 				if (!explicitD && prevEff) {
-					const beforeSrc = nearestUpWithSource(d, aliasBefore).source;
+					const beforeSrc = nearestUpWithSource(
+						d,
+						aliasBefore
+					).source;
 					if (beforeSrc === parentLine0) {
 						toSetExplicit.set(d, prevEff);
 						aliasAfter[d] = prevEff;
@@ -427,7 +521,7 @@ export async function applyCascadeAfterExternalChange(
 		// Pass 2: remove redundant explicits that now match inherited value
 		const toRemoveExplicit = new Set<number>();
 		for (const d of descendants) {
-			if (!deps.isUncheckedTaskLine(lines[d] || "")) continue;
+			if (!isReassignableTaskLine(lines[d] || "")) continue;
 
 			const explicitD = aliasAfter[d];
 			if (!explicitD) continue;
