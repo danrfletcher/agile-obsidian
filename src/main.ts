@@ -74,8 +74,18 @@ export default class AgileObsidianPlugin extends Plugin {
 								t.name === info.name &&
 								t.rootPath === info.rootPath
 						);
-						if (idx === -1) this.settings.teams.push(info);
-						else this.settings.teams[idx] = info;
+						// Normalize to TeamInfo: ensure required members field exists to satisfy type-safety
+						// If omitted, downstream code that iterates team.members could throw at runtime.
+						const normalized: TeamInfo = {
+							name: info.name,
+							rootPath: info.rootPath,
+							slug: (info as any).slug,
+							members: Array.isArray((info as any).members)
+								? ((info as any).members as MemberInfo[])
+								: [],
+						};
+						if (idx === -1) this.settings.teams.push(normalized);
+						else this.settings.teams[idx] = normalized;
 						await this.saveSettings();
 					},
 					createOrganizationFromTeam: async (
