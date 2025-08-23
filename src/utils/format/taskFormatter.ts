@@ -41,13 +41,14 @@ export function normalizeTaskLine(
 		const isDelegateMark = (s: string) => {
 			if (/<strong>\s*(?:🤝|👥|👤)[\s\S]*?<\/strong>/i.test(s)) {
 				// exclude 'Everyone' (team) which is assignee-special
-				if (/class="(?:active|inactive)-team"/i.test(s)) return false;
+				if (isEveryoneAssignee(s)) return false;
 				return true;
 			}
 			return false;
 		};
 		const isEveryoneAssignee = (s: string) =>
-			/\bclass="(?:active|inactive)-team"\b/i.test(s);
+			/<mark\b[^>]*\bclass=["'][^"']*\b(?:active|inactive)-team\b[^"']*["'][^>]*>/i.test(s) ||
+			/<strong>[\s\S]*?Everyone[\s\S]*?<\/strong>/i.test(s);
 		const isArtifactMark = (s: string) =>
 			/<strong>[\s\S]*?<a\b[^>]*>[\s\S]*?<\/a>[\s\S]*?<\/strong>/i.test(
 				s
@@ -111,6 +112,17 @@ export function normalizeTaskLine(
 			/\bclass="(?:active|inactive)-team"\b/i.test(assigneeMark);
 		if (isEveryone) {
 			delegateMark = null;
+		}
+
+		// If overriding assignee, ensure no stray assignee/everyone marks remain in metadata marks
+		if (hasOverrideAssignee) {
+			const filtered = metadataMarks.filter(
+				(m) => !isAssigneeMark(m) && !isEveryoneAssignee(m)
+			);
+			if (filtered.length !== metadataMarks.length) {
+				metadataMarks.length = 0;
+				metadataMarks.push(...filtered);
+			}
 		}
 
 		// Reassemble by canonical order:
