@@ -13,11 +13,12 @@ import {
 	createSubteams,
 } from "./teams/organizations";
 import { createTeamResources } from "./teams/teamCreation";
-import { slugifyName, resolveTeamForPath, isUncheckedTaskLine } from "./utils/commands/commandUtils";
 import {
-	injectCheckboxStyles,
-	removeCheckboxStyles,
-} from "./styles/injection";
+	slugifyName,
+	resolveTeamForPath,
+	isUncheckedTaskLine,
+} from "./utils/commands/commandUtils";
+import { injectCheckboxStyles, removeCheckboxStyles } from "./styles/injection";
 import { TaskIndex } from "./index/TaskIndex";
 import { registerMarkClickHandlers } from "./ui/markContextMenu";
 import { findTargetLineFromClick } from "./editor/editorUtils";
@@ -27,7 +28,7 @@ import {
 	buildAssigneeMarkForAlias,
 } from "./assignees/assigneeMarks";
 import { applyAssigneeChangeWithCascade } from "./assignees/assignmentCascade";
-import { renderDelegateMark } from "./samples/markTemplates";
+import { renderDelegateMark } from "./mdRenderers/markTemplates";
 
 export default class AgileObsidianPlugin extends Plugin {
 	settings: AgileObsidianSettings;
@@ -93,7 +94,10 @@ export default class AgileObsidianPlugin extends Plugin {
 						orgName,
 						suffixes
 					) => {
-						const teamInfo: TeamInfo = { ...(team as any), members: [] as MemberInfo[] };
+						const teamInfo: TeamInfo = {
+							...(team as any),
+							members: [] as MemberInfo[],
+						};
 						await createOrganizationFromTeam({
 							app: this.app,
 							orgName,
@@ -107,7 +111,10 @@ export default class AgileObsidianPlugin extends Plugin {
 						orgName,
 						suffixes
 					) => {
-						const orgInfo: TeamInfo = { ...(org as any), members: [] as MemberInfo[] };
+						const orgInfo: TeamInfo = {
+							...(org as any),
+							members: [] as MemberInfo[],
+						};
 						await addTeamsToExistingOrganization(
 							this.app,
 							orgInfo,
@@ -195,41 +202,45 @@ export default class AgileObsidianPlugin extends Plugin {
 		);
 
 		// Register click handlers for <mark> context menu
-		const disposer = registerMarkClickHandlers(this.app, () => this.settings, {
-			resolveTeamForPath,
-			isUncheckedTaskLine,
-			normalizeTaskLine,
-			findTargetLineFromClick,
-			getExplicitAssigneeAliasFromText,
-			applyAssigneeChangeWithCascade: async (
-				filePath,
-				editor,
-				lineNo,
-				oldAlias,
-				newAlias,
-				variant,
-				team
-			) => {
-				const deps = {
-					app: this.app,
-					taskIndex: index,
-					normalizeTaskLine,
-					isUncheckedTaskLine,
-					getExplicitAssigneeAliasFromText,
-					buildAssigneeMarkForAlias,
-				};
-				await applyAssigneeChangeWithCascade(
+		const disposer = registerMarkClickHandlers(
+			this.app,
+			() => this.settings,
+			{
+				resolveTeamForPath,
+				isUncheckedTaskLine,
+				normalizeTaskLine,
+				findTargetLineFromClick,
+				getExplicitAssigneeAliasFromText,
+				applyAssigneeChangeWithCascade: async (
 					filePath,
 					editor,
 					lineNo,
 					oldAlias,
 					newAlias,
 					variant,
-					team,
-					deps as any
-				);
-			},
-		});
+					team
+				) => {
+					const deps = {
+						app: this.app,
+						taskIndex: index,
+						normalizeTaskLine,
+						isUncheckedTaskLine,
+						getExplicitAssigneeAliasFromText,
+						buildAssigneeMarkForAlias,
+					};
+					await applyAssigneeChangeWithCascade(
+						filePath,
+						editor,
+						lineNo,
+						oldAlias,
+						newAlias,
+						variant,
+						team,
+						deps as any
+					);
+				},
+			}
+		);
 		this.register(() => disposer());
 
 		// Dynamic commands for assign/delegate
@@ -271,7 +282,10 @@ export default class AgileObsidianPlugin extends Plugin {
 
 		for (const { alias } of assignables) {
 			for (const variant of ["active", "inactive"] as const) {
-				const display = alias === "team" ? "Everyone" : uniq.get(alias)?.name ?? alias;
+				const display =
+					alias === "team"
+						? "Everyone"
+						: uniq.get(alias)?.name ?? alias;
 				this.addCommand({
 					id: `assign-${alias}-${variant}`,
 					name: `Assign: ${display} (${variant})`,
@@ -288,7 +302,8 @@ export default class AgileObsidianPlugin extends Plugin {
 							const line = editor.getLine(lineNo);
 							if (!isUncheckedTaskLine(line)) return;
 
-							const oldAlias = getExplicitAssigneeAliasFromText(line);
+							const oldAlias =
+								getExplicitAssigneeAliasFromText(line);
 							const deps = {
 								app: this.app,
 								taskIndex: TaskIndex.getInstance(this.app),
@@ -339,12 +354,27 @@ export default class AgileObsidianPlugin extends Plugin {
 						const before = editor.getLine(lineNo);
 						if (!isUncheckedTaskLine(before)) return;
 						// Disallow delegation when Everyone is assigned
-						if (/\bclass="(?:active|inactive)-team"\b/i.test(before)) return;
+						if (
+							/\bclass="(?:active|inactive)-team"\b/i.test(before)
+						)
+							return;
 
-						const mark = renderDelegateMark(alias, display, "active", "team");
-						let updated = normalizeTaskLine(before, { newDelegateMark: mark });
-						if (/<\/mark>\s*$/.test(updated)) updated = updated.replace(/\s*$/, " ");
-						editor.replaceRange(updated, { line: lineNo, ch: 0 }, { line: lineNo, ch: before.length });
+						const mark = renderDelegateMark(
+							alias,
+							display,
+							"active",
+							"team"
+						);
+						let updated = normalizeTaskLine(before, {
+							newDelegateMark: mark,
+						});
+						if (/<\/mark>\s*$/.test(updated))
+							updated = updated.replace(/\s*$/, " ");
+						editor.replaceRange(
+							updated,
+							{ line: lineNo, ch: 0 },
+							{ line: lineNo, ch: before.length }
+						);
 					} catch {
 						/* no-op */
 					}
@@ -369,12 +399,27 @@ export default class AgileObsidianPlugin extends Plugin {
 						const before = editor.getLine(lineNo);
 						if (!isUncheckedTaskLine(before)) return;
 						// Disallow delegation when Everyone is assigned
-						if (/\bclass="(?:active|inactive)-team"\b/i.test(before)) return;
+						if (
+							/\bclass="(?:active|inactive)-team"\b/i.test(before)
+						)
+							return;
 
-						const mark = renderDelegateMark(alias, display, "active", "internal");
-						let updated = normalizeTaskLine(before, { newDelegateMark: mark });
-						if (/<\/mark>\s*$/.test(updated)) updated = updated.replace(/\s*$/, " ");
-						editor.replaceRange(updated, { line: lineNo, ch: 0 }, { line: lineNo, ch: before.length });
+						const mark = renderDelegateMark(
+							alias,
+							display,
+							"active",
+							"internal"
+						);
+						let updated = normalizeTaskLine(before, {
+							newDelegateMark: mark,
+						});
+						if (/<\/mark>\s*$/.test(updated))
+							updated = updated.replace(/\s*$/, " ");
+						editor.replaceRange(
+							updated,
+							{ line: lineNo, ch: 0 },
+							{ line: lineNo, ch: before.length }
+						);
 					} catch {
 						/* no-op */
 					}
@@ -399,12 +444,27 @@ export default class AgileObsidianPlugin extends Plugin {
 						const before = editor.getLine(lineNo);
 						if (!isUncheckedTaskLine(before)) return;
 						// Disallow delegation when Everyone is assigned
-						if (/\bclass="(?:active|inactive)-team"\b/i.test(before)) return;
+						if (
+							/\bclass="(?:active|inactive)-team"\b/i.test(before)
+						)
+							return;
 
-						const mark = renderDelegateMark(alias, display, "active", "external");
-						let updated = normalizeTaskLine(before, { newDelegateMark: mark });
-						if (/<\/mark>\s*$/.test(updated)) updated = updated.replace(/\s*$/, " ");
-						editor.replaceRange(updated, { line: lineNo, ch: 0 }, { line: lineNo, ch: before.length });
+						const mark = renderDelegateMark(
+							alias,
+							display,
+							"active",
+							"external"
+						);
+						let updated = normalizeTaskLine(before, {
+							newDelegateMark: mark,
+						});
+						if (/<\/mark>\s*$/.test(updated))
+							updated = updated.replace(/\s*$/, " ");
+						editor.replaceRange(
+							updated,
+							{ line: lineNo, ch: 0 },
+							{ line: lineNo, ch: before.length }
+						);
 					} catch {
 						/* no-op */
 					}
