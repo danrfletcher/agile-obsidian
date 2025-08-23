@@ -17,7 +17,7 @@ import {
 	slugifyName,
 } from "src/utils/commands/commandUtils";
 import { createTeamResources } from "../teams/teamCreation";
-import { TeamInfo } from "src/settings";
+import { TeamInfo } from "src/settings/settings.types";
 
 export interface Organization {
 	name: string;
@@ -267,7 +267,7 @@ export async function createSubteams(
   const orgName = parsed.name;
 
   // Get full hierarchical pathId for the parent from its slug (e.g., "a", "a-1", "a-aa")
-  let parentPathId = getPathIdFromSlug(slug) || null;
+  const parentPathId = getPathIdFromSlug(slug) || null;
 
   // Resolve the root organization name (segment before the first "Teams" in the path)
   let orgRootNameForSlug = orgName;
