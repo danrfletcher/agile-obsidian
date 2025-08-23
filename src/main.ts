@@ -4,6 +4,7 @@ import { DEFAULT_SETTINGS } from "./settings/settings.store";
 import type {
 	AgileObsidianSettings,
 	TeamInfo,
+	MemberInfo,
 } from "./settings/settings.types";
 import { hydrateTeamsFromVault } from "./teams/teamDetection";
 import {
@@ -82,11 +83,12 @@ export default class AgileObsidianPlugin extends Plugin {
 						orgName,
 						suffixes
 					) => {
+						const teamInfo: TeamInfo = { ...(team as any), members: [] as MemberInfo[] };
 						await createOrganizationFromTeam({
 							app: this.app,
 							orgName,
 							orgSlug: slugifyName(orgName),
-							team: team as TeamInfo,
+							team: teamInfo,
 							suffixes,
 						});
 					},
@@ -95,9 +97,10 @@ export default class AgileObsidianPlugin extends Plugin {
 						orgName,
 						suffixes
 					) => {
+						const orgInfo: TeamInfo = { ...(org as any), members: [] as MemberInfo[] };
 						await addTeamsToExistingOrganization(
 							this.app,
-							org as TeamInfo,
+							orgInfo,
 							orgName,
 							suffixes
 						);
