@@ -6,6 +6,7 @@ import {
 	EditorSuggestContext,
 	MarkdownView,
 } from "obsidian";
+import { getDisplayNameFromAlias } from "../format/nameUtils";
 
 type TargetType = "team" | "internal" | "external";
 type Candidate = {
@@ -48,6 +49,8 @@ export class DelegateSlashSuggest extends EditorSuggest<Candidate> {
 			const line = editor.getLine(cursor.line);
 			// Only trigger inside unchecked task lines
 			if (!this.deps.isUncheckedTaskLine(line)) return null;
+			// Suppress when task is assigned to Everyone
+			if (/\bclass="(?:active|inactive)-team"\b/i.test(line)) return null;
 
 			const before = line.slice(0, cursor.ch);
 			// Match "/delegate" optionally followed by a query
@@ -80,7 +83,7 @@ export class DelegateSlashSuggest extends EditorSuggest<Candidate> {
 					const alias = (m.alias || "").toLowerCase();
 					if (!alias) continue;
 					if (!uniq.has(alias)) {
-						uniq.set(alias, { alias, name: m.name || alias });
+						uniq.set(alias, { alias, name: getDisplayNameFromAlias(alias) });
 					}
 				}
 			}
