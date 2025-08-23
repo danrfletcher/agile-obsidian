@@ -275,6 +275,42 @@ export default class AgileObsidianPlugin extends Plugin {
 			uniq.set("team", { alias: "team", name: "Everyone" });
 		}
 
+		// Helpers
+		const toTitleCase = (s: string) =>
+			s.replace(
+				/\w\S*/g,
+				(w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+			);
+
+		const cleanBaseName = (raw: string) => {
+			// Remove the 6-char code segment (with optional leading space), not capturing scope suffix
+			// Examples:
+			//  "nueral-s-6hjk8k-team" -> "nueral-s-team"
+			//  "anthony-cooke-7hj8kl-ext" -> "anthony-cooke-ext"
+			//  "boffin-mcboffster-6gh7jk-int" -> "boffin-mcboffster-int"
+			let s = raw.replace(
+				/(?:\s|-|_)[0-9][a-z0-9]{5}(?=(?:\b|[-_]))/i,
+				""
+			);
+			// Normalize separators to spaces
+			s = s.replace(/[-_]+/g, " ");
+			// Collapse spaces
+			s = s.replace(/\s+/g, " ").trim();
+			return s;
+		};
+
+		const makeLabelFromAliasOrName = (alias: string, name?: string) => {
+			// Prefer provided name; otherwise derive from alias
+			const base = cleanBaseName(name?.trim() || alias);
+			// Now drop any trailing scope tokens like "ext", "int", or "team" that might remain
+			const scopeTail = /\b(?:ext|int|team)\b$/i;
+			const cleaned = base
+				.replace(scopeTail, "")
+				.replace(/\s+/g, " ")
+				.trim();
+			return toTitleCase(cleaned);
+		};
+
 		// Helper to resolve the active team from current file
 		const getActiveTeam = (view: MarkdownView) => {
 			const filePath = (view as any)?.file?.path ?? null;
@@ -293,13 +329,18 @@ export default class AgileObsidianPlugin extends Plugin {
 
 		for (const { alias } of assignables) {
 			for (const variant of ["active", "inactive"] as const) {
-				const display =
+				const displaySource =
 					alias === "team"
 						? "Everyone"
 						: uniq.get(alias)?.name ?? alias;
+				const label =
+					alias === "team"
+						? "Everyone"
+						: makeLabelFromAliasOrName(alias, displaySource);
+
 				this.addCommand({
 					id: `assign-${alias}-${variant}`,
-					name: `Assign: ${display} (${variant})`,
+					name: `Assign: ${label} (${variant})`,
 					editorCallback: async (editor, view) => {
 						try {
 							if (!(view instanceof MarkdownView)) return;
@@ -344,14 +385,16 @@ export default class AgileObsidianPlugin extends Plugin {
 		// Delegate commands
 		const vals = Array.from(uniq.values());
 
+		// TEAM-scope delegates (aliases ending with -team but not the special "team")
 		const internalTeams = vals.filter(
 			(x) => x.alias.endsWith("-team") && x.alias !== "team"
 		);
 		for (const { alias } of internalTeams) {
-			const display = uniq.get(alias)?.name ?? alias;
+			const displaySource = uniq.get(alias)?.name ?? alias;
+			const label = makeLabelFromAliasOrName(alias, displaySource); // e.g., "Nueral S"
 			this.addCommand({
 				id: `delegate-team-${alias}`,
-				name: `Delegate to Team: ${display}`,
+				name: `Delegate to Team: ${label}`,
 				editorCallback: (editor, view) => {
 					try {
 						if (!(view instanceof MarkdownView)) return;
@@ -372,7 +415,7 @@ export default class AgileObsidianPlugin extends Plugin {
 
 						const mark = renderDelegateMark(
 							alias,
-							display,
+							label,
 							"active",
 							"team"
 						);
@@ -393,12 +436,14 @@ export default class AgileObsidianPlugin extends Plugin {
 			});
 		}
 
+		// INTERNAL delegates (-int)
 		const internalMembers = vals.filter((x) => x.alias.endsWith("-int"));
 		for (const { alias } of internalMembers) {
-			const display = uniq.get(alias)?.name ?? alias;
+			const displaySource = uniq.get(alias)?.name ?? alias;
+			const label = makeLabelFromAliasOrName(alias, displaySource); // e.g., "Boffin Mcboffster"
 			this.addCommand({
 				id: `delegate-internal-${alias}`,
-				name: `Delegate to Internal: ${display}`,
+				name: `Delegate to Internal: ${label}`,
 				editorCallback: (editor, view) => {
 					try {
 						if (!(view instanceof MarkdownView)) return;
@@ -417,7 +462,7 @@ export default class AgileObsidianPlugin extends Plugin {
 
 						const mark = renderDelegateMark(
 							alias,
-							display,
+							label,
 							"active",
 							"internal"
 						);
@@ -438,12 +483,14 @@ export default class AgileObsidianPlugin extends Plugin {
 			});
 		}
 
+		// EXTERNAL delegates (-ext)
 		const externals = vals.filter((x) => x.alias.endsWith("-ext"));
 		for (const { alias } of externals) {
-			const display = uniq.get(alias)?.name ?? alias;
+			const displaySource = uniq.get(alias)?.name ?? alias;
+			const label = makeLabelFromAliasOrName(alias, displaySource); // e.g., "Anthony Cooke"
 			this.addCommand({
 				id: `delegate-external-${alias}`,
-				name: `Delegate to External: ${display}`,
+				name: `Delegate to External: ${label}`,
 				editorCallback: (editor, view) => {
 					try {
 						if (!(view instanceof MarkdownView)) return;
@@ -462,7 +509,7 @@ export default class AgileObsidianPlugin extends Plugin {
 
 						const mark = renderDelegateMark(
 							alias,
-							display,
+							label,
 							"active",
 							"external"
 						);
