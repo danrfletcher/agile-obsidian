@@ -65,37 +65,53 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 		render(params: { title: string; details?: string }) {
 			const title = params?.title?.trim() ?? "";
 			const details = params?.details?.trim() ?? "";
-			const text = `<strong>${emojis.initiative} ${title}${
-				details ? ":" : ""
-			}</strong>${details ? ` ${details}` : ""}`;
-			return chip({
+			const text = `<strong>${emojis.initiative} ${title}</strong>${
+				details && `:`
+			}`;
+			return `${chip({
 				id: "agile-initiative",
 				text,
 				orderTag: "artifact-item-type",
 				bg: colors.artifactGrey,
-			});
+			})}${details ? ` ${details}` : ""}`;
 		},
 	},
 
 	epic: {
 		id: "agile.epic",
 		label: "Agile - Epic",
+		hasParams: true,
+		paramsSchema: {
+			title: "Create Epic",
+			description:
+				"Provide a title and optional details for the epic.",
+			fields: [
+				{
+					name: "title",
+					label: "Title",
+					required: true,
+					placeholder: "e.g., Payment Gateway Integration",
+				},
+				{
+					name: "details",
+					label: "Details",
+					type: "textarea",
+					placeholder: "Optional details...",
+				},
+			],
+		},
 		rules: { allowedOn: ["task"] },
 		render(params?: { title?: string; details?: string }) {
 			const title = params?.title?.trim() ?? "";
 			const details = params?.details?.trim() ?? "";
-			const main = title
-				? `<strong>${emojis.epic} ${title}${
-						details ? ":" : ""
-				  }</strong>`
-				: `<strong>${emojis.epic} </strong>`;
-			const tail = details ? ` ${details}` : "";
-			return chip({
+			return `${chip({
 				id: "agile-epic",
-				text: `${main}${tail}`,
+				text: `<strong>${emojis.epic} ${title}${
+					details ? ":" : ""
+				}</strong>`,
 				orderTag: "artifact-item-type",
 				bg: colors.artifactGrey,
-			});
+			})}${details && ` ${details}`}`;
 		},
 	},
 
@@ -126,14 +142,15 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 		render(params: { title: string; details?: string }) {
 			const title = params?.title?.trim() ?? "";
 			const details = params?.details?.trim() ?? "";
-			return chip({
+			const text = `<strong>${emojis.feature} ${title}</strong>${
+				details ? `:` : ""
+			}`;
+			return `${chip({
 				id: "agile-feature",
-				text: `<strong>${emojis.feature} ${title}${
-					details ? ":" : ""
-				}</strong>${details ? ` ${details}` : ""}`,
+				text,
 				orderTag: "artifact-item-type",
 				bg: colors.artifactGrey,
-			});
+			})}${details ? ` ${details}` : ""}`;
 		},
 	},
 
@@ -210,14 +227,14 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 
 			const text = `<strong>${emojis.story} ${title}${
 				clause ? ":" : ""
-			}</strong>${clause}`;
+			}</strong>`;
 
-			return chip({
+			return `${chip({
 				id: "agile-user-story",
 				text,
 				orderTag: "artifact-item-type",
 				bg: `linear-gradient(to right, ${colors.userStoryFrom}, ${colors.userStoryTo})`,
-			});
+			})}${clause && ` ${clause}`}`;
 		},
 	},
 
@@ -246,16 +263,15 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 		render(params: { title: string; details?: string }) {
 			const title = params?.title?.trim() ?? "";
 			const details = params?.details?.trim() ?? "";
-			const main = `<strong>${emojis.accept} ${title}${
-				details ? ":" : ""
-			}</strong>`;
-			const tail = details ? ` ${details}` : "";
-			return chip({
+			const text = `<strong>${emojis.accept} ${title}</strong>${
+				details ? `:` : ""
+			}`;
+			return `${chip({
 				id: "agile-acceptance",
-				text: `${main}${tail}`,
+				text,
 				orderTag: "artifact-item-type",
 				bg: colors.artifactGrey,
-			});
+			})}${details ? ` ${details}` : ""}`;
 		},
 	},
 
@@ -284,16 +300,15 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 		render(params: { title: string; details?: string }) {
 			const title = params?.title?.trim() ?? "";
 			const details = params?.details?.trim() ?? "";
-			const main = `<strong>${emojis.kpi} ${title}${
-				details ? ":" : ""
-			}</strong>`;
-			const tail = details ? ` ${details}` : "";
-			return chip({
+			const text = `<strong>${emojis.kpi} ${title}</strong>${
+				details ? `:` : ""
+			}`;
+			return `${chip({
 				id: "agile-kpi",
-				text: `${main}${tail}`,
+				text,
 				orderTag: "artifact-item-type",
 				bg: colors.artifactGrey,
-			});
+			})}${details ? ` ${details}` : ""}`;
 		},
 	},
 
@@ -322,16 +337,15 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 		render(params: { title: string; details?: string }) {
 			const title = params?.title?.trim() ?? "";
 			const details = params?.details?.trim() ?? "";
-			const main = `<strong>${emojis.okr} ${title}${
-				details ? ":" : ""
-			}</strong>`;
-			const tail = details ? ` ${details}` : "";
-			return chip({
+			const text = `<strong>${emojis.okr} ${title}</strong>${
+				details ? `:` : ""
+			}`;
+			return `${chip({
 				id: "agile-okr",
-				text: `${main}${tail}`,
+				text,
 				orderTag: "artifact-item-type",
 				bg: `linear-gradient(to left, ${colors.okrFrom}, ${colors.okrTo})`,
-			});
+			})}${details ? ` ${details}` : ""}`;
 		},
 	},
 
