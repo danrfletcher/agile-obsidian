@@ -77,3 +77,15 @@ export async function ensureFolder(
 	if (await pathExists(vault, norm)) return;
 	await vault.createFolder(norm);
 }
+
+/**
+ * Gets the type of line in a markdown file e.g. list, task, empty.
+ */
+export function getLineKind(line: string): "task" | "list" | "empty" | "text" {
+	const s = line.trimStart();
+	if (s.startsWith("- [ ]") || s.startsWith("- [x]") || s.startsWith("- [X]"))
+		return "task";
+	if (s.startsWith("- ")) return "list";
+	if (s.length === 0) return "empty";
+	return "text";
+}

@@ -1,36 +1,3 @@
-import tokensData from "./tokens.json";
-import metaData from "./templateMeta.json";
-
-function resolveToken(value: unknown): unknown {
-	if (typeof value !== "string") return value;
-	if (!value.startsWith("@")) return value;
-	const path = value.slice(1).split(".");
-	let cur: unknown = tokensData as unknown;
-	for (const p of path) {
-		if (
-			cur &&
-			typeof cur === "object" &&
-			p in (cur as Record<string, unknown>)
-		) {
-			cur = (cur as Record<string, unknown>)[p];
-		} else return value;
-	}
-	return cur;
-}
-
-export function resolveDefaults<T = Record<string, unknown>>(
-	templateId: string
-): T {
-	const meta = (metaData as Record<string, unknown>)[
-		templateId as keyof typeof metaData
-	] as { defaults?: Record<string, unknown> } | undefined;
-	const defaults = (meta?.defaults ?? {}) as Record<string, unknown>;
-	const resolved: Record<string, unknown> = {};
-	for (const [k, v] of Object.entries(defaults))
-		resolved[k] = resolveToken(v);
-	return resolved as T;
-}
-
 export function escapeHtml(s: string): string {
 	return s.replace(
 		/[&<>"']/g,

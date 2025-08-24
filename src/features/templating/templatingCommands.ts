@@ -1,92 +1,159 @@
 import { Notice, MarkdownView, Modal, App } from "obsidian";
-import { insertTemplate } from "./templateApi";
+import { insertTemplateAtCursor } from "./templateApi";
 import { presetTemplates } from "./presets";
-import type { TemplateDefinition } from "./types";
+import type {
+	TemplateDefinition,
+	ParamSchema,
+} from "./types";
 
 /**
- - We support two shapes in presetTemplates:
-   1) Function entries that return string (non-parameterized);
-   2) TemplateDefinition objects with render(params) (parameterized).
- - This utility normalizes either shape into { hasParams, invoke }.
+ Decide how to get params for a template:
+ - If caller provided paramsProgrammatic, use those (no prompt).
+ - Else if def.hasParams === true:
+    - If def.paramsSchema present => show schema form modal
+    - Else => fallback to raw JSON modal
+ - Else return undefined
 */
-function normalizeTemplateEntry(entry: unknown): {
-	hasParams: boolean;
-	invoke: (ctx: {
-		app: App;
-		editor: MarkdownView["editor"];
-		filePath: string;
-		templateId: string;
-	}) => Promise<void>;
-} | null {
-	// TemplateDefinition: must have render function
-	if (
-		entry &&
-		typeof entry === "object" &&
-		typeof (entry as TemplateDefinition).render === "function"
-	) {
-		return {
-			hasParams: true,
-			invoke: async ({ app, editor, filePath, templateId }) => {
-				// Prompt for params (JSON) via a lightweight modal.
-				const params = await promptForJsonParams(app, templateId);
-				try {
-					const ctx = buildCtx(editor, filePath);
-					const rendered = insertTemplate(templateId, ctx, params);
-					replaceCurrentLine(editor, rendered);
-				} catch (err: any) {
-					reportInsertError(err);
-				}
-			},
-		};
+async function resolveParamsForTemplate(
+	app: App,
+	templateId: string,
+	def: TemplateDefinition,
+	paramsProgrammatic?: unknown
+): Promise<unknown | undefined> {
+	if (paramsProgrammatic && typeof paramsProgrammatic === "object") {
+		return paramsProgrammatic; // programmatic override, no prompt
 	}
+	if (!def.hasParams) return undefined;
 
-	// Function returning string (non-parameterized)
-	if (typeof entry === "function") {
-		return {
-			hasParams: false,
-			invoke: async ({ editor, filePath, templateId }) => {
-				try {
-					const ctx = buildCtx(editor, filePath);
-					const rendered = insertTemplate(templateId, ctx);
-					replaceCurrentLine(editor, rendered);
-				} catch (err: any) {
-					reportInsertError(err);
-				}
-			},
-		};
+	if (def.paramsSchema && def.paramsSchema.fields?.length) {
+		return await promptForSchemaParams(app, templateId, def.paramsSchema);
 	}
-
-	return null;
-}
-
-function buildCtx(editor: MarkdownView["editor"], filePath: string) {
-	const cursor = editor.getCursor();
-	const lineText = editor.getLine(cursor.line);
-	const content = editor.getValue();
-	return {
-		line: lineText,
-		file: content,
-		path: filePath,
-		editor,
-	};
-}
-
-function replaceCurrentLine(
-	editor: MarkdownView["editor"],
-	rendered: string
-): void {
-	const cursor = editor.getCursor();
-	const lineText = editor.getLine(cursor.line);
-	const from = { line: cursor.line, ch: 0 };
-	const to = { line: cursor.line, ch: lineText.length };
-	const next = lineText.length === 0 ? rendered : `${lineText} ${rendered}`;
-	editor.replaceRange(next, from, to);
+	// Fallback to JSON if no schema provided
+	return await promptForJsonParams(app, templateId);
 }
 
 /**
- Lightweight JSON params modal.
- - Shows an empty textarea by default.
- - If user cancels, we return undefined (callers may fall back).
+ Schema-based form modal
+*/
+function promptForSchemaParams(
+	app: App,
+	templateId: string,
+	schema: ParamSchema
+): Promise<Record<string, unknown> | undefined> {
+	return new Promise((resolve) => {
+		const modal = new (class extends Modal {
+			private resolved = false;
+			private inputs: Record<
+				string,
+				HTMLInputElement | HTMLTextAreaElement
+			> = {};
+
+			onOpen(): void {
+				const { contentEl } = this;
+				const title = schema.title ?? `Parameters for ${templateId}`;
+				this.titleEl.setText(title);
+
+				if (schema.description) {
+					const p = contentEl.createEl("p", {
+						text: schema.description,
+					});
+					p.style.marginBottom = "8px";
+				}
+
+				// build fields
+				for (const field of schema.fields) {
+					const wrap = contentEl.createEl("div", {
+						attr: { style: "margin-bottom: 10px;" },
+					});
+
+					const labelEl = wrap.createEl("label", {
+						text: field.label + (field.required ? " *" : ""),
+					});
+					labelEl.style.display = "block";
+					labelEl.style.fontWeight = "600";
+					labelEl.style.marginBottom = "4px";
+
+					let inputEl: HTMLInputElement | HTMLTextAreaElement;
+					if (field.type === "textarea") {
+						inputEl = wrap.createEl("textarea", {
+							attr: {
+								rows: "4",
+								style: "width: 100%;",
+								placeholder: field.placeholder ?? "",
+							},
+						});
+						if (field.defaultValue)
+							inputEl.value = field.defaultValue;
+					} else {
+						inputEl = wrap.createEl("input", {
+							attr: {
+								type: "text",
+								style: "width: 100%;",
+								placeholder: field.placeholder ?? "",
+								value: field.defaultValue ?? "",
+							},
+						});
+					}
+
+					this.inputs[field.name] = inputEl;
+
+					if (field.description) {
+						const desc = wrap.createEl("div", {
+							text: field.description,
+						});
+						desc.style.fontSize = "12px";
+						desc.style.color = "var(--text-muted)";
+						desc.style.marginTop = "4px";
+					}
+				}
+
+				// buttons
+				const btnRow = contentEl.createEl("div", {
+					attr: { style: "display:flex; gap:8px; margin-top: 12px;" },
+				});
+				const okBtn = btnRow.createEl("button", { text: "Insert" });
+				const cancelBtn = btnRow.createEl("button", { text: "Cancel" });
+
+				okBtn.addEventListener("click", () => {
+					if (this.resolved) return;
+					const values: Record<string, unknown> = {};
+					let valid = true;
+					for (const field of schema.fields) {
+						const el = this.inputs[field.name];
+						const raw = (el?.value ?? "").toString();
+						// required validation
+						if (field.required && raw.trim().length === 0) {
+							new Notice(`"${field.label}" is required`);
+							valid = false;
+							break;
+						}
+						values[field.name] = raw;
+					}
+					if (!valid) return;
+					this.resolved = true;
+					this.close();
+					resolve(values);
+				});
+
+				cancelBtn.addEventListener("click", () => {
+					if (this.resolved) return;
+					this.resolved = true;
+					this.close();
+					resolve(undefined);
+				});
+			}
+
+			onClose(): void {
+				this.contentEl.empty();
+			}
+		})(app);
+
+		modal.open();
+	});
+}
+
+/**
+ JSON fallback modal (used only when hasParams=true but no paramsSchema is defined)
 */
 function promptForJsonParams(app: App, templateId: string): Promise<any> {
 	return new Promise((resolve) => {
@@ -99,7 +166,7 @@ function promptForJsonParams(app: App, templateId: string): Promise<any> {
 				const { contentEl } = this;
 
 				const para = contentEl.createEl("p", {
-					text: 'Enter template params as JSON (optional). Example: {"persona":"admin"}',
+					text: 'Enter template params as JSON (optional). Example: {"title":"My Title"}',
 				});
 				para.style.marginBottom = "8px";
 
@@ -131,7 +198,6 @@ function promptForJsonParams(app: App, templateId: string): Promise<any> {
 						new Notice(
 							`Invalid JSON: ${e?.message ?? "Parse error"}`
 						);
-						// do not resolve; keep modal open
 					}
 				});
 				cancelBtn.addEventListener("click", () => {
@@ -166,9 +232,6 @@ function reportInsertError(err: any): void {
 
 /**
  Flatten presetTemplates into a list of { id, name, entry }.
- - id is the dot path (e.g., "agile.userStory")
- - name is derived from templateMeta.json label if you later wire it in, else TitleCased id
-   For now, we TitleCase the id segments.
 */
 function enumeratePresetTemplates(): Array<{
 	id: string;
@@ -200,8 +263,11 @@ function enumeratePresetTemplates(): Array<{
 
 /**
  Public API: register all template commands.
- - Registers one Obsidian command per template.
- - Parameterized templates prompt for JSON params; non-parameterized insert immediately.
+ - Parameterized templates:
+   - If schema exists => show schema modal
+   - Else => fallback JSON modal
+ - Non-parameterized => insert immediately
+ - Programmatic params can be passed when calling normalized.invoke with params
 */
 export function registerTemplatingCommands(plugin: {
 	app: App;
@@ -217,8 +283,15 @@ export function registerTemplatingCommands(plugin: {
 	const list = enumeratePresetTemplates();
 
 	for (const { id, name, entry } of list) {
-		const normalized = normalizeTemplateEntry(entry);
-		if (!normalized) continue;
+		// Only TemplateDefinition entries
+		if (
+			!entry ||
+			typeof entry !== "object" ||
+			typeof (entry as TemplateDefinition).render !== "function"
+		) {
+			continue;
+		}
+		const def = entry as TemplateDefinition;
 
 		plugin.addCommand({
 			id: `tpl-${id.replace(/\./g, "-")}`,
@@ -229,16 +302,50 @@ export function registerTemplatingCommands(plugin: {
 					const filePath = (view as any)?.file?.path ?? "";
 					if (!filePath) return;
 
-					await normalized.invoke({
-						app: plugin.app,
-						editor,
-						filePath,
-						templateId: id,
-					});
+					// No programmatic params here (from command palette), so pass undefined
+					const params = await resolveParamsForTemplate(
+						plugin.app,
+						id,
+						def,
+						undefined
+					);
+
+					// insertion is rule-aware and applies wrapping as needed
+					insertTemplateAtCursor(id, editor, filePath, params);
 				} catch (err: any) {
 					reportInsertError(err);
 				}
 			},
 		});
+	}
+}
+
+/**
+ Example: programmatic insertion with params from your own code (not the command palette).
+ You can call this helper wherever you want inside your plugin code.
+*/
+export async function insertTemplateProgrammatically(
+	app: App,
+	editor: MarkdownView["editor"],
+	filePath: string,
+	templateId: string,
+	params?: Record<string, unknown>
+) {
+	try {
+		// Find definition for schema/hasParams decisions (not strictly required to call here,
+		// but helpful if you want to optionally open the modal when params missing).
+		const [group, key] = templateId.split(".");
+		const def = (presetTemplates as any)?.[group]?.[key] as
+			| TemplateDefinition
+			| undefined;
+
+		// If you already have params, pass them; this bypasses modals entirely.
+		const finalParams =
+			params ??
+			(await resolveParamsForTemplate(app, templateId, def!, undefined));
+
+		insertTemplateAtCursor(templateId, editor, filePath, finalParams);
+	} catch (err: any) {
+		reportInsertError(err);
 	}
 }

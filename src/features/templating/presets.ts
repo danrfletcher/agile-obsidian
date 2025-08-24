@@ -1,5 +1,6 @@
 import tokensData from "./tokens.json";
-import { markChip, taskLine, listLine } from "./htmlPartials";
+import { markChip } from "./htmlPartials";
+import type { TemplateDefinition } from "./types";
 
 // Derive from JSON
 const colors = tokensData.colors as Record<string, string>;
@@ -36,585 +37,850 @@ function chip(opts: {
  * Agile Artifacts — tasks only
  * orderTag: "artifact-item-type", except Parent Link which is "parent-link"
  */
-export const Agile = {
-	initiative(): string {
-		return taskLine(
-			chip({
+export const Agile: Record<string, TemplateDefinition<any>> = {
+	initiative: {
+		id: "agile.initiative",
+		label: "Agile - Initiative",
+		hasParams: true,
+		paramsSchema: {
+			title: "Create Initiative",
+			description:
+				"Provide a title and optional details for the initiative.",
+			fields: [
+				{
+					name: "title",
+					label: "Title",
+					required: true,
+					placeholder: "e.g., Unified Billing Platform",
+				},
+				{
+					name: "details",
+					label: "Details",
+					type: "textarea",
+					placeholder: "Optional details...",
+				},
+			],
+		},
+		rules: { allowedOn: ["task"] },
+		render(params: { title: string; details?: string }) {
+			const title = params?.title?.trim() ?? "";
+			const details = params?.details?.trim() ?? "";
+			const text = `<strong>${emojis.initiative} ${title}${
+				details ? ":" : ""
+			}</strong>${details ? ` ${details}` : ""}`;
+			return chip({
 				id: "agile-initiative",
-				text: `<strong>${emojis.initiative} </strong>`,
+				text,
 				orderTag: "artifact-item-type",
 				bg: colors.artifactGrey,
-			})
-		);
+			});
+		},
 	},
 
-	epic(): string {
-		return taskLine(
-			chip({
+	epic: {
+		id: "agile.epic",
+		label: "Agile - Epic",
+		rules: { allowedOn: ["task"] },
+		render(params?: { title?: string; details?: string }) {
+			const title = params?.title?.trim() ?? "";
+			const details = params?.details?.trim() ?? "";
+			const main = title
+				? `<strong>${emojis.epic} ${title}${
+						details ? ":" : ""
+				  }</strong>`
+				: `<strong>${emojis.epic} </strong>`;
+			const tail = details ? ` ${details}` : "";
+			return chip({
 				id: "agile-epic",
-				text: `<strong>${emojis.epic} </strong>`,
+				text: `${main}${tail}`,
 				orderTag: "artifact-item-type",
 				bg: colors.artifactGrey,
-			})
-		);
+			});
+		},
 	},
 
-	feature(): string {
-		return taskLine(
-			chip({
+	feature: {
+		id: "agile.feature",
+		label: "Agile - Feature",
+		hasParams: true,
+		paramsSchema: {
+			title: "Create Feature",
+			description:
+				"Provide a title and optional details for the feature.",
+			fields: [
+				{
+					name: "title",
+					label: "Title",
+					required: true,
+					placeholder: "e.g., SSO with SAML",
+				},
+				{
+					name: "details",
+					label: "Details",
+					type: "textarea",
+					placeholder: "Optional details...",
+				},
+			],
+		},
+		rules: { allowedOn: ["task"] },
+		render(params: { title: string; details?: string }) {
+			const title = params?.title?.trim() ?? "";
+			const details = params?.details?.trim() ?? "";
+			return chip({
 				id: "agile-feature",
-				text: `<strong>${emojis.feature} :</strong>`,
+				text: `<strong>${emojis.feature} ${title}${
+					details ? ":" : ""
+				}</strong>${details ? ` ${details}` : ""}`,
 				orderTag: "artifact-item-type",
 				bg: colors.artifactGrey,
-			})
-		);
+			});
+		},
 	},
 
-	product(): string {
-		return taskLine(
-			chip({
+	product: {
+		id: "agile.product",
+		label: "Agile - Product",
+		rules: { allowedOn: ["task"] },
+		render(params?: { title?: string; details?: string }) {
+			const title = params?.title?.trim() ?? "";
+			const details = params?.details?.trim() ?? "";
+			const main = title
+				? `<strong>${emojis.product} ${title}${
+						details ? ":" : ""
+				  }</strong>`
+				: `<strong>${emojis.product} </strong>`;
+			const tail = details ? ` ${details}` : "";
+			return chip({
 				id: "agile-product",
-				text: `<strong>${emojis.product} </strong>`,
+				text: `${main}${tail}`,
 				orderTag: "artifact-item-type",
 				bg: colors.artifactGrey,
-			})
-		);
+			});
+		},
 	},
 
 	userStory: {
 		id: "agile.userStory",
 		label: "Agile - User Story",
-		// rules: { allowedOn: ["task"], parent: ["agile.epic", "agile.personalLearningEpic"] },
-		render(params?: {
+		hasParams: true,
+		paramsSchema: {
+			title: "Create User Story",
+			description:
+				"Provide the story title. Optionally add persona, desire, and outcome to auto-generate the ‘As a / I want / so that’ clause.",
+			fields: [
+				{
+					name: "title",
+					label: "Title",
+					required: true,
+					placeholder: "e.g., Login",
+				},
+				{
+					name: "persona",
+					label: "Persona",
+					placeholder: "e.g., Registered user",
+				},
+				{
+					name: "desire",
+					label: "Desire",
+					placeholder: "e.g., log in to the site",
+				},
+				{
+					name: "outcome",
+					label: "Outcome",
+					placeholder: "e.g., access my dashboard",
+				},
+			],
+		},
+		rules: { allowedOn: ["task"] },
+		render(params: {
+			title: string;
 			persona?: string;
 			desire?: string;
 			outcome?: string;
 		}) {
-			const persona = params?.persona ?? "";
-			const desire = params?.desire ?? "";
-			const outcome = params?.outcome ?? "";
+			const title = params?.title?.trim() ?? "";
+			const persona = params?.persona?.trim() ?? "";
+			const desire = params?.desire?.trim() ?? "";
+			const outcome = params?.outcome?.trim() ?? "";
 
-			// Build the dynamic clause only if all three fields are present
 			const clause =
 				persona && desire && outcome
 					? ` **As a** ${persona} , **I want to** ${desire} , **so that** ${outcome}`
 					: "";
 
-			const text = `<strong>${emojis.story}${clause ? " :" : ""}</strong>${clause}`;
+			const text = `<strong>${emojis.story} ${title}${
+				clause ? ":" : ""
+			}</strong>${clause}`;
 
-			return taskLine(
-				chip({
-					id: "agile-user-story",
-					text,
-					orderTag: "artifact-item-type",
-					bg: `linear-gradient(to right, ${colors.userStoryFrom}, ${colors.userStoryTo})`,
-				})
-			);
+			return chip({
+				id: "agile-user-story",
+				text,
+				orderTag: "artifact-item-type",
+				bg: `linear-gradient(to right, ${colors.userStoryFrom}, ${colors.userStoryTo})`,
+			});
 		},
 	},
 
-	acceptanceCriteria(): string {
-		return taskLine(
-			chip({
+	acceptanceCriteria: {
+		id: "agile.acceptanceCriteria",
+		label: "Agile - Acceptance Criteria",
+		hasParams: true,
+		paramsSchema: {
+			title: "Add Acceptance Criteria",
+			fields: [
+				{
+					name: "title",
+					label: "Title",
+					required: true,
+					placeholder: "e.g., Success path",
+				},
+				{
+					name: "details",
+					label: "Details",
+					type: "textarea",
+					placeholder: "Optional details…",
+				},
+			],
+		},
+		rules: { allowedOn: ["task"] },
+		render(params: { title: string; details?: string }) {
+			const title = params?.title?.trim() ?? "";
+			const details = params?.details?.trim() ?? "";
+			const main = `<strong>${emojis.accept} ${title}${
+				details ? ":" : ""
+			}</strong>`;
+			const tail = details ? ` ${details}` : "";
+			return chip({
 				id: "agile-acceptance",
-				text: `<strong>${emojis.accept} :</strong>`,
+				text: `${main}${tail}`,
 				orderTag: "artifact-item-type",
 				bg: colors.artifactGrey,
-			})
-		);
+			});
+		},
 	},
 
-	kpi(): string {
-		return taskLine(
-			chip({
+	kpi: {
+		id: "agile.kpi",
+		label: "Agile - KPI",
+		hasParams: true,
+		paramsSchema: {
+			title: "Add KPI",
+			fields: [
+				{
+					name: "title",
+					label: "Title",
+					required: true,
+					placeholder: "e.g., Weekly Active Users",
+				},
+				{
+					name: "details",
+					label: "Details",
+					type: "textarea",
+					placeholder: "Optional details…",
+				},
+			],
+		},
+		rules: { allowedOn: ["task"] },
+		render(params: { title: string; details?: string }) {
+			const title = params?.title?.trim() ?? "";
+			const details = params?.details?.trim() ?? "";
+			const main = `<strong>${emojis.kpi} ${title}${
+				details ? ":" : ""
+			}</strong>`;
+			const tail = details ? ` ${details}` : "";
+			return chip({
 				id: "agile-kpi",
-				text: `<strong>${emojis.kpi} </strong>`,
+				text: `${main}${tail}`,
 				orderTag: "artifact-item-type",
 				bg: colors.artifactGrey,
-			})
-		);
+			});
+		},
 	},
 
-	okr(): string {
-		return taskLine(
-			chip({
+	okr: {
+		id: "agile.okr",
+		label: "Agile - OKR",
+		hasParams: true,
+		paramsSchema: {
+			title: "Add OKR",
+			fields: [
+				{
+					name: "title",
+					label: "Title",
+					required: true,
+					placeholder: "e.g., Improve Product Activation",
+				},
+				{
+					name: "details",
+					label: "Details",
+					type: "textarea",
+					placeholder: "Optional details…",
+				},
+			],
+		},
+		rules: { allowedOn: ["task"] },
+		render(params: { title: string; details?: string }) {
+			const title = params?.title?.trim() ?? "";
+			const details = params?.details?.trim() ?? "";
+			const main = `<strong>${emojis.okr} ${title}${
+				details ? ":" : ""
+			}</strong>`;
+			const tail = details ? ` ${details}` : "";
+			return chip({
 				id: "agile-okr",
-				text: `<strong>${emojis.okr} </strong>`,
+				text: `${main}${tail}`,
 				orderTag: "artifact-item-type",
 				bg: `linear-gradient(to left, ${colors.okrFrom}, ${colors.okrTo})`,
-			})
-		);
+			});
+		},
 	},
 
-	kpiLink(): string {
-		return taskLine(
-			chip({
-				id: "agile-kpi-link",
-				text: `<strong>${emojis.artifactLink.replace(
-					"[emoji]",
-					"🔁"
-				)}</strong>`,
-				orderTag: "artifact-item-type",
-				bg: colors.black,
-				color: colors.textGrey,
-				href: "", // user to fill
-			})
-		);
-	},
-
-	artifactParentLink(): string {
-		// rendered as a link wrapping a mark chip; orderTag is parent-link
-		return taskLine(
-			chip({
+	artifactParentLink: {
+		id: "agile.parentLink",
+		label: "Agile - Artifact Parent Link",
+		rules: { allowedOn: ["task"] },
+		render() {
+			return chip({
 				id: "agile-artifact-parent-link",
 				text: `${emojis.linkArrowUp}`,
 				orderTag: "parent-link",
-				href: "", // to be resolved by engine
-			})
-		);
+				href: "",
+			});
+		},
 	},
 
-	review(): string {
-		// "- [R] <mark ...>Review</mark> ↪️Assign third-party to Review Following Completion"
-		const mark = chip({
-			id: "agile-review",
-			text: `${emojis.reviewTag}`,
-			orderTag: "artifact-item-type",
-			bg: `linear-gradient(to right, ${colors.reviewFrom}, ${colors.reviewTo})`,
-			color: colors.reviewText,
-		});
-		return `- [R] ${mark} ${emojis.reviewArrow}Assign third-party to Review Following Completion`;
-	},
-
-	personalLearningInitiative(): string {
-		return taskLine(
-			chip({
+	personalLearningInitiative: {
+		id: "agile.personalLearningInitiative",
+		label: "Agile (Personal) - Learning Initiative",
+		rules: { allowedOn: ["task"] },
+		render(params?: { title?: string; details?: string }) {
+			const title = params?.title?.trim() ?? "";
+			const details = params?.details?.trim() ?? "";
+			const main = title
+				? `<strong>${emojis.learningGrad} ${title}${
+						details ? ":" : ""
+				  }</strong>`
+				: `<strong>${emojis.learningGrad} </strong>`;
+			const tail = details ? ` ${details}` : "";
+			return chip({
 				id: "agile-personal-learning-initiative",
-				text: `<strong>${emojis.learningGrad} </strong>`,
+				text: `${main}${tail}`,
 				orderTag: "artifact-item-type",
 				bg: `linear-gradient(to right, ${colors.personalInitFrom}, ${colors.personalInitTo})`,
 				color: "#FFFFFF",
-			})
-		);
+			});
+		},
 	},
 
-	personalLearningEpic(): string {
-		return taskLine(
-			chip({
+	personalLearningEpic: {
+		id: "agile.personalLearningEpic",
+		label: "Agile (Personal) - Learning Epic",
+		rules: { allowedOn: ["task"] },
+		render(params?: { title?: string; details?: string }) {
+			const title = params?.title?.trim() ?? "";
+			const details = params?.details?.trim() ?? "";
+			const main = title
+				? `<strong>${emojis.learningBook} ${title}${
+						details ? ":" : ""
+				  }</strong>`
+				: `<strong>${emojis.learningBook} </strong>`;
+			const tail = details ? ` ${details}` : "";
+			return chip({
 				id: "agile-personal-learning-epic",
-				text: `<strong>${emojis.learningBook} </strong>`,
+				text: `${main}${tail}`,
 				orderTag: "artifact-item-type",
 				bg: `linear-gradient(to right, ${colors.personalEpicFrom}, ${colors.personalEpicTo})`,
 				color: "#FFFFFF",
-			})
-		);
+			});
+		},
 	},
 };
 
 /**
- * CRM — tasks or lists
- * orderTag: "metadata-tag"
+ * CRM — lists only
  */
-export const CRM = {
-	abandoned(): string {
-		return listLine(
-			chip({
+export const CRM: Record<string, TemplateDefinition<any>> = {
+	abandoned: {
+		id: "crm.abandoned",
+		label: "CRM - Abandoned",
+		rules: { allowedOn: ["list"] },
+		render() {
+			return chip({
 				id: "crm-abandoned",
 				text: `<strong>Abandoned</strong>`,
 				orderTag: "metadata-tag",
 				bg: colors.crmAbandoned,
-			})
-		);
+			});
+		},
 	},
-	awaitingDeposit(): string {
-		return listLine(
-			chip({
+	awaitingDeposit: {
+		id: "crm.awaitingDeposit",
+		label: "CRM - Awaiting Deposit",
+		rules: { allowedOn: ["list"] },
+		render() {
+			return chip({
 				id: "crm-awaiting-deposit",
 				text: `<strong>Awaiting Deposit</strong>`,
 				orderTag: "metadata-tag",
 				bg: colors.crmAwaiting,
-			})
-		);
+			});
+		},
 	},
-	commission(): string {
-		return listLine(
-			chip({
+	commission: {
+		id: "crm.commission",
+		label: "CRM - Commission",
+		rules: { allowedOn: ["list"] },
+		render() {
+			return chip({
 				id: "crm-commission",
 				text: `<strong>Commission Paid /</strong>`,
 				orderTag: "metadata-tag",
 				bg: colors.crmCommission,
-			})
-		);
+			});
+		},
 	},
-	depositPaid(): string {
-		return listLine(
-			chip({
+	depositPaid: {
+		id: "crm.depositPaid",
+		label: "CRM - Deposit Paid",
+		rules: { allowedOn: ["list"] },
+		render() {
+			return chip({
 				id: "crm-deposit",
 				text: `<strong>Deposit Paid /</strong>`,
 				orderTag: "metadata-tag",
 				bg: colors.crmDeposit,
-			})
-		);
+			});
+		},
 	},
-	paidInFull(): string {
-		return listLine(
-			chip({
+	paidInFull: {
+		id: "crm.paidInFull",
+		label: "CRM - Paid in Full",
+		rules: { allowedOn: ["list"] },
+		render() {
+			return chip({
 				id: "crm-paid-full",
 				text: `<strong>Paid in Full / </strong>`,
 				orderTag: "metadata-tag",
 				bg: colors.crmPaidFull,
-			})
-		);
+			});
+		},
 	},
-	partiallyPaid(): string {
-		return listLine(
-			chip({
+	partiallyPaid: {
+		id: "crm.partiallyPaid",
+		label: "CRM - Partially Paid",
+		rules: { allowedOn: ["list"] },
+		render() {
+			return chip({
 				id: "crm-partially-paid",
 				text: `<strong>Paid  / </strong>`,
 				orderTag: "metadata-tag",
 				bg: colors.crmPartially,
-			})
-		);
+			});
+		},
 	},
-	paymentPlan(): string {
-		return listLine(
-			chip({
+	paymentPlan: {
+		id: "crm.paymentPlan",
+		label: "CRM - Payment Plan",
+		rules: { allowedOn: ["list"] },
+		render() {
+			return chip({
 				id: "crm-payment-plan",
 				text: `<strong>Payment Plan - [Number] Months - [End Date YYYY-MM-DD] - Paid  / </strong>`,
 				orderTag: "metadata-tag",
 				bg: colors.crmPaymentPlan,
-			})
-		);
+			});
+		},
 	},
 };
 
 /**
  * Members — tasks only
- * orderTag: "assignee"
- * Assumes you already have logic for `assignedPerson`.
  */
-export const Members = {
-	assignee(label = "🤝 Everyone"): string {
-		return taskLine(
-			chip({
+export const Members: Record<string, TemplateDefinition<any>> = {
+	assignee: {
+		id: "members.assignee",
+		label: "Members - Assignee",
+		rules: { allowedOn: ["task"] },
+		render(params?: { label?: string; everyoneIcon?: string }) {
+			const label = params?.label?.trim() ?? "Everyone";
+			const everyoneIcon = params?.everyoneIcon ?? emojis.everyone;
+			return chip({
 				id: "assignee",
-				text: `<strong>${emojis.everyone} Everyone</strong>`,
+				text: `<strong>${everyoneIcon} ${label}</strong>`,
 				orderTag: "assignee",
 				bg: "#FFFFFF",
 				color: "#000000",
 				extraAttrs: { class: "active-team internal-link" },
-			})
-		);
+			});
+		},
 	},
 };
+
 /**
  * Prioritization — lists only
- * orderTag: "artifact-item-type"
  */
-export const Prioritization = {
-	// Kano sections
-	kanoDissatisfierHeader(): string {
-		return listLine(
-			chip({
-				id: "kano-dissatisfier-header",
+export const Prioritization: Record<string, TemplateDefinition<any>> = {
+	kanoDissatisfier: {
+		id: "prio.kano.dissatisfier",
+		label: "Kano - Dissatisfier",
+		rules: { allowedOn: ["list"] },
+		render() {
+			return chip({
+				id: "kano-dissatisfier",
 				text: `<strong>${emojis.kanoLeft} Kano - Dissatisfier</strong>`,
 				orderTag: "artifact-item-type",
 				bg: colors.kanoDissatisfier,
-			})
-		);
+			});
+		},
 	},
-	kanoDissatisfierInfo(): string {
-		return listLine(
-			chip({
-				id: "kano-dissatisfier-info",
-				text: `${emojis.kanoLeft} `,
-				orderTag: "artifact-item-type",
-				bg: colors.kanoDissatisfier,
-			})
-		);
-	},
-	kanoIndifferentHeader(): string {
-		return listLine(
-			chip({
-				id: "kano-indifferent-header",
+	kanoIndifferent: {
+		id: "prio.kano.indifferent",
+		label: "Kano - Indifferent",
+		rules: { allowedOn: ["list"] },
+		render() {
+			return chip({
+				id: "kano-indifferent",
 				text: `<strong>${emojis.kanoIndiff} Kano - Indifferent</strong>`,
 				orderTag: "artifact-item-type",
 				bg: colors.kanoIndifferent,
-			})
-		);
+			});
+		},
 	},
-	kanoIndifferentInfo(): string {
-		return listLine(
-			chip({
-				id: "kano-indifferent-info",
-				text: `${emojis.kanoIndiff} `,
-				orderTag: "artifact-item-type",
-				bg: colors.kanoIndifferent,
-			})
-		);
-	},
-	kanoBasicHeader(): string {
-		return listLine(
-			chip({
-				id: "kano-basic-header",
+	kanoBasic: {
+		id: "prio.kano.basic",
+		label: "Kano - Basic",
+		rules: { allowedOn: ["list"] },
+		render() {
+			return chip({
+				id: "kano-basic",
 				text: `<strong>${emojis.kanoBasic} Kano - Basic</strong>`,
 				orderTag: "artifact-item-type",
 				bg: colors.kanoBasic,
-			})
-		);
+			});
+		},
 	},
-	kanoBasicInfo(): string {
-		return listLine(
-			chip({
-				id: "kano-basic-info",
-				text: `${emojis.kanoBasic} `,
-				orderTag: "artifact-item-type",
-				bg: colors.kanoBasic,
-			})
-		);
-	},
-	kanoPerformantHeader(): string {
-		return listLine(
-			chip({
+	kanoPerformantHeader: {
+		id: "prio.kano.performantHeader",
+		label: "Kano - Performant - Header",
+		rules: { allowedOn: ["list"] },
+		render() {
+			return chip({
 				id: "kano-performant-header",
 				text: `<strong>${emojis.kanoPerf} Kano - Performant</strong>`,
 				orderTag: "artifact-item-type",
 				bg: colors.kanoPerformant,
-			})
-		);
+			});
+		},
 	},
-	kanoPerformantInfo(): string {
-		return listLine(
-			chip({
-				id: "kano-performant-info",
-				text: `${emojis.kanoPerf} `,
-				orderTag: "artifact-item-type",
-				bg: colors.kanoPerformant,
-			})
-		);
-	},
-	kanoDelighterHeader(): string {
-		return listLine(
-			chip({
-				id: "kano-delighter-header",
+	kanoDelighter: {
+		id: "prio.kano.delighter",
+		label: "Kano - Delighter",
+		rules: { allowedOn: ["list"] },
+		render() {
+			return chip({
+				id: "kano-delighter",
 				text: `<strong>${emojis.kanoDelight} Kano - Delighter</strong>`,
 				orderTag: "artifact-item-type",
 				bg: colors.kanoDelighter,
-			})
-		);
+			});
+		},
 	},
-	kanoDelighterInfo(): string {
-		return listLine(
-			chip({
-				id: "kano-delighter-info",
-				text: `<strong>${emojis.kanoDelight} </strong>`,
-				orderTag: "artifact-item-type",
-				bg: colors.kanoDelighter,
-			})
-		);
-	},
-
-	// MoSCoW headers
-	moscowCould(): string {
-		return listLine(
-			chip({
+	moscowCould: {
+		id: "prio.moscow.could",
+		label: "MoSCoW - Could Have",
+		rules: { allowedOn: ["list"] },
+		render() {
+			return chip({
 				id: "moscow-could",
 				text: `<strong>❓ Could Have</strong>`,
 				orderTag: "artifact-item-type",
 				bg: colors.moscowCould,
-			})
-		);
+			});
+		},
 	},
-	moscowMust(): string {
-		return listLine(
-			chip({
+	moscowMust: {
+		id: "prio.moscow.must",
+		label: "MoSCoW - Must Have",
+		rules: { allowedOn: ["list"] },
+		render() {
+			return chip({
 				id: "moscow-must",
 				text: `<strong>❗Must-Have</strong>`,
 				orderTag: "artifact-item-type",
 				bg: colors.moscowMust,
-			})
-		);
+			});
+		},
 	},
-	moscowShould(): string {
-		return listLine(
-			chip({
+	moscowShould: {
+		id: "prio.moscow.should",
+		label: "MoSCoW - Should Have",
+		rules: { allowedOn: ["list"] },
+		render() {
+			return chip({
 				id: "moscow-should",
 				text: `<strong>🎁 Should Have</strong>`,
 				orderTag: "artifact-item-type",
 				bg: colors.moscowShould,
-			})
-		);
+			});
+		},
 	},
-	moscowWont(): string {
-		return listLine(
-			chip({
+	moscowWont: {
+		id: "prio.moscow.wont",
+		label: "MoSCoW - Won’t Have",
+		rules: { allowedOn: ["list"] },
+		render() {
+			return chip({
 				id: "moscow-wont",
 				text: `<strong>❌ Won’t Have</strong>`,
 				orderTag: "artifact-item-type",
 				bg: colors.moscowWont,
-			})
-		);
+			});
+		},
 	},
 
 	// NALAp
-	nalapAdhoc(): string {
-		return listLine(
-			`📂 **Adhoc** ${chip({
-				id: "nalap-adhoc",
-				text: "",
-				orderTag: "artifact-item-type",
-			})}`
-		);
+	nalapAdhoc: {
+		id: "prio.nalap.adhoc",
+		label: "NALAp - Adhoc",
+		rules: { allowedOn: ["list"] },
+		render() {
+			return `📂 **Adhoc**`;
+		},
 	},
-	nalapAlways(): string {
-		return listLine(
-			`📍 **Always** ${chip({
-				id: "nalap-always",
-				text: "",
-				orderTag: "artifact-item-type",
-			})}`
-		);
+	nalapAlways: {
+		id: "prio.nalap.always",
+		label: "NALAp - Always",
+		rules: { allowedOn: ["list"] },
+		render() {
+			return `📍 **Always**`;
+		},
 	},
-	nalapDone(): string {
-		return listLine(
-			`✅ **Done** ${chip({
-				id: "nalap-done",
-				text: "",
-				orderTag: "artifact-item-type",
-			})}`
-		);
+	nalapDone: {
+		id: "prio.nalap.done",
+		label: "NALAp - Done",
+		rules: { allowedOn: ["list"] },
+		render() {
+			return `✅ **Done**`;
+		},
 	},
-	nalapDropped(): string {
-		return listLine(
-			`❌ **Dropped** ${chip({
-				id: "nalap-dropped",
-				text: "",
-				orderTag: "artifact-item-type",
-			})}`
-		);
+	nalapDropped: {
+		id: "prio.nalap.dropped",
+		label: "NALAp - Dropped",
+		rules: { allowedOn: ["list"] },
+		render() {
+			return `❌ **Dropped**`;
+		},
 	},
-	nalapLater(): string {
-		return listLine(
-			`🛠️ **Later** ${chip({
-				id: "nalap-later",
-				text: "",
-				orderTag: "artifact-item-type",
-			})}`
-		);
+	nalapLater: {
+		id: "prio.nalap.later",
+		label: "NALAp - Later",
+		rules: { allowedOn: ["list"] },
+		render() {
+			return `🛠️ **Later**`;
+		},
 	},
-	nalapNow(): string {
-		return listLine(
-			`🚀 **Now** ${chip({
-				id: "nalap-now",
-				text: "",
-				orderTag: "artifact-item-type",
-			})}`
-		);
+	nalapNow: {
+		id: "prio.nalap.now",
+		label: "NALAp - Now",
+		rules: { allowedOn: ["list"] },
+		render() {
+			return `🚀 **Now**`;
+		},
 	},
 };
 
 /**
- * Workflows
- * - Metadata — tasks only, orderTag: "metadata-tag"
- * - States — tasks only, orderTag: "metadata-tag"
+ * Workflows — tasks only
  */
-export const Workflows = {
+export const Workflows: Record<string, TemplateDefinition<any>> = {
 	// Metadata
-	pr(): string {
-		return taskLine(
-			chip({
+	pr: {
+		id: "workflows.metadata.pr",
+		label: "Workflow - PR",
+		rules: { allowedOn: ["task"] },
+		render(params?: { href?: string }) {
+			const href = (params?.href ?? "").trim();
+			const anchorOpen = href ? `<a href="${href}">` : `<a href="">`;
+			return chip({
 				id: "wf-pr",
-				text: `<strong><a href="">${emojis.pr} </a></strong>`,
+				text: `<strong>${anchorOpen}${emojis.pr} </a></strong>`,
 				orderTag: "metadata-tag",
 				bg: colors.black,
 				color: colors.textGrey,
-			})
-		);
+			});
+		},
 	},
-	branch(): string {
-		return taskLine(
-			chip({
+	branch: {
+		id: "workflows.metadata.branch",
+		label: "Workflow - Branch",
+		rules: { allowedOn: ["task"] },
+		render(params?: { href?: string }) {
+			const href = (params?.href ?? "").trim();
+			const anchorOpen = href ? `<a href="${href}">` : `<a href="">`;
+			return chip({
 				id: "wf-branch",
-				text: `<strong><a href="">${emojis.branch} </a></strong>`,
+				text: `<strong>${anchorOpen}${emojis.branch} </a></strong>`,
 				orderTag: "metadata-tag",
 				bg: colors.black,
 				color: colors.textGrey,
-			})
-		);
+			});
+		},
 	},
-	linkToArtifact(): string {
-		return taskLine(
-			chip({
+	linkToArtifact: {
+		id: "workflows.metadata.linkToArtifact",
+		label: "Workflow - Link to Artifact",
+		rules: { allowedOn: ["task"] },
+		render(params?: { href?: string; text?: string }) {
+			const href = (
+				params?.href ?? "Artifact-block-link-with-no-square-brackets"
+			).trim();
+			const text = (params?.text ?? "🔗").trim();
+			return chip({
 				id: "wf-link-to-artifact",
-				text: `<strong><a class="internal-link" href="Artifact-block-link-with-no-square-brackets">🔗</a></strong>`,
+				text: `<strong><a class="internal-link" href="${href}">${text}</a></strong>`,
 				orderTag: "metadata-tag",
 				bg: colors.black,
 				color: colors.textGrey,
-			})
-		);
+			});
+		},
 	},
 
 	// States
-	blocked(): string {
-		return taskLine(
-			chip({
+	blocked: {
+		id: "workflows.states.blocked",
+		label: "Workflow - State: Blocked",
+		rules: { allowedOn: ["task"] },
+		render(params?: { requires?: string; href?: string }) {
+			const requires = (params?.requires ?? "").trim();
+			const href = (params?.href ?? "").trim();
+			const anchorOpen = `<a class="internal-link" href="${href}">`;
+			return chip({
 				id: "state-blocked",
-				text: `⛔ Requires: <a class="internal-link" href=""><strong></strong></a>`,
+				text: `⛔ Requires: ${anchorOpen}<strong>${requires}</strong></a>`,
 				orderTag: "metadata-tag",
 				bg: colors.statesBlocked,
-			})
-		);
+			});
+		},
 	},
-	pending(): string {
-		return taskLine(
-			chip({
+	pending: {
+		id: "workflows.states.pending",
+		label: "Workflow - State: Pending",
+		rules: { allowedOn: ["task"] },
+		render(params?: { resumes?: string }) {
+			const resumes = (params?.resumes ?? "").trim();
+			return chip({
 				id: "state-pending",
-				text: `🕒 Resumes: <strong></strong>`,
+				text: `🕒 Resumes: <strong>${resumes}</strong>`,
 				orderTag: "metadata-tag",
 				bg: colors.statesPending,
-			})
-		);
+			});
+		},
 	},
-	waiting(): string {
-		return taskLine(
-			chip({
+	waiting: {
+		id: "workflows.states.waiting",
+		label: "Workflow - State: Waiting",
+		rules: { allowedOn: ["task"] },
+		render(params?: { for?: string }) {
+			const forWho = (params?.for ?? "").trim();
+			return chip({
 				id: "state-waiting",
-				text: `⌛ For: <strong></strong>`,
+				text: `⌛ For: <strong>${forWho}</strong>`,
 				orderTag: "metadata-tag",
 				bg: colors.statesWaiting,
-			})
-		);
+			});
+		},
+	},
+	review: {
+		id: "workflows.states.review",
+		label: "Workflow - State: Awaiting Review",
+		hasParams: true,
+		paramsSchema: {
+			title: "Awaiting Review",
+			fields: [
+				{
+					name: "teamMember",
+					label: "Reviewer",
+					required: true,
+					placeholder: "e.g., Alice",
+				},
+			],
+		},
+		rules: { allowedOn: ["task"] },
+		render(params: { teamMember: string }) {
+			const teamMember = params?.teamMember?.trim() ?? "";
+			return chip({
+				id: "agile-review",
+				text: `Awaiting Review from ${teamMember}`,
+				orderTag: "metadata-tag",
+				bg: `linear-gradient(to right, ${colors.reviewFrom}, ${colors.reviewTo})`,
+				color: colors.reviewText,
+			});
+		},
 	},
 };
 
 /**
  * Obsidian Extensions — can be inserted on tasks, lists, or outside both
- * orderTag: varies ("metadata-tag" here for links/timestamps, or choose "extension-tag")
  */
-export const ObsidianExtensions = {
-	internalInlineLink(): string {
-		return chip({
-			id: "obsidian-internal-link",
-			text: `<a href="" class="internal-link"></a>`,
-			orderTag: "metadata-tag",
-			bg: colors.obsidianTagGrey,
-		});
+export const ObsidianExtensions: Record<string, TemplateDefinition<any>> = {
+	internalInlineLink: {
+		id: "obsidian.internalInlineLink",
+		label: "Obsidian - Internal Inline Link",
+		hasParams: true,
+		paramsSchema: {
+			title: "Internal Link",
+			fields: [
+				{
+					name: "href",
+					label: "Target (note path or block link)",
+					required: true,
+					placeholder: "e.g., Projects/2025-Roadmap or #^block-id",
+				},
+				{
+					name: "linkContent",
+					label: "Link Text",
+					required: true,
+					placeholder: "e.g., Open Roadmap",
+				},
+			],
+		},
+		rules: { allowedOn: ["any"] },
+		render(params: { href: string; linkContent: string }) {
+			const href = params?.href?.trim() ?? "";
+			const linkContent = params?.linkContent?.trim() ?? "";
+			return chip({
+				id: "obsidian-internal-link",
+				text: `<a href="${href}" class="internal-link">${linkContent}</a>`,
+				orderTag: "metadata-tag",
+				bg: colors.obsidianTagGrey,
+			});
+		},
 	},
-	timestamp(): string {
-		return chip({
-			id: "obsidian-timestamp",
-			text: `<strong>🕔 {{date:YYYY-MM-DD HH:MM:SS}}</strong>`,
-			orderTag: "metadata-tag",
-			bg: colors.obsidianTagGrey,
-		});
+	timestamp: {
+		id: "obsidian.timestamp",
+		label: "Obsidian - Timestamp",
+		rules: { allowedOn: ["any"] },
+		render() {
+			return chip({
+				id: "obsidian-timestamp",
+				text: `<strong>${emojis.timestamp} {{date:YYYY-MM-DD HH:MM:SS}}</strong>`,
+				orderTag: "metadata-tag",
+				bg: colors.obsidianTagGrey,
+			});
+		},
 	},
-	datestamp(): string {
-		return chip({
-			id: "obsidian-datestamp",
-			text: `<strong>🕔 {{date:YYYY-MM-DD}}</strong>`,
-			orderTag: "metadata-tag",
-			bg: colors.obsidianTagGrey,
-		});
+	datestamp: {
+		id: "obsidian.datestamp",
+		label: "Obsidian - Datestamp",
+		rules: { allowedOn: ["any"] },
+		render() {
+			return chip({
+				id: "obsidian-datestamp",
+				text: `<strong>${emojis.datestamp} {{date:YYYY-MM-DD}}</strong>`,
+				orderTag: "metadata-tag",
+				bg: colors.obsidianTagGrey,
+			});
+		},
 	},
 };
 
