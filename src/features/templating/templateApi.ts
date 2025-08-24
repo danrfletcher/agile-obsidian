@@ -39,6 +39,17 @@ function coerceRuleObject(rule: Rule | undefined): RuleObject | undefined {
 	return Array.isArray(rule) ? rule[0] : rule;
 }
 
+// Append a trailing space if rendered ends with a tag/angle bracket.
+// Avoid double spaces if the existing line already ends with a space.
+function withTrailingSpace(
+	rendered: string,
+	existingLineEndHasSpace: boolean
+): string {
+	const endsWithAngle = /\>\s*$/.test(rendered);
+	if (!endsWithAngle) return rendered;
+	return existingLineEndHasSpace ? rendered : `${rendered} `;
+}
+
 export function insertTemplate<TParams = unknown>(
 	templateId: string,
 	ctx: TemplateContext,
@@ -132,8 +143,11 @@ export function insertTemplateAtCursor<TParams = unknown>(
 	}
 
 	// Run business rule evaluation first (parent/top-level, etc.)
-	const rendered = insertTemplate(templateId, ctx, params);
+	const renderedRaw = insertTemplate(templateId, ctx, params);
 	const allowed = normalizeAllowedOn(tpl);
+
+	// Compute trailing-space variant once; we’ll pass line-ending awareness per usage
+	const lineEndsWithSpace = /\s$/.test(lineText);
 
 	// Helper to replace the entire current line
 	const replaceLine = (text: string) => {
@@ -146,15 +160,27 @@ export function insertTemplateAtCursor<TParams = unknown>(
 	const appendInline = () => {
 		const from = { line: cursor.line, ch: 0 };
 		const to = { line: cursor.line, ch: lineText.length };
-		const next =
-			lineText.length === 0 ? rendered : `${lineText} ${rendered}`;
+
+		// If current line is empty, we don't need a joining space before rendered,
+		// but we still may want a trailing space after the rendered content.
+		if (lineText.length === 0) {
+			const rendered = withTrailingSpace(renderedRaw, false);
+			editor.replaceRange(rendered, from, to);
+			return;
+		}
+
+		// Non-empty line: add a single space separator before rendered,
+		// and then consider trailing space after rendered (avoid double).
+		const joiner = lineEndsWithSpace ? "" : " ";
+		const rendered = withTrailingSpace(renderedRaw, false);
+		const next = `${lineText}${joiner}${rendered}`;
 		editor.replaceRange(next, from, to);
 	};
 
 	// Decide based on allowed and current lineKind
 	const allowTask = allowed.includes("task");
 	const allowList = allowed.includes("list");
-	const allowAny = allowed.includes("any");
+	const allowAny = allowedOnIncludesAny(allowed);
 
 	if (allowAny) {
 		// Anywhere: do not auto-create task/list; just inline
@@ -168,6 +194,7 @@ export function insertTemplateAtCursor<TParams = unknown>(
 		}
 		if (lineKind === "empty") {
 			// Convert the line into a task line
+			const rendered = withTrailingSpace(renderedRaw, false);
 			return replaceLine(`- [ ] ${rendered}`);
 		}
 		// Currently non-task content. Per your requirement: block insertion.
@@ -183,6 +210,7 @@ export function insertTemplateAtCursor<TParams = unknown>(
 		}
 		if (lineKind === "empty") {
 			// Convert to a list line
+			const rendered = withTrailingSpace(renderedRaw, false);
 			return replaceLine(`- ${rendered}`);
 		}
 		// Non-list content => block
@@ -198,8 +226,8 @@ export function insertTemplateAtCursor<TParams = unknown>(
 			return appendInline();
 		}
 		if (lineKind === "empty") {
-			// Default to list if truly either? You can choose task or list here.
-			// Defaulting to list for neutrality.
+			// Default to list if truly either
+			const rendered = withTrailingSpace(renderedRaw, false);
 			return replaceLine(`- ${rendered}`);
 		}
 		// Plain text line: block to avoid surprising structure changes
@@ -214,4 +242,8 @@ export function insertTemplateAtCursor<TParams = unknown>(
 
 	// Fallback (shouldn't hit)
 	return appendInline();
+}
+
+function allowedOnIncludesAny(allowed: AllowedOn[]): boolean {
+	return allowed.includes("any");
 }
