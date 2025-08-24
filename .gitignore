@@ -27,3 +27,6 @@ data.json
 
 # TS Error Checking
 .tsbuildinfo
+
+# Aider prompt file
+prompt.md
