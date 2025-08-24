@@ -24,3 +24,6 @@ data.json
 
 # Python
 .venv/*
+
+# TS Error Checking
+.tsbuildinfo
