@@ -9,7 +9,7 @@
  */
 
 import { App, MarkdownView, Menu } from "obsidian";
-import { renderDelegateMark } from "../mdRenderers/markTemplates";
+import { renderDelegateMark } from "src/features/taskAssignment/markTemplates";
 
 type Ctx = {
 	resolveTeamForPath: (filePath: string, teams: any[]) => any;

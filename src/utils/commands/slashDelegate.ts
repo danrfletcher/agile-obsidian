@@ -5,6 +5,7 @@ import {
 	EditorSuggest,
 	EditorSuggestContext,
 	MarkdownView,
+	TFile
 } from "obsidian";
 import { getDisplayNameFromAlias } from "../format/nameUtils";
 
@@ -43,7 +44,7 @@ export class DelegateSlashSuggest extends EditorSuggest<Candidate> {
 	onTrigger(
 		cursor: EditorPosition,
 		editor: Editor,
-		_file: any
+		_file: TFile
 	): EditorSuggestContext | null {
 		try {
 			const line = editor.getLine(cursor.line);
@@ -51,7 +52,9 @@ export class DelegateSlashSuggest extends EditorSuggest<Candidate> {
 			if (!this.deps.isUncheckedTaskLine(line)) return null;
 			// Suppress when task is assigned to Everyone
 			if (
-				/\bclass=["'][^"']*\b(?:active|inactive)-team\b[^"']*["']/i.test(line) ||
+				/\bclass=["'][^"']*\b(?:active|inactive)-team\b[^"']*["']/i.test(
+					line
+				) ||
 				/<strong>\s*🤝\s*Everyone\s*<\/strong>/i.test(line)
 			)
 				return null;
@@ -68,6 +71,8 @@ export class DelegateSlashSuggest extends EditorSuggest<Candidate> {
 				start: { line: cursor.line, ch: idx },
 				end: cursor,
 				query: (m[1] || "").trim().toLowerCase(),
+				editor, // ADD THIS
+				file: _file, // ADD THIS (TFile | null aligns with Obsidian types)
 			};
 		} catch {
 			return null;
@@ -83,12 +88,13 @@ export class DelegateSlashSuggest extends EditorSuggest<Candidate> {
 			// Suppress suggestions when the current line is assigned to Everyone
 			const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 			if (view) {
-				const ln =
-					view.editor.getLine(
-						context.start?.line ?? view.editor.getCursor().line
-					);
+				const ln = view.editor.getLine(
+					context.start?.line ?? view.editor.getCursor().line
+				);
 				if (
-					/\bclass=["'][^"']*\b(?:active|inactive)-team\b[^"']*["']/i.test(ln) ||
+					/\bclass=["'][^"']*\b(?:active|inactive)-team\b[^"']*["']/i.test(
+						ln
+					) ||
 					/<strong>\s*🤝\s*Everyone\s*<\/strong>/i.test(ln)
 				) {
 					return [];
@@ -172,7 +178,9 @@ export class DelegateSlashSuggest extends EditorSuggest<Candidate> {
 
 			// Disallow when Everyone is assigned
 			if (
-				/\bclass=["'][^"']*\b(?:active|inactive)-team\b[^"']*["']/i.test(original) ||
+				/\bclass=["'][^"']*\b(?:active|inactive)-team\b[^"']*["']/i.test(
+					original
+				) ||
 				/<strong>\s*🤝\s*Everyone\s*<\/strong>/i.test(original)
 			) {
 				// Simply do nothing; mirrors command behavior

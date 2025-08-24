@@ -10,7 +10,7 @@
  */
 
 import type { App, Editor, TFile } from "obsidian";
-import type { TaskIndex } from "../index/TaskIndex";
+import type { TaskIndex } from "../taskIndex/TaskIndex";
 
 export type CascadeDeps = {
 	app: App;
@@ -450,8 +450,7 @@ export async function applyCascadeAfterExternalChange(
 		// If newly assigned to Everyone or cleared, remove any delegate on the parent line
 		if (
 			newAlias === null ||
-			(typeof newAlias === "string" &&
-				newAlias.toLowerCase() === "team")
+			(typeof newAlias === "string" && newAlias.toLowerCase() === "team")
 		) {
 			const origParent = lines[parentLine0] ?? "";
 			let updParent = deps.normalizeTaskLine(origParent, {

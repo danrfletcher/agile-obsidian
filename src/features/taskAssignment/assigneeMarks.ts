@@ -9,8 +9,8 @@
  * - Centralizes parsing and rendering rules for assignee marks so all features behave consistently.
  */
 
-import { aliasToName } from "../utils/commands/commandUtils";
-import { renderAssigneeMark } from "../mdRenderers/markTemplates";
+import { aliasToName } from "src/utils/commands/commandUtils";
+import { renderAssigneeMark } from "./markTemplates";
 
 /**
  * Extract the explicit assignee alias from a single task line.

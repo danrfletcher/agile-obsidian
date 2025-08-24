@@ -17,7 +17,7 @@
  *
  */
 import { App, TFile } from "obsidian";
-import { TaskIndex } from "../../index/TaskIndex";
+import { TaskIndex } from "../../features/taskIndex/TaskIndex";
 import { TaskItem } from "../../types/TaskItem";
 import { normalizeTaskLine } from "../format/taskFormatter";
 import { aliasToName } from "../commands/commandUtils";
@@ -35,7 +35,9 @@ import { aliasToName } from "../commands/commandUtils";
  */
 function buildAssigneeMark(alias: string): string {
 	const display =
-		(alias || "").toLowerCase() === "team" ? "Everyone" : aliasToName(alias);
+		(alias || "").toLowerCase() === "team"
+			? "Everyone"
+			: aliasToName(alias);
 	return `<mark class="active-${alias}" style="background: #BBFABBA6;"><strong>👋 ${display}</strong></mark>`;
 }
 
@@ -57,9 +59,10 @@ function getExplicitAssigneeAliasFromLine(line: string): string | null {
 	try {
 		if (!line) return null;
 		// Everyone mark (team)
-		const everyone = /<mark\s+class="(?:active|inactive)-team"[^>]*>\s*<strong>[\s\S]*?<\/strong>\s*<\/mark>/i.exec(
-			line
-		);
+		const everyone =
+			/<mark\s+class="(?:active|inactive)-team"[^>]*>\s*<strong>[\s\S]*?<\/strong>\s*<\/mark>/i.exec(
+				line
+			);
 		if (everyone) return "team";
 
 		// Member assignee mark (👋 ...)
@@ -221,9 +224,7 @@ function computeNewInheritedAfterChange(
 		if (parent) {
 			const lidx = (parent.line ?? 1) - 1;
 			if (lidx >= 0 && lidx < linesBefore.length) {
-				const exp = getExplicitAssigneeAliasFromLine(
-					linesBefore[lidx]
-				);
+				const exp = getExplicitAssigneeAliasFromLine(linesBefore[lidx]);
 				if (exp) return exp;
 			}
 		}

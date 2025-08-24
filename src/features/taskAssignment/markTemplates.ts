@@ -8,7 +8,7 @@
  * - Single source of truth for markup, emojis, and colors used across commands, menus, and cascades.
  */
 
-import { getDisplayNameFromAlias } from "../utils/format/nameUtils";
+import { getDisplayNameFromAlias } from "src/utils/format/nameUtils";
 
 // Local helper for visible label formatting
 const toTitleCase = (s: string) =>

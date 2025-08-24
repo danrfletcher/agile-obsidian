@@ -2,8 +2,8 @@ import { TFile, TFolder, Vault } from "obsidian";
 import {
 	aliasToName,
 	parseTeamFolderName,
-} from "../utils/commands/commandUtils";
-import { getFolder } from "../files/fsUtils";
+} from "../../utils/commands/commandUtils";
+import { getFolder } from "../../utils/fs/fsUtils";
 import type {
 	TeamInfo as CanonicalTeamInfo,
 	MemberInfo,
@@ -411,7 +411,7 @@ export async function hydrateTeamsFromVault(
 			updatedRootPaths,
 			droppedExisting,
 		});
-		
+
 		// 7) Canonicalize
 		const rank = (t: MemberType) =>
 			t === "member"

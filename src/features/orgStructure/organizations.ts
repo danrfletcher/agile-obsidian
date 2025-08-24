@@ -5,7 +5,7 @@ import {
 	ensureFolder,
 	joinPath,
 	safeRename,
-} from "../files/fsUtils";
+} from "../../utils/fs/fsUtils";
 import {
 	buildResourceFileName,
 	buildResourceFolderName,
@@ -16,7 +16,7 @@ import {
 	getPathIdFromSlug,
 	slugifyName,
 } from "src/utils/commands/commandUtils";
-import { createTeamResources } from "../teams/teamCreation";
+import { createTeamResources } from "./teamCreation";
 import { TeamInfo } from "src/settings/settings.types";
 
 export interface Organization {
@@ -251,78 +251,92 @@ export async function addTeamsToExistingOrganization(
  * This now mirrors the organization child creation flow and reuses createTeamResources.
  */
 export async function createSubteams(
-  app: App,
-  parentTeam: TeamInfo,
-  suffixes: string[]
+	app: App,
+	parentTeam: TeamInfo,
+	suffixes: string[]
 ): Promise<void> {
-  const vault = app.vault;
+	const vault = app.vault;
 
-  const parentSegs = parentTeam.rootPath.split("/").filter(Boolean);
-  const parentFolderName = parentSegs[parentSegs.length - 1];
-  const parsed = parseTeamFolderName(parentFolderName);
-  if (!parsed) throw new Error("Parent team folder has no slug.");
-  const slug = parsed.slug;
-  const code = getBaseCodeFromSlug(slug) as string;
-  if (!code) throw new Error("Parent team folder has no code.");
-  const orgName = parsed.name;
+	const parentSegs = parentTeam.rootPath.split("/").filter(Boolean);
+	const parentFolderName = parentSegs[parentSegs.length - 1];
+	const parsed = parseTeamFolderName(parentFolderName);
+	if (!parsed) throw new Error("Parent team folder has no slug.");
+	const slug = parsed.slug;
+	const code = getBaseCodeFromSlug(slug) as string;
+	if (!code) throw new Error("Parent team folder has no code.");
+	const orgName = parsed.name;
 
-  // Get full hierarchical pathId for the parent from its slug (e.g., "a", "a-1", "a-aa")
-  const parentPathId = getPathIdFromSlug(slug) || null;
+	// Get full hierarchical pathId for the parent from its slug (e.g., "a", "a-1", "a-aa")
+	const parentPathId = getPathIdFromSlug(slug) || null;
 
-  // Resolve the root organization name (segment before the first "Teams" in the path)
-  let orgRootNameForSlug = orgName;
-  const segsForRoot = parentTeam.rootPath.split("/").filter(Boolean);
-  const firstTeamsIdx = segsForRoot.indexOf("Teams");
-  if (firstTeamsIdx > 0) {
-    const orgFolder = segsForRoot[firstTeamsIdx - 1];
-    const orgParsed = parseTeamFolderName(orgFolder);
-    if (orgParsed?.name) orgRootNameForSlug = orgParsed.name;
-  }
+	// Resolve the root organization name (segment before the first "Teams" in the path)
+	let orgRootNameForSlug = orgName;
+	const segsForRoot = parentTeam.rootPath.split("/").filter(Boolean);
+	const firstTeamsIdx = segsForRoot.indexOf("Teams");
+	if (firstTeamsIdx > 0) {
+		const orgFolder = segsForRoot[firstTeamsIdx - 1];
+		const orgParsed = parseTeamFolderName(orgFolder);
+		if (orgParsed?.name) orgRootNameForSlug = orgParsed.name;
+	}
 
-  const teamsDir = `${parentTeam.rootPath}/Teams`;
-  if (!(await vault.adapter.exists(teamsDir))) {
-    await vault.createFolder(teamsDir);
-  }
+	const teamsDir = `${parentTeam.rootPath}/Teams`;
+	if (!(await vault.adapter.exists(teamsDir))) {
+		await vault.createFolder(teamsDir);
+	}
 
-  // Determine next numeric suffix from existing subteams
-  const usedNums = new Set<number>();
-  try {
-    const list = await (vault.adapter as any).list(teamsDir);
-    const folders: string[] = Array.isArray(list?.folders) ? list.folders : [];
-    for (const full of folders) {
-      const name = full.split("/").filter(Boolean).pop()!;
-      const p = parseTeamFolderName(name);
-      if (p) {
-        const base = slugifyName(p.name);
-        const pid = getPathIdFromSlug(p.slug, base);
-        if (pid) {
-          const parts = pid.split("-");
-          const last = parts[parts.length - 1];
-          const n = parseInt(last, 10);
-          if (Number.isFinite(n)) usedNums.add(n);
-        }
-      }
-    }
-  } catch {
-    // If list fails, we'll start from 1
-  }
+	// Determine next numeric suffix from existing subteams
+	const usedNums = new Set<number>();
+	try {
+		const list = await (vault.adapter as any).list(teamsDir);
+		const folders: string[] = Array.isArray(list?.folders)
+			? list.folders
+			: [];
+		for (const full of folders) {
+			const name = full.split("/").filter(Boolean).pop()!;
+			const p = parseTeamFolderName(name);
+			if (p) {
+				const base = slugifyName(p.name);
+				const pid = getPathIdFromSlug(p.slug, base);
+				if (pid) {
+					const parts = pid.split("-");
+					const last = parts[parts.length - 1];
+					const n = parseInt(last, 10);
+					if (Number.isFinite(n)) usedNums.add(n);
+				}
+			}
+		}
+	} catch {
+		// If list fails, we'll start from 1
+	}
 
-  let n = 1;
-  const nextNum = () => {
-    while (usedNums.has(n)) n++;
-    const val = n;
-    usedNums.add(n);
-    return val;
-  };
+	let n = 1;
+	const nextNum = () => {
+		while (usedNums.has(n)) n++;
+		const val = n;
+		usedNums.add(n);
+		return val;
+	};
 
-  for (const suf of suffixes) {
-    const childName = `${orgName} ${suf}`;
-    const suffixSlug = slugifyName(suf);
-    const childPathId = parentPathId ? `${parentPathId}-${suffixSlug}` : suffixSlug;
-    const childSlug = buildOrgChildSlug(orgRootNameForSlug, code, childPathId);
-    const parentPathForChild = teamsDir;
+	for (const suf of suffixes) {
+		const childName = `${orgName} ${suf}`;
+		const suffixSlug = slugifyName(suf);
+		const childPathId = parentPathId
+			? `${parentPathId}-${suffixSlug}`
+			: suffixSlug;
+		const childSlug = buildOrgChildSlug(
+			orgRootNameForSlug,
+			code,
+			childPathId
+		);
+		const parentPathForChild = teamsDir;
 
-    // Use the same creation path as "Add Team" and organization children
-    await createTeamResources(app, childName, parentPathForChild, childSlug, childPathId);
-  }
+		// Use the same creation path as "Add Team" and organization children
+		await createTeamResources(
+			app,
+			childName,
+			parentPathForChild,
+			childSlug,
+			childPathId
+		);
+	}
 }
