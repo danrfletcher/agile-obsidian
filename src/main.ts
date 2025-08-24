@@ -6,30 +6,31 @@ import type {
 	TeamInfo,
 	MemberInfo,
 } from "./settings/settings.types";
-import { hydrateTeamsFromVault } from "./teams/teamDetection";
+import { hydrateTeamsFromVault } from "./features/orgStructure/teamDetection";
 import {
 	createOrganizationFromTeam,
 	addTeamsToExistingOrganization,
 	createSubteams,
-} from "./teams/organizations";
-import { createTeamResources } from "./teams/teamCreation";
+} from "./features/orgStructure/organizations";
+import { createTeamResources } from "./features/orgStructure/teamCreation";
 import {
 	slugifyName,
 	resolveTeamForPath,
 	isUncheckedTaskLine,
 } from "./utils/commands/commandUtils";
 import { injectCheckboxStyles, removeCheckboxStyles } from "./styles/injection";
-import { TaskIndex } from "./index/TaskIndex";
+import { TaskIndex } from "./features/taskIndex/TaskIndex";
 import { registerMarkClickHandlers } from "./ui/markContextMenu";
-import { findTargetLineFromClick } from "./editor/editorUtils";
+import { findTargetLineFromClick } from "./utils/fs/editorUtils";
 import { normalizeTaskLine } from "./utils/format/taskFormatter";
 import {
 	getExplicitAssigneeAliasFromText,
 	buildAssigneeMarkForAlias,
-} from "./assignees/assigneeMarks";
-import { applyAssigneeChangeWithCascade } from "./assignees/assignmentCascade";
-import { renderDelegateMark } from "./mdRenderers/markTemplates";
+} from "./features/taskAssignment/assigneeMarks";
+import { applyAssigneeChangeWithCascade } from "./features/taskAssignment/assignmentCascade";
+import { renderDelegateMark } from "./features/taskAssignment/markTemplates";
 import { DelegateSlashSuggest } from "./utils/commands/slashDelegate";
+import { registerTemplatingCommands } from "./features/templating/templatingCommands";
 
 export default class AgileObsidianPlugin extends Plugin {
 	settings: AgileObsidianSettings;
@@ -136,6 +137,8 @@ export default class AgileObsidianPlugin extends Plugin {
 			)
 		);
 		await this.registerTaskFeatures();
+
+		registerTemplatingCommands(this);
 	}
 
 	onunload() {
