@@ -38,6 +38,9 @@ export function validateParent(
 	return !!nearest && parents.includes(nearest);
 }
 
+/**
+ Core rule evaluator (unchanged). Throws with details on failure.
+*/
 export function evaluateRules(
 	ctx: TemplateContext,
 	rule: Rule | undefined,
@@ -74,4 +77,22 @@ export function evaluateRules(
 		messages,
 		ancestors,
 	};
+}
+
+/**
+ Future-proof helper:
+ - Returns true if any of the rule variants pass for the given context.
+ - Delegates to evaluateRules to ensure any new future rules are honored automatically.
+*/
+export function isAllowedInContext(
+	ctx: TemplateContext,
+	rule: Rule | undefined,
+	getAncestors: (ctx: TemplateContext) => string[]
+): boolean {
+	try {
+		evaluateRules(ctx, rule, getAncestors);
+		return true;
+	} catch {
+		return false;
+	}
 }

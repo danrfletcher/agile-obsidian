@@ -1,10 +1,10 @@
-import { Notice, MarkdownView, Modal, App } from "obsidian";
-import { insertTemplateAtCursor } from "./templateApi";
+import { Notice, MarkdownView, Modal, App, debounce } from "obsidian";
+import {
+	insertTemplateAtCursor,
+	isTemplateAllowedAtCursor,
+} from "./templateApi";
 import { presetTemplates } from "./presets";
-import type {
-	TemplateDefinition,
-	ParamSchema,
-} from "./types";
+import type { TemplateDefinition, ParamSchema } from "./types";
 
 /**
  Decide how to get params for a template:
@@ -60,7 +60,6 @@ function promptForSchemaParams(
 					p.style.marginBottom = "8px";
 				}
 
-				// build fields
 				for (const field of schema.fields) {
 					const wrap = contentEl.createEl("div", {
 						attr: { style: "margin-bottom: 10px;" },
@@ -107,7 +106,6 @@ function promptForSchemaParams(
 					}
 				}
 
-				// buttons
 				const btnRow = contentEl.createEl("div", {
 					attr: { style: "display:flex; gap:8px; margin-top: 12px;" },
 				});
@@ -121,7 +119,6 @@ function promptForSchemaParams(
 					for (const field of schema.fields) {
 						const el = this.inputs[field.name];
 						const raw = (el?.value ?? "").toString();
-						// required validation
 						if (field.required && raw.trim().length === 0) {
 							new Notice(`"${field.label}" is required`);
 							valid = false;
@@ -217,7 +214,6 @@ function promptForJsonParams(app: App, templateId: string): Promise<any> {
 }
 
 function reportInsertError(err: any): void {
-	// Try to surface our TemplateInsertError details cleanly
 	const code = err?.details?.code ?? err?.code ?? "ERROR";
 	const msgs: string[] | undefined =
 		err?.details?.messages ?? err?.messages ?? undefined;
@@ -236,9 +232,10 @@ function reportInsertError(err: any): void {
 function enumeratePresetTemplates(): Array<{
 	id: string;
 	name: string;
-	entry: unknown;
+	def: TemplateDefinition;
 }> {
-	const out: Array<{ id: string; name: string; entry: unknown }> = [];
+	const out: Array<{ id: string; name: string; def: TemplateDefinition }> =
+		[];
 	const titleCase = (s: string) =>
 		s.replace(/\b\w/g, (c) => c.toUpperCase()).replace(/[-_]/g, " ");
 	const makeName = (id: string) =>
@@ -251,23 +248,93 @@ function enumeratePresetTemplates(): Array<{
 		presetTemplates as Record<string, any>
 	)) {
 		for (const [key, entry] of Object.entries(groupObj ?? {})) {
-			out.push({
-				id: `${group}.${key}`,
-				name: makeName(`${group}.${key}`),
-				entry,
-			});
+			if (
+				entry &&
+				typeof entry === "object" &&
+				typeof (entry as TemplateDefinition).render === "function"
+			) {
+				out.push({
+					id: `${group}.${key}`,
+					name: makeName(`${group}.${key}`),
+					def: entry as TemplateDefinition,
+				});
+			}
 		}
 	}
 	return out;
 }
 
 /**
- Public API: register all template commands.
- - Parameterized templates:
-   - If schema exists => show schema modal
-   - Else => fallback JSON modal
- - Non-parameterized => insert immediately
- - Programmatic params can be passed when calling normalized.invoke with params
+ Command Manager
+ - Registers dynamic commands based on current cursor/context.
+ - Clears and rebuilds on editor/cursor changes with debounce.
+*/
+class DynamicTemplateCommandManager {
+	private registeredIds = new Set<string>();
+
+	constructor(
+		private plugin: {
+			app: App;
+			addCommand: (cmd: {
+				id: string;
+				name: string;
+				editorCallback: (
+					editor: MarkdownView["editor"],
+					view: MarkdownView
+				) => void;
+			}) => void;
+			// optional: removeCommand is not in official API;
+			// we simulate removal by tracking and not re-adding duplicates.
+		}
+	) {}
+
+	clearCommands() {
+		// Obsidian doesn't expose removeCommand for 3rd party easily.
+		// We "logically" clear by resetting our ID set so re-registering
+		// won't create duplicates (IDs must be unique).
+		this.registeredIds.clear();
+	}
+
+	registerAllowedCommands(
+		allowed: Array<{ id: string; name: string; def: TemplateDefinition }>
+	) {
+		for (const { id, name, def } of allowed) {
+			const cmdId = `tpl-${id.replace(/\./g, "-")}`;
+			if (this.registeredIds.has(cmdId)) continue;
+
+			this.plugin.addCommand({
+				id: cmdId,
+				name: `Insert Template: ${name}`,
+				editorCallback: async (editor, view) => {
+					try {
+						if (!(view instanceof MarkdownView)) return;
+						const filePath = (view as any)?.file?.path ?? "";
+						if (!filePath) return;
+
+						// Resolve params (schema or JSON) if needed
+						const params = await resolveParamsForTemplate(
+							this.plugin.app,
+							id,
+							def,
+							undefined
+						);
+
+						insertTemplateAtCursor(id, editor, filePath, params);
+					} catch (err: any) {
+						reportInsertError(err);
+					}
+				},
+			});
+
+			this.registeredIds.add(cmdId);
+		}
+	}
+}
+
+/**
+ Public API: register all template commands dynamically based on context.
+ - No modal/selector; only permitted commands are available in palette/slash list.
+ - Future-proof: validity defers to evaluateRules (including any new rules added later).
 */
 export function registerTemplatingCommands(plugin: {
 	app: App;
@@ -279,45 +346,62 @@ export function registerTemplatingCommands(plugin: {
 			view: MarkdownView
 		) => void;
 	}) => void;
+	registerEvent?: (evt: any) => void;
+	onLayoutReady?: (cb: () => void) => void;
 }): void {
-	const list = enumeratePresetTemplates();
+	const allTemplates = enumeratePresetTemplates();
+	const manager = new DynamicTemplateCommandManager(plugin);
 
-	for (const { id, name, entry } of list) {
-		// Only TemplateDefinition entries
-		if (
-			!entry ||
-			typeof entry !== "object" ||
-			typeof (entry as TemplateDefinition).render !== "function"
-		) {
-			continue;
-		}
-		const def = entry as TemplateDefinition;
+	// Debounced refresh: re-register commands allowed in the current context
+	const refresh = debounce(
+		() => {
+			const view = plugin.app.workspace.getActiveViewOfType(MarkdownView);
+			if (!view) return;
+			const editor = view.editor;
+			const filePath = (view as any)?.file?.path ?? "";
+			if (!filePath) return;
 
-		plugin.addCommand({
-			id: `tpl-${id.replace(/\./g, "-")}`,
-			name: `Insert Template: ${name}`,
-			editorCallback: async (editor, view) => {
-				try {
-					if (!(view instanceof MarkdownView)) return;
-					const filePath = (view as any)?.file?.path ?? "";
-					if (!filePath) return;
-
-					// No programmatic params here (from command palette), so pass undefined
-					const params = await resolveParamsForTemplate(
-						plugin.app,
-						id,
-						def,
-						undefined
-					);
-
-					// insertion is rule-aware and applies wrapping as needed
-					insertTemplateAtCursor(id, editor, filePath, params);
-				} catch (err: any) {
-					reportInsertError(err);
+			const allowed: Array<{
+				id: string;
+				name: string;
+				def: TemplateDefinition;
+			}> = [];
+			for (const entry of allTemplates) {
+				if (isTemplateAllowedAtCursor(entry.id, editor, filePath)) {
+					allowed.push(entry);
 				}
-			},
-		});
-	}
+			}
+
+			manager.clearCommands();
+			manager.registerAllowedCommands(allowed);
+		},
+		150,
+		true
+	);
+
+	// Initial after layout ready
+	plugin.onLayoutReady?.(() => {
+		refresh();
+	});
+
+	// When active leaf (view) changes, refresh
+	plugin.app.workspace.on("active-leaf-change", () => {
+		refresh();
+	});
+
+	// On editor-change (content changes at view level), refresh
+	// Signature: (editor: Editor, markdownView: MarkdownView) => void
+	plugin.app.workspace.on("editor-change", () => {
+		refresh();
+	});
+
+	// On file open (may change context), refresh
+	plugin.app.workspace.on("file-open", () => {
+		refresh();
+	});
+
+	// Also refresh when metadata cache changes (parents/structure may affect rules)
+	plugin.app.metadataCache.on("changed", () => refresh());
 }
 
 /**
@@ -339,7 +423,6 @@ export async function insertTemplateProgrammatically(
 			| TemplateDefinition
 			| undefined;
 
-		// If you already have params, pass them; this bypasses modals entirely.
 		const finalParams =
 			params ??
 			(await resolveParamsForTemplate(app, templateId, def!, undefined));

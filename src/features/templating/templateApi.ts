@@ -39,13 +39,14 @@ function coerceRuleObject(rule: Rule | undefined): RuleObject | undefined {
 	return Array.isArray(rule) ? rule[0] : rule;
 }
 
-// Append a trailing space if rendered ends with a tag/angle bracket.
+// Append a trailing space if rendered ends with a closing angle bracket
 // Avoid double spaces if the existing line already ends with a space.
 function withTrailingSpace(
 	rendered: string,
 	existingLineEndHasSpace: boolean
 ): string {
-	const endsWithAngle = /\>\s*$/.test(rendered);
+	// Use a character class to avoid the eslint no-useless-escape warning
+	const endsWithAngle = />\s*$/.test(rendered);
 	if (!endsWithAngle) return rendered;
 	return existingLineEndHasSpace ? rendered : `${rendered} `;
 }
@@ -246,4 +247,35 @@ export function insertTemplateAtCursor<TParams = unknown>(
 
 function allowedOnIncludesAny(allowed: AllowedOn[]): boolean {
 	return allowed.includes("any");
+}
+
+/**
+ Probe: is a template allowed at current cursor context?
+ - Builds a TemplateContext from editor + filePath
+ - Uses evaluateRules, ensuring future rule additions automatically apply
+*/
+export function isTemplateAllowedAtCursor(
+	templateId: string,
+	editor: Editor,
+	filePath: string
+): boolean {
+	const cursor = editor.getCursor();
+	const lineText = editor.getLine(cursor.line);
+
+	const ctx: TemplateContext = {
+		line: lineText,
+		file: editor.getValue(),
+		path: filePath,
+		editor,
+	};
+	const tpl = findTemplateById(templateId) as TemplateDefinition | undefined;
+	if (!tpl || typeof tpl !== "object" || typeof tpl.render !== "function") {
+		return false;
+	}
+	try {
+		evaluateRules(ctx, tpl.rules, getParentChainTemplateIds);
+		return true;
+	} catch {
+		return false;
+	}
 }
