@@ -1,340 +1,629 @@
-// /**
-//  * Agile templating presets and rule helpers.
-//  *
-//  * The engine (to be built) can call each template's rules to decide if a template is insertable
-//  * at a given location. We keep this file self-contained and export all helpers needed by the engine.
-//  */
+import tokensData from "./tokens.json";
+import { markChip, taskLine, listLine } from "./htmlPartials";
 
-// /**
-//  * Whether a template may be inserted on a plain list line, a task line, or anywhere.
-//  */
-// export type AllowedOn = "list" | "task" | "any";
+// Derive from JSON
+const colors = tokensData.colors as Record<string, string>;
+const emojis = tokensData.emojis as Record<string, string>;
 
-// /**
-//  * Context passed to rule functions by the templating engine.
-//  * - parentChainTemplateIds: nearest-first chain of fully-qualified template ids applied to ancestors.
-//  *   Example ids: "agileArtifacts.initiative", "agileArtifacts.epic", etc.
-//  * - currentLineIsTask: true if the current line is a task (e.g., "- [ ]" or custom checkbox), false if just "-".
-//  */
-// export interface TemplateContext {
-// 	parentChainTemplateIds: string[];
-// 	currentLineIsTask: boolean;
-// }
+// Utility to build a mark chip without any numeric order (order is dropped)
+function chip(opts: {
+	id: string;
+	text: string;
+	orderTag: string;
+	bg?: string;
+	color?: string;
+	bold?: boolean;
+	href?: string;
+	kind?: string;
+	extraAttrs?: Record<string, string | number | boolean | undefined>;
+}): string {
+	const { id, text, orderTag, bg, color, bold, href, kind, extraAttrs } =
+		opts;
+	return markChip({
+		id,
+		text,
+		orderTag,
+		bg,
+		color,
+		bold,
+		href,
+		kind,
+		extraAttrs,
+	});
+}
 
-// /**
-//  * Rule function — returns true if the template can be used in the given context, false otherwise.
-//  */
-// export type RuleFn = (ctx: TemplateContext) => boolean;
+/**
+ * Agile Artifacts — tasks only
+ * orderTag: "artifact-item-type", except Parent Link which is "parent-link"
+ */
+export const Agile = {
+	initiative(): string {
+		return taskLine(
+			chip({
+				id: "agile-initiative",
+				text: `<strong>${emojis.initiative} </strong>`,
+				orderTag: "artifact-item-type",
+				bg: colors.artifactGrey,
+			})
+		);
+	},
 
-// /**
-//  * Rules for a template.
-//  * - parent: one or more RuleFn that must all pass. Typically used to express parent-type constraints.
-//  * - allowedOn: the kind of line the template may be inserted onto.
-//  */
-// export interface Rules {
-// 	parent?: RuleFn | RuleFn[];
-// 	allowedOn?: AllowedOn; // allows the template to be added on a list item "-" or a task item "- [ ]" or both
-// }
+	epic(): string {
+		return taskLine(
+			chip({
+				id: "agile-epic",
+				text: `<strong>${emojis.epic} </strong>`,
+				orderTag: "artifact-item-type",
+				bg: colors.artifactGrey,
+			})
+		);
+	},
 
-// /**
-//  * A concrete template definition.
-//  */
-// export interface TemplateDef {
-// 	string: string;
-// 	rules?: Rules;
-// }
+	feature(): string {
+		return taskLine(
+			chip({
+				id: "agile-feature",
+				text: `<strong>${emojis.feature} :</strong>`,
+				orderTag: "artifact-item-type",
+				bg: colors.artifactGrey,
+			})
+		);
+	},
 
-// /**
-//  * Helpers to build common rule functions.
-//  */
-// export const ruleHelpers = {
-// 	requireParent: (fqId: string): RuleFn => {
-// 		return (ctx: TemplateContext) =>
-// 			ctx.parentChainTemplateIds.includes(fqId);
-// 	},
-// 	requireParentAnyOf: (fqIds: string[]): RuleFn => {
-// 		return (ctx: TemplateContext) =>
-// 			fqIds.some((fq) => ctx.parentChainTemplateIds.includes(fq));
-// 	},
-// 	requireTopLevel: (): RuleFn => {
-// 		return (ctx: TemplateContext) =>
-// 			ctx.parentChainTemplateIds.length === 0;
-// 	},
-// 	requireTaskLine: (): RuleFn => {
-// 		return (ctx: TemplateContext) => ctx.currentLineIsTask;
-// 	},
-// 	requireListLine: (): RuleFn => {
-// 		return (ctx: TemplateContext) => !ctx.currentLineIsTask;
-// 	},
-// };
+	product(): string {
+		return taskLine(
+			chip({
+				id: "agile-product",
+				text: `<strong>${emojis.product} </strong>`,
+				orderTag: "artifact-item-type",
+				bg: colors.artifactGrey,
+			})
+		);
+	},
 
-// /**
-//  * Utility to normalize a 'parent' field into an array of RuleFn and evaluate it.
-//  */
-// export function evaluateParentRules(
-// 	parent: Rules["parent"],
-// 	ctx: TemplateContext
-// ): boolean {
-// 	if (!parent) return true;
-// 	const arr = Array.isArray(parent) ? parent : [parent];
-// 	return arr.every((fn) => {
-// 		try {
-// 			return !!fn(ctx);
-// 		} catch {
-// 			return false;
-// 		}
-// 	});
-// }
+	userStory: {
+		id: "agile.userStory",
+		label: "Agile - User Story",
+		// rules: { allowedOn: ["task"], parent: ["agile.epic", "agile.personalLearningEpic"] },
+		render(params?: {
+			persona?: string;
+			desire?: string;
+			outcome?: string;
+		}) {
+			const persona = params?.persona ?? "";
+			const desire = params?.desire ?? "";
+			const outcome = params?.outcome ?? "";
 
-// /**
-//  * Fully-qualified ids used inside rules for cross-references.
-//  */
-// const FQ = {
-// 	agile: {
-// 		product: "agileArtifacts.product",
-// 		initiative: "agileArtifacts.initiative",
-// 		epic: "agileArtifacts.epic",
-// 		userStory: "agileArtifacts.userStory",
-// 		feature: "agileArtifacts.feature",
-// 		personalLearningInitiative: "agileArtifacts.personalLearningInitiative",
-// 		personalLearningEpic: "agileArtifacts.personalLearningEpic",
-// 		acceptanceCriteria: "agileArtifacts.acceptanceCriteria",
-//         okr: "agileArtifacts.okr",
-// 	},
-// };
+			// Build the dynamic clause only if all three fields are present
+			const clause =
+				persona && desire && outcome
+					? ` **As a** ${persona} , **I want to** ${desire} , **so that** ${outcome}`
+					: "";
 
-// /**
-//  * Preset templates organized to reflect hierarchy from high-level down:
-//  * Product > Initiative > Epic > Feature/User Story > Acceptance Criteria
-//  * Personal Learning Initiative > Personal Learning Epic
-//  */
-// export const presetTemplates = {
-// 	agileArtifacts: {
-// 		initiative: {
-// 			string: `<mark style="background: #CACFD9A6;"><strong>🎖️ </strong></mark>`,
-// 			rules: {
-// 				allowedOn: "task",
-// 			},
-// 		},
-// 		epic: {
-// 			string: `<mark style="background: #CACFD9A6;"><strong>🏆 </strong></mark>`,
-// 			rules: {
-// 				allowedOn: "task",
-// 				parent: ruleHelpers.requireParent(FQ.agile.initiative),
-// 			},
-// 		},
-// 		userStory: {
-// 			string: `<mark style="background: linear-gradient(to right, #00B7FF, #A890FE);"><strong>📝 :</strong></mark> **As a** , **I want to** , **so that**`,
-// 			rules: {
-// 				allowedOn: "task",
-// 				parent: ruleHelpers.requireParentAnyOf([
-// 					FQ.agile.epic,
-// 					FQ.agile.feature,
-// 				]),
-// 			},
-// 		},
-// 		acceptanceCriteria: {
-// 			string: `<mark style="background: #CACFD9A6;"><strong>✅ :</strong></mark>`,
-// 			rules: {
-// 				allowedOn: "task",
-// 				parent: ruleHelpers.requireParent(FQ.agile.userStory),
-// 			},
-// 		},
-// 		product: {
-// 			string: `<mark style="background: #CACFD9A6;"><strong>📦 </strong></mark>`,
-// 			rules: {
-// 				allowedOn: "task",
-// 				parent: ruleHelpers.requireTopLevel(),
-// 			},
-// 		},
-// 		feature: {
-// 			string: `<mark style="background: #CACFD9A6;"><strong>⭐ :</strong></mark>`,
-// 			rules: {
-// 				allowedOn: "task",
-// 				parent: ruleHelpers.requireParentAnyOf([FQ.agile.product]),
-// 			},
-// 		},
-// 		artifactParentLink: {
-// 			string: `<a href="" class="internal-link">⬆️</a>`,
-// 			rules: {
-// 				allowedOn: "task",
-// 			},
-// 		},
-// 		okr: {
-// 			string: `<mark style="background: linear-gradient(to left, #38ADAE, #CD395A);"><strong>🎯 </strong></mark>`,
-// 			rules: {
-// 				allowedOn: "task",
-// 			},
-// 		},
-// 		kpi: {
-// 			string: `<mark style="background: #CACFD9A6;"><strong>🔁 </strong></mark>`,
-// 			rules: {
-// 				allowedOn: "task",
-// 				parent: ruleHelpers.requireParent(FQ.agile.okr),
-// 			},
-// 		},
-// 		personalLearningInitiative: {
-// 			string: `<mark style="background: linear-gradient(to right, #2c3e50, #3498db); color: #FFFFFF"><strong>🎓 </strong></mark>`,
-// 			rules: {
-// 				allowedOn: "task",
-// 			},
-// 		},
-// 		personalLearningEpic: {
-// 			string: `<mark style="background: linear-gradient(to right, #f0c27b, #4b1248); color: #FFFFFF"><strong>📚 </strong></mark>`,
-// 			rules: {
-// 				allowedOn: "task",
-// 				parent: ruleHelpers.requireParent(
-// 					FQ.agile.personalLearningInitiative
-// 				),
-// 			},
-// 		},
-// 	},
-// 	crm: {
-// 		paymentStates: {
-// 			abandoned: {
-// 				string: `<mark style="background: #FF5582A6;"><strong>Abandoned</strong></mark>`,
-// 				rules: { allowedOn: "task" },
-// 			},
-// 			awaitingDeposit: {
-// 				string: `<mark style="background: #FFB86CA6;"><strong>Awaiting Deposit</strong></mark>`,
-// 				rules: { allowedOn: "task" },
-// 			},
-// 			commission: {
-// 				string: `<mark style="background: #53BDA5;"><strong>Commission Paid /</strong></mark>`,
-// 				rules: { allowedOn: "task" },
-// 			},
-// 			depositPaid: {
-// 				string: `<mark style="background: #FEE12B;"><strong>Deposit Paid /</strong></mark>`,
-// 				rules: { allowedOn: "task" },
-// 			},
-// 			paidInFull: {
-// 				string: `<mark style="background: #2E8B57;"><strong>Paid in Full / </strong></mark>`,
-// 				rules: { allowedOn: "task" },
-// 			},
-// 			partiallyPaid: {
-// 				string: `<mark style="background: #FFB86CA6;"><strong>Paid  / </strong></mark>`,
-// 				rules: { allowedOn: "task" },
-// 			},
-// 			paymentPlan: {
-// 				string: `<mark style="background: #4169E1;"><strong>Payment Plan - [Number] Months - [End Date YYYY-MM-DD] - Paid  / </strong></mark>`,
-// 				rules: { allowedOn: "task" },
-// 			},
-// 		},
-// 	},
-// 	prioritization: {
-// 		kano: {
-// 			kanoL0Indifferent: {
-// 				string: `<mark style="background: #FFB8EBA6;"><strong>🔄 Kano - Indifferent</strong></mark>`,
-// 				rules: { allowedOn: "list" },
-// 			},
-// 			kanoL1BasicHeader: {
-// 				string: `<mark style="background: #CACFD9A6;"><strong>📦 Kano - Basic</strong></mark>`,
-// 				rules: { allowedOn: "list" },
-// 			},
-// 			kanoL2PerformantHeader: {
-// 				string: `<mark style="background: #FFF3A3A6;"><strong>⚡ Kano - Performant</strong></mark>`,
-// 				rules: { allowedOn: "list" },
-// 			},
-// 			kanoL3DelighterHeader: {
-// 				string: `<mark style="background: #00A86B;"><strong>💝 Kano - Delighter</strong></mark>`,
-// 				rules: { allowedOn: "list" },
-// 			},
-// 			kanoLMinus1DissatisfierHeader: {
-// 				string: `<mark style="background: #FF5582A6;"><strong>⬅️ Kano - Dissatisfier</strong></mark>`,
-// 				rules: { allowedOn: "list" },
-// 			},
-// 		},
-// 		moSCow: {
-// 			couldHave: {
-// 				string: `<mark style="background: #1E90FF;"><strong>❓ Could Have</strong></mark>`,
-// 				rules: { allowedOn: "list" },
-// 			},
-// 			mustHave: {
-// 				string: `<mark style="background: #00A86B;"><strong>❗Must-Have</strong></mark>`,
-// 				rules: { allowedOn: "list" },
-// 			},
-// 			shouldHave: {
-// 				string: `<mark style="background: #FEE12B;"><strong>🎁 Should Have</strong></mark>`,
-// 				rules: { allowedOn: "list" },
-// 			},
-// 			wontHave: {
-// 				string: `<mark style="background: #ED2939;"><strong>❌ Won’t Have</strong></mark>`,
-// 				rules: { allowedOn: "list" },
-// 			},
-// 		},
-// 		nalAp: {
-// 			adhoc: {
-// 				string: `📂 **Adhoc**`,
-// 				rules: { allowedOn: "list" },
-// 			},
-// 			always: {
-// 				string: `📍 **Always**`,
-// 				rules: { allowedOn: "list" },
-// 			},
-// 			done: {
-// 				string: `✅ **Done**`,
-// 				rules: { allowedOn: "list" },
-// 			},
-// 			dropped: {
-// 				string: `❌ **Dropped**`,
-// 				rules: { allowedOn: "list" },
-// 			},
-// 			later: {
-// 				string: `🛠️ **Later**`,
-// 				rules: { allowedOn: "list" },
-// 			},
-// 			now: {
-// 				string: `🚀 **Now**`,
-// 				rules: { allowedOn: "list" },
-// 			},
-// 		},
-// 	},
-// 	workflows: {
-// 		dates: {
-// 			deadline: {
-// 				string: ` 🎯`,
-// 				rules: { allowedOn: "task" },
-// 			},
-// 			snooze: {
-// 				string: `💤`,
-// 				rules: { allowedOn: "task" },
-// 			},
-// 		},
-// 		metadata: {
-// 			branch: {
-// 				string: `<mark style="background: ${
-// 					branchColor ?? "#000000"
-// 				}; color: 878787"><strong><a href="">🪵 </a></strong></mark>`,
-// 				rules: { allowedOn: "any" },
-// 			},
-// 			linkToArtifact: {
-// 				string: `<mark style="background: ${
-// 					linkToArtifactColor ?? "#000000"
-// 				}; color: 878787"><strong><a class="internal-link" href="${artifact}-block-link-with-no-square-brackets">🔗[emoji]</a></strong></mark>`, // Link to OKR by replacing Artifact with OKR
-// 				rules: { allowedOn: "task" },
-// 			},
-// 		},
-// 		states: {
-// 			blocked: {
-// 				string: `<mark style="background: ${
-// 					blockedColor ?? "#FF5582A6"
-// 				};">⛔ Requires: <a class="internal-link" href=""><strong>${taskOrPlaceholder}</strong></a></mark>`,
-// 				rules: { allowedOn: "task" },
-// 			},
-// 			pending: {
-// 				string: `<mark style="background: #FEE12B;">🕒 Resumes: <strong></strong></mark>`,
-// 				rules: { allowedOn: "task" },
-// 			},
-// 			waiting: {
-// 				string: `<mark style="background: #D2B3FFA6;">⌛ For: <strong>${taskOrPlaceholder}</strong></mark>`,
-// 				rules: { allowedOn: "task" },
-// 			},
-// 		},
-// 	},
-// 	obsidianExtensions: {
-// 		internalInlineLink: {
-// 			string: `<a href="" class="internal-link"></a>`,
-// 			rules: { allowedOn: "any" },
-// 		},
-// 	},
-// };
+			const text = `<strong>${emojis.story}${clause ? " :" : ""}</strong>${clause}`;
+
+			return taskLine(
+				chip({
+					id: "agile-user-story",
+					text,
+					orderTag: "artifact-item-type",
+					bg: `linear-gradient(to right, ${colors.userStoryFrom}, ${colors.userStoryTo})`,
+				})
+			);
+		},
+	},
+
+	acceptanceCriteria(): string {
+		return taskLine(
+			chip({
+				id: "agile-acceptance",
+				text: `<strong>${emojis.accept} :</strong>`,
+				orderTag: "artifact-item-type",
+				bg: colors.artifactGrey,
+			})
+		);
+	},
+
+	kpi(): string {
+		return taskLine(
+			chip({
+				id: "agile-kpi",
+				text: `<strong>${emojis.kpi} </strong>`,
+				orderTag: "artifact-item-type",
+				bg: colors.artifactGrey,
+			})
+		);
+	},
+
+	okr(): string {
+		return taskLine(
+			chip({
+				id: "agile-okr",
+				text: `<strong>${emojis.okr} </strong>`,
+				orderTag: "artifact-item-type",
+				bg: `linear-gradient(to left, ${colors.okrFrom}, ${colors.okrTo})`,
+			})
+		);
+	},
+
+	kpiLink(): string {
+		return taskLine(
+			chip({
+				id: "agile-kpi-link",
+				text: `<strong>${emojis.artifactLink.replace(
+					"[emoji]",
+					"🔁"
+				)}</strong>`,
+				orderTag: "artifact-item-type",
+				bg: colors.black,
+				color: colors.textGrey,
+				href: "", // user to fill
+			})
+		);
+	},
+
+	artifactParentLink(): string {
+		// rendered as a link wrapping a mark chip; orderTag is parent-link
+		return taskLine(
+			chip({
+				id: "agile-artifact-parent-link",
+				text: `${emojis.linkArrowUp}`,
+				orderTag: "parent-link",
+				href: "", // to be resolved by engine
+			})
+		);
+	},
+
+	review(): string {
+		// "- [R] <mark ...>Review</mark> ↪️Assign third-party to Review Following Completion"
+		const mark = chip({
+			id: "agile-review",
+			text: `${emojis.reviewTag}`,
+			orderTag: "artifact-item-type",
+			bg: `linear-gradient(to right, ${colors.reviewFrom}, ${colors.reviewTo})`,
+			color: colors.reviewText,
+		});
+		return `- [R] ${mark} ${emojis.reviewArrow}Assign third-party to Review Following Completion`;
+	},
+
+	personalLearningInitiative(): string {
+		return taskLine(
+			chip({
+				id: "agile-personal-learning-initiative",
+				text: `<strong>${emojis.learningGrad} </strong>`,
+				orderTag: "artifact-item-type",
+				bg: `linear-gradient(to right, ${colors.personalInitFrom}, ${colors.personalInitTo})`,
+				color: "#FFFFFF",
+			})
+		);
+	},
+
+	personalLearningEpic(): string {
+		return taskLine(
+			chip({
+				id: "agile-personal-learning-epic",
+				text: `<strong>${emojis.learningBook} </strong>`,
+				orderTag: "artifact-item-type",
+				bg: `linear-gradient(to right, ${colors.personalEpicFrom}, ${colors.personalEpicTo})`,
+				color: "#FFFFFF",
+			})
+		);
+	},
+};
+
+/**
+ * CRM — tasks or lists
+ * orderTag: "metadata-tag"
+ */
+export const CRM = {
+	abandoned(): string {
+		return listLine(
+			chip({
+				id: "crm-abandoned",
+				text: `<strong>Abandoned</strong>`,
+				orderTag: "metadata-tag",
+				bg: colors.crmAbandoned,
+			})
+		);
+	},
+	awaitingDeposit(): string {
+		return listLine(
+			chip({
+				id: "crm-awaiting-deposit",
+				text: `<strong>Awaiting Deposit</strong>`,
+				orderTag: "metadata-tag",
+				bg: colors.crmAwaiting,
+			})
+		);
+	},
+	commission(): string {
+		return listLine(
+			chip({
+				id: "crm-commission",
+				text: `<strong>Commission Paid /</strong>`,
+				orderTag: "metadata-tag",
+				bg: colors.crmCommission,
+			})
+		);
+	},
+	depositPaid(): string {
+		return listLine(
+			chip({
+				id: "crm-deposit",
+				text: `<strong>Deposit Paid /</strong>`,
+				orderTag: "metadata-tag",
+				bg: colors.crmDeposit,
+			})
+		);
+	},
+	paidInFull(): string {
+		return listLine(
+			chip({
+				id: "crm-paid-full",
+				text: `<strong>Paid in Full / </strong>`,
+				orderTag: "metadata-tag",
+				bg: colors.crmPaidFull,
+			})
+		);
+	},
+	partiallyPaid(): string {
+		return listLine(
+			chip({
+				id: "crm-partially-paid",
+				text: `<strong>Paid  / </strong>`,
+				orderTag: "metadata-tag",
+				bg: colors.crmPartially,
+			})
+		);
+	},
+	paymentPlan(): string {
+		return listLine(
+			chip({
+				id: "crm-payment-plan",
+				text: `<strong>Payment Plan - [Number] Months - [End Date YYYY-MM-DD] - Paid  / </strong>`,
+				orderTag: "metadata-tag",
+				bg: colors.crmPaymentPlan,
+			})
+		);
+	},
+};
+
+/**
+ * Members — tasks only
+ * orderTag: "assignee"
+ * Assumes you already have logic for `assignedPerson`.
+ */
+export const Members = {
+	assignee(label = "🤝 Everyone"): string {
+		return taskLine(
+			chip({
+				id: "assignee",
+				text: `<strong>${emojis.everyone} Everyone</strong>`,
+				orderTag: "assignee",
+				bg: "#FFFFFF",
+				color: "#000000",
+				extraAttrs: { class: "active-team internal-link" },
+			})
+		);
+	},
+};
+/**
+ * Prioritization — lists only
+ * orderTag: "artifact-item-type"
+ */
+export const Prioritization = {
+	// Kano sections
+	kanoDissatisfierHeader(): string {
+		return listLine(
+			chip({
+				id: "kano-dissatisfier-header",
+				text: `<strong>${emojis.kanoLeft} Kano - Dissatisfier</strong>`,
+				orderTag: "artifact-item-type",
+				bg: colors.kanoDissatisfier,
+			})
+		);
+	},
+	kanoDissatisfierInfo(): string {
+		return listLine(
+			chip({
+				id: "kano-dissatisfier-info",
+				text: `${emojis.kanoLeft} `,
+				orderTag: "artifact-item-type",
+				bg: colors.kanoDissatisfier,
+			})
+		);
+	},
+	kanoIndifferentHeader(): string {
+		return listLine(
+			chip({
+				id: "kano-indifferent-header",
+				text: `<strong>${emojis.kanoIndiff} Kano - Indifferent</strong>`,
+				orderTag: "artifact-item-type",
+				bg: colors.kanoIndifferent,
+			})
+		);
+	},
+	kanoIndifferentInfo(): string {
+		return listLine(
+			chip({
+				id: "kano-indifferent-info",
+				text: `${emojis.kanoIndiff} `,
+				orderTag: "artifact-item-type",
+				bg: colors.kanoIndifferent,
+			})
+		);
+	},
+	kanoBasicHeader(): string {
+		return listLine(
+			chip({
+				id: "kano-basic-header",
+				text: `<strong>${emojis.kanoBasic} Kano - Basic</strong>`,
+				orderTag: "artifact-item-type",
+				bg: colors.kanoBasic,
+			})
+		);
+	},
+	kanoBasicInfo(): string {
+		return listLine(
+			chip({
+				id: "kano-basic-info",
+				text: `${emojis.kanoBasic} `,
+				orderTag: "artifact-item-type",
+				bg: colors.kanoBasic,
+			})
+		);
+	},
+	kanoPerformantHeader(): string {
+		return listLine(
+			chip({
+				id: "kano-performant-header",
+				text: `<strong>${emojis.kanoPerf} Kano - Performant</strong>`,
+				orderTag: "artifact-item-type",
+				bg: colors.kanoPerformant,
+			})
+		);
+	},
+	kanoPerformantInfo(): string {
+		return listLine(
+			chip({
+				id: "kano-performant-info",
+				text: `${emojis.kanoPerf} `,
+				orderTag: "artifact-item-type",
+				bg: colors.kanoPerformant,
+			})
+		);
+	},
+	kanoDelighterHeader(): string {
+		return listLine(
+			chip({
+				id: "kano-delighter-header",
+				text: `<strong>${emojis.kanoDelight} Kano - Delighter</strong>`,
+				orderTag: "artifact-item-type",
+				bg: colors.kanoDelighter,
+			})
+		);
+	},
+	kanoDelighterInfo(): string {
+		return listLine(
+			chip({
+				id: "kano-delighter-info",
+				text: `<strong>${emojis.kanoDelight} </strong>`,
+				orderTag: "artifact-item-type",
+				bg: colors.kanoDelighter,
+			})
+		);
+	},
+
+	// MoSCoW headers
+	moscowCould(): string {
+		return listLine(
+			chip({
+				id: "moscow-could",
+				text: `<strong>❓ Could Have</strong>`,
+				orderTag: "artifact-item-type",
+				bg: colors.moscowCould,
+			})
+		);
+	},
+	moscowMust(): string {
+		return listLine(
+			chip({
+				id: "moscow-must",
+				text: `<strong>❗Must-Have</strong>`,
+				orderTag: "artifact-item-type",
+				bg: colors.moscowMust,
+			})
+		);
+	},
+	moscowShould(): string {
+		return listLine(
+			chip({
+				id: "moscow-should",
+				text: `<strong>🎁 Should Have</strong>`,
+				orderTag: "artifact-item-type",
+				bg: colors.moscowShould,
+			})
+		);
+	},
+	moscowWont(): string {
+		return listLine(
+			chip({
+				id: "moscow-wont",
+				text: `<strong>❌ Won’t Have</strong>`,
+				orderTag: "artifact-item-type",
+				bg: colors.moscowWont,
+			})
+		);
+	},
+
+	// NALAp
+	nalapAdhoc(): string {
+		return listLine(
+			`📂 **Adhoc** ${chip({
+				id: "nalap-adhoc",
+				text: "",
+				orderTag: "artifact-item-type",
+			})}`
+		);
+	},
+	nalapAlways(): string {
+		return listLine(
+			`📍 **Always** ${chip({
+				id: "nalap-always",
+				text: "",
+				orderTag: "artifact-item-type",
+			})}`
+		);
+	},
+	nalapDone(): string {
+		return listLine(
+			`✅ **Done** ${chip({
+				id: "nalap-done",
+				text: "",
+				orderTag: "artifact-item-type",
+			})}`
+		);
+	},
+	nalapDropped(): string {
+		return listLine(
+			`❌ **Dropped** ${chip({
+				id: "nalap-dropped",
+				text: "",
+				orderTag: "artifact-item-type",
+			})}`
+		);
+	},
+	nalapLater(): string {
+		return listLine(
+			`🛠️ **Later** ${chip({
+				id: "nalap-later",
+				text: "",
+				orderTag: "artifact-item-type",
+			})}`
+		);
+	},
+	nalapNow(): string {
+		return listLine(
+			`🚀 **Now** ${chip({
+				id: "nalap-now",
+				text: "",
+				orderTag: "artifact-item-type",
+			})}`
+		);
+	},
+};
+
+/**
+ * Workflows
+ * - Metadata — tasks only, orderTag: "metadata-tag"
+ * - States — tasks only, orderTag: "metadata-tag"
+ */
+export const Workflows = {
+	// Metadata
+	pr(): string {
+		return taskLine(
+			chip({
+				id: "wf-pr",
+				text: `<strong><a href="">${emojis.pr} </a></strong>`,
+				orderTag: "metadata-tag",
+				bg: colors.black,
+				color: colors.textGrey,
+			})
+		);
+	},
+	branch(): string {
+		return taskLine(
+			chip({
+				id: "wf-branch",
+				text: `<strong><a href="">${emojis.branch} </a></strong>`,
+				orderTag: "metadata-tag",
+				bg: colors.black,
+				color: colors.textGrey,
+			})
+		);
+	},
+	linkToArtifact(): string {
+		return taskLine(
+			chip({
+				id: "wf-link-to-artifact",
+				text: `<strong><a class="internal-link" href="Artifact-block-link-with-no-square-brackets">🔗</a></strong>`,
+				orderTag: "metadata-tag",
+				bg: colors.black,
+				color: colors.textGrey,
+			})
+		);
+	},
+
+	// States
+	blocked(): string {
+		return taskLine(
+			chip({
+				id: "state-blocked",
+				text: `⛔ Requires: <a class="internal-link" href=""><strong></strong></a>`,
+				orderTag: "metadata-tag",
+				bg: colors.statesBlocked,
+			})
+		);
+	},
+	pending(): string {
+		return taskLine(
+			chip({
+				id: "state-pending",
+				text: `🕒 Resumes: <strong></strong>`,
+				orderTag: "metadata-tag",
+				bg: colors.statesPending,
+			})
+		);
+	},
+	waiting(): string {
+		return taskLine(
+			chip({
+				id: "state-waiting",
+				text: `⌛ For: <strong></strong>`,
+				orderTag: "metadata-tag",
+				bg: colors.statesWaiting,
+			})
+		);
+	},
+};
+
+/**
+ * Obsidian Extensions — can be inserted on tasks, lists, or outside both
+ * orderTag: varies ("metadata-tag" here for links/timestamps, or choose "extension-tag")
+ */
+export const ObsidianExtensions = {
+	internalInlineLink(): string {
+		return chip({
+			id: "obsidian-internal-link",
+			text: `<a href="" class="internal-link"></a>`,
+			orderTag: "metadata-tag",
+			bg: colors.obsidianTagGrey,
+		});
+	},
+	timestamp(): string {
+		return chip({
+			id: "obsidian-timestamp",
+			text: `<strong>🕔 {{date:YYYY-MM-DD HH:MM:SS}}</strong>`,
+			orderTag: "metadata-tag",
+			bg: colors.obsidianTagGrey,
+		});
+	},
+	datestamp(): string {
+		return chip({
+			id: "obsidian-datestamp",
+			text: `<strong>🕔 {{date:YYYY-MM-DD}}</strong>`,
+			orderTag: "metadata-tag",
+			bg: colors.obsidianTagGrey,
+		});
+	},
+};
+
+// Group export that templateApi.findTemplateById expects
+export const presetTemplates = {
+	agile: Agile,
+	crm: CRM,
+	members: Members,
+	prioritization: Prioritization,
+	workflows: Workflows,
+	obsidian: ObsidianExtensions,
+};
