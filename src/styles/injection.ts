@@ -1,6 +1,5 @@
 /* Utilities to inject/remove the plugin's CSS snippets at runtime */
 
-/// <reference types="dom" />
 // Import the CSS content as text (relies on your bundler config)
 // @ts-ignore
 import checkboxCss from "./checkboxes.css";

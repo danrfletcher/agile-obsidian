@@ -1,5 +1,5 @@
 import { ItemView, WorkspaceLeaf, TFile, TAbstractFile } from "obsidian";
-import { TaskIndex } from "../index/TaskIndex";
+import { TaskIndex } from "../features/taskIndex/TaskIndex";
 import { TaskItem } from "../types/TaskItem";
 import manifest from "../../manifest.json";
 import { cleanupExpiredSnoozes } from "../utils/snooze/snoozeUtils";
