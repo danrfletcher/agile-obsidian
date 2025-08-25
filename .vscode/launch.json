@@ -1,0 +1,14 @@
+{
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"name": "Obsidian",
+			"type": "pwa-chrome",
+			"request": "attach",
+			"port": 9222,
+			"webRoot": "${workspaceFolder}",
+			"timeout": 10000,
+			"trace": false
+		}
+	]
+}
