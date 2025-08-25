@@ -5,22 +5,17 @@ import {
 	renderTemplateOnly,
 	inferParamsForWrapper,
 	resolveModalTitleFromSchema,
+	getTemplateWrapperOnLine,
 } from "./templateApi";
 import { presetTemplates } from "./presets";
+import { getCursorContext } from "./cursorContext";
 import type {
 	TemplateDefinition,
 	ParamsSchema,
 	ParamsSchemaField,
 } from "./types";
 
-// Helper to resolve file path from a MarkdownView without using `any`
-function getFilePathFromView(view?: MarkdownView): string {
-	if (!view) return "";
-	const maybe = view as unknown as { file?: { path?: string } };
-	return maybe.file?.path ?? "";
-}
-
-// Helper to prepare modal title/options from paramsSchema and isEdit flag
+// Helper to choose modal title
 function prepareModalOptions(
 	schema: ParamsSchema | undefined,
 	isEdit: boolean
@@ -29,41 +24,7 @@ function prepareModalOptions(
 	return { title };
 }
 
-/**
- Decide how to get params for a template:
- - If caller provided paramsProgrammatic, use those (no prompt).
- - Else if def.hasParams === true:
-    - If def.paramsSchema present => show schema form modal
-    - Else => fallback to raw JSON modal
- - Else return undefined
-*/
-async function resolveParamsForTemplate(
-	app: App,
-	templateId: string,
-	def: TemplateDefinition,
-	paramsProgrammatic?: unknown
-): Promise<unknown | undefined> {
-	if (paramsProgrammatic && typeof paramsProgrammatic === "object") {
-		return paramsProgrammatic; // programmatic override, no prompt
-	}
-	if (!def.hasParams) return undefined;
-
-	if (def.paramsSchema && def.paramsSchema.fields?.length) {
-		// Creating a new template instance -> show 'create' title
-		return await promptForSchemaParams(
-			app,
-			templateId,
-			def.paramsSchema,
-			false
-		);
-	}
-	// Fallback to JSON if no schema provided
-	return await promptForJsonParams(app, templateId);
-}
-
-/**
- Schema-based form modal
-*/
+// Prompt for schema params modal
 function promptForSchemaParams(
 	app: App,
 	templateId: string,
@@ -80,7 +41,6 @@ function promptForSchemaParams(
 
 			onOpen(): void {
 				const { contentEl } = this;
-				// Use helper to determine title
 				const opts = prepareModalOptions(schema, isEdit);
 				const title =
 					opts.title ||
@@ -95,14 +55,11 @@ function promptForSchemaParams(
 					p.style.marginBottom = "8px";
 				}
 
-				// Ensure safe iteration and indexing for schema fields
-				// build inputs
 				for (const field of (schema.fields ??
 					[]) as ParamsSchemaField[]) {
 					const wrap = contentEl.createEl("div", {
 						attr: { style: "margin-bottom: 10px;" },
 					});
-
 					const labelEl = wrap.createEl("label", {
 						text:
 							(field.label ?? field.name) +
@@ -134,7 +91,6 @@ function promptForSchemaParams(
 						});
 					}
 
-					// store input
 					(this.inputs as Record<string, unknown>)[field.name] =
 						inputEl;
 
@@ -151,14 +107,15 @@ function promptForSchemaParams(
 				const btnRow = contentEl.createEl("div", {
 					attr: { style: "display:flex; gap:8px; margin-top: 12px;" },
 				});
-				const okBtn = btnRow.createEl("button", { text: "Insert" });
+				const okBtn = btnRow.createEl("button", {
+					text: isEdit ? "Update" : "Insert",
+				});
 				const cancelBtn = btnRow.createEl("button", { text: "Cancel" });
 
 				okBtn.addEventListener("click", () => {
 					if (this.resolved) return;
 					const values: Record<string, unknown> = {};
 					let valid = true;
-					// collect values
 					for (const field of (schema.fields ??
 						[]) as ParamsSchemaField[]) {
 						const el = (this.inputs as Record<string, unknown>)[
@@ -170,7 +127,6 @@ function promptForSchemaParams(
 							raw = String((el as HTMLInputElement).value);
 						else raw = String(el.textContent ?? "");
 						(values as Record<string, unknown>)[field.name] = raw;
-
 						if (field.required && raw.trim().length === 0) {
 							new Notice(`"${field.label}" is required`);
 							valid = false;
@@ -200,9 +156,6 @@ function promptForSchemaParams(
 	});
 }
 
-/**
- JSON fallback modal (used only when hasParams=true but no paramsSchema is defined)
-*/
 function promptForJsonParams(
 	app: App,
 	templateId: string
@@ -228,7 +181,6 @@ function promptForJsonParams(
 				const btnRow = contentEl.createEl("div", {
 					attr: { style: "display:flex; gap:8px; margin-top: 12px;" },
 				});
-
 				const okBtn = btnRow.createEl("button", { text: "Insert" });
 				const cancelBtn = btnRow.createEl("button", { text: "Cancel" });
 
@@ -258,6 +210,7 @@ function promptForJsonParams(
 					resolve(undefined);
 				});
 			}
+
 			onClose(): void {
 				this.contentEl.empty();
 			}
@@ -267,14 +220,32 @@ function promptForJsonParams(
 	});
 }
 
+async function resolveParamsForTemplate(
+	app: App,
+	templateId: string,
+	def: TemplateDefinition,
+	paramsProgrammatic?: unknown
+): Promise<unknown | undefined> {
+	if (paramsProgrammatic && typeof paramsProgrammatic === "object")
+		return paramsProgrammatic;
+	if (!def.hasParams) return undefined;
+	if (def.paramsSchema && def.paramsSchema.fields?.length)
+		return await promptForSchemaParams(
+			app,
+			templateId,
+			def.paramsSchema,
+			false
+		);
+	return await promptForJsonParams(app, templateId);
+}
+
 function reportInsertError(err: unknown): void {
-	function asRecord(x: unknown): x is Record<string, unknown> {
-		return typeof x === "object" && x !== null;
-	}
 	let code = "ERROR";
 	let extra = "";
-	if (asRecord(err)) {
-		const details = err["details"] as Record<string, unknown> | undefined;
+	if (typeof err === "object" && err !== null) {
+		const details = (err as Record<string, unknown>)["details"] as
+			| Record<string, unknown>
+			| undefined;
 		const msgs = (details?.["messages"] ??
 			(err as Record<string, unknown>)["messages"]) as
 			| string[]
@@ -290,128 +261,6 @@ function reportInsertError(err: unknown): void {
 	new Notice(`Template insert failed [${code}]${extra}`);
 }
 
-// Find the nearest template wrapper for a click target
-function findTemplateWrapper(el: HTMLElement | null): HTMLElement | null {
-	while (el) {
-		if (el.hasAttribute("data-template-wrapper")) return el;
-		el = el.parentElement;
-	}
-	return null;
-}
-
-async function onTemplateWrapperClick(
-	app: App,
-	wrapperEl: HTMLElement
-): Promise<void> {
-	const templateKey = wrapperEl.getAttribute("data-template-key") ?? "";
-	if (!templateKey) return;
-
-	// Lookup definition
-	const [group, key] = templateKey.split(".");
-	let def: TemplateDefinition | undefined = undefined;
-	// Safe access: cast to an indexable shape to avoid string-key indexing issues
-	const groupMap = presetTemplates as unknown as Record<
-		string,
-		Record<string, TemplateDefinition>
-	>;
-	if (group in groupMap) {
-		def = groupMap[group]?.[key] as TemplateDefinition | undefined;
-	}
-	if (!def) return;
-
-	// Only parameterized templates open a modal
-	if (!def.hasParams) return;
-
-	// Prefill values from DOM if we can
-	const prefill = inferParamsForWrapper(templateKey, wrapperEl) ?? {};
-
-	// If no schema provided, fall back to JSON modal; else use schema modal
-	let params: Record<string, unknown> | undefined;
-	if (def.paramsSchema && def.paramsSchema.fields?.length) {
-		const schema = {
-			...def.paramsSchema,
-			fields: def.paramsSchema.fields.map((f) => ({
-				...f,
-				defaultValue:
-					prefill[f.name] != null
-						? String(prefill[f.name] ?? "")
-						: f.defaultValue,
-			})),
-		};
-		// Editing an existing template instance -> show 'Edit' title
-		params = await promptForSchemaParams(app, templateKey, schema, true);
-	} else {
-		// JSON path: seed with prefill
-		const jsonParams = JSON.stringify(prefill ?? {}, null, 2);
-		params = await new Promise((resolve) => {
-			const modal = new (class extends Modal {
-				private textarea!: HTMLTextAreaElement;
-				private resolved = false;
-
-				onOpen(): void {
-					this.titleEl.setText(`Params for ${templateKey}`);
-					const { contentEl } = this;
-					contentEl.createEl("p", {
-						text: "Edit template params as JSON.",
-					});
-					this.textarea = contentEl.createEl("textarea", {
-						attr: { rows: "10", style: "width: 100%;" },
-					});
-					this.textarea.value = jsonParams;
-
-					const btnRow = contentEl.createEl("div", {
-						attr: {
-							style: "display:flex; gap:8px; margin-top: 12px;",
-						},
-					});
-					const okBtn = btnRow.createEl("button", { text: "Apply" });
-					const cancelBtn = btnRow.createEl("button", {
-						text: "Cancel",
-					});
-					okBtn.addEventListener("click", () => {
-						if (this.resolved) return;
-						this.resolved = true;
-						try {
-							const parsed = JSON.parse(this.textarea.value);
-							this.close();
-							resolve(parsed);
-						} catch (e) {
-							const msg = (e as Error)?.message ?? "Parse error";
-							new Notice(`Invalid JSON: ${msg}`);
-							this.resolved = false;
-						}
-					});
-					cancelBtn.addEventListener("click", () => {
-						if (this.resolved) return;
-						this.resolved = true;
-						this.close();
-						resolve(undefined);
-					});
-				}
-				onClose(): void {
-					this.contentEl.empty();
-				}
-			})(app);
-			modal.open();
-		});
-	}
-
-	if (!params) return;
-
-	// Re-render the template HTML with new params and replace wrapper element wholesale
-	try {
-		const newHtml = renderTemplateOnly(templateKey, params);
-		// Replace the entire wrapper element (outerHTML) so a fresh instanceId is used
-		wrapperEl.outerHTML = newHtml;
-	} catch (e) {
-		const msg = (e as Error)?.message ?? String(e);
-		new Notice(`Failed to update template: ${msg}`);
-	}
-}
-
-/**
- Flatten presetTemplates into a list of { id, name, entry }.
-*/
 function enumeratePresetTemplates(): Array<{
 	id: string;
 	name: string;
@@ -426,7 +275,6 @@ function enumeratePresetTemplates(): Array<{
 			.split(".")
 			.map((seg) => titleCase(seg))
 			.join(" / ");
-
 	for (const [group, groupObj] of Object.entries(presetTemplates)) {
 		if (group === "members") continue;
 		for (const [key, entry] of Object.entries(groupObj ?? {})) {
@@ -448,11 +296,6 @@ function enumeratePresetTemplates(): Array<{
 	return out;
 }
 
-/**
- Command Manager
- - Registers dynamic commands based on current cursor/context.
- - Clears and rebuilds on editor/cursor changes with debounce.
-*/
 class DynamicTemplateCommandManager {
 	private registeredIds = new Set<string>();
 	constructor(
@@ -468,43 +311,39 @@ class DynamicTemplateCommandManager {
 			}) => void;
 		}
 	) {}
-
 	clearCommands() {
 		this.registeredIds.clear();
 	}
-
 	registerAllowedCommands(
 		allowed: Array<{ id: string; name: string; def: TemplateDefinition }>
 	) {
 		for (const { id, name, def } of allowed) {
 			if (id.startsWith("members.")) continue;
 			if (def.hiddenFromDynamicCommands) continue;
-
 			const cmdId = `tpl-${id.replace(/\./g, "-")}`;
 			if (this.registeredIds.has(cmdId)) continue;
-
 			this.plugin.addCommand({
 				id: cmdId,
 				name: `Insert Template: ${name}`,
 				editorCallback: async (editor, view) => {
 					try {
 						if (!(view instanceof MarkdownView)) return;
-						const filePath = getFilePathFromView(view);
+						const ctx = await getCursorContext(
+							this.plugin.app,
+							view,
+							editor
+						);
+						const filePath = ctx.filePath;
 						if (!filePath) return;
-
 						const [group, key] = id.split(".");
-						let defRef: TemplateDefinition | undefined = undefined;
 						const groupMap = presetTemplates as unknown as Record<
 							string,
 							Record<string, TemplateDefinition>
 						>;
-						if (group in groupMap) {
-							defRef = groupMap[group]?.[key] as
-								| TemplateDefinition
-								| undefined;
-						}
+						const defRef = groupMap[group]?.[key] as
+							| TemplateDefinition
+							| undefined;
 						if (!defRef) return;
-
 						const params = await resolveParamsForTemplate(
 							this.plugin.app,
 							id,
@@ -517,23 +356,11 @@ class DynamicTemplateCommandManager {
 					}
 				},
 			});
-
 			this.registeredIds.add(cmdId);
 		}
 	}
 }
 
-function resolveContentRoot(view: MarkdownView): HTMLElement | null {
-	// Prefer the actual CodeMirror 6 content surface
-	const cmContent =
-		(view as any)?.editor?.cm?.contentDOM ||
-		view.containerEl.querySelector(".cm-content");
-	return (cmContent as HTMLElement) ?? null;
-}
-
-/**
- Public API: register all template commands dynamically based on context.
-*/
 export function registerTemplatingCommands(plugin: {
 	app: App;
 	addCommand: (cmd: {
@@ -547,20 +374,16 @@ export function registerTemplatingCommands(plugin: {
 	registerEvent?: (evt: unknown) => void;
 	onLayoutReady?: (cb: () => void) => void;
 }): void {
-	// Do NOT cache allTemplates permanently if presets may change; recompute inside refresh.
 	const manager = new DynamicTemplateCommandManager(plugin);
-
-	// Debounced refresh: re-register commands allowed in the current context
 	const refresh = debounce(
-		() => {
+		async () => {
 			const view = plugin.app.workspace.getActiveViewOfType(MarkdownView);
 			if (!view) return;
 			const editor = view.editor;
-			const filePath = getFilePathFromView(view);
+			const ctx = await getCursorContext(plugin.app, view, editor);
+			const filePath = ctx.filePath;
 			if (!filePath) return;
-
 			const pool = enumeratePresetTemplates();
-
 			const allowed: Array<{
 				id: string;
 				name: string;
@@ -569,8 +392,9 @@ export function registerTemplatingCommands(plugin: {
 			for (const entry of pool) {
 				if (entry.id.startsWith("members.")) continue;
 				try {
-					if (isTemplateAllowedAtCursor(entry.id, editor, filePath))
+					if (isTemplateAllowedAtCursor(entry.id, editor, filePath)) {
 						allowed.push(entry);
+					}
 				} catch (e) {
 					console.warn(
 						"isTemplateAllowedAtCursor failed for",
@@ -579,7 +403,6 @@ export function registerTemplatingCommands(plugin: {
 					);
 				}
 			}
-
 			manager.clearCommands();
 			manager.registerAllowedCommands(allowed);
 		},
@@ -587,41 +410,223 @@ export function registerTemplatingCommands(plugin: {
 		true
 	);
 
-	// Click-to-edit: delegate on the CodeMirror content area specifically
 	const wireClickHandler = () => {
 		const view = plugin.app.workspace.getActiveViewOfType(MarkdownView);
 		if (!view) return;
-
-		// Resolve the content root reliably
-		const contentRoot = resolveContentRoot(view) as any;
-		// Fallback to containerEl if content root not present yet
-		const targetEl: HTMLElement =
-			(contentRoot as HTMLElement) ?? (view as any).containerEl;
+		const cmHolder = view as unknown as {
+			editor?: { cm?: { contentDOM?: HTMLElement } };
+		};
+		const cmContent = cmHolder.editor?.cm?.contentDOM;
+		const contentRoot = (cmContent ??
+			view.containerEl.querySelector(
+				".cm-content"
+			)) as HTMLElement | null;
+		const targetEl: HTMLElement = contentRoot ?? view.containerEl;
 		if (!targetEl) return;
-
-		// Avoid multiple listeners
 		const MARKER = "__tplClickWired";
-		if ((targetEl as any)[MARKER]) return;
-		(targetEl as any)[MARKER] = true;
+		const markerObj = targetEl as unknown as Record<string, unknown>;
+		if (markerObj[MARKER]) return;
+		markerObj[MARKER] = true;
 
-		// Capture-phase to intercept before default link/navigation handlers
 		targetEl.addEventListener(
 			"click",
 			async (evt: MouseEvent) => {
 				const target = evt.target as HTMLElement | null;
 				if (!target) return;
-
-				const wrapper = findTemplateWrapper(target);
-				if (!wrapper) return;
-
+				// find wrapper element
+				let el: HTMLElement | null = target;
+				while (el) {
+					if (el.hasAttribute("data-template-wrapper")) break;
+					el = el.parentElement;
+				}
+				if (!el) return;
 				evt.preventDefault();
 				evt.stopPropagation();
-
 				try {
-					await onTemplateWrapperClick(plugin.app, wrapper);
-				} catch {
-					// ignore
+					// call click-to-edit
+					const templateKey =
+						el.getAttribute("data-template-key") ?? "";
+					if (!templateKey) return;
+					const [group, key] = templateKey.split(".");
+					const groupMap = presetTemplates as unknown as Record<
+						string,
+						Record<string, TemplateDefinition>
+					>;
+					const def = groupMap[group]?.[key] as
+						| TemplateDefinition
+						| undefined;
+					if (!def) return;
+					if (!def.hasParams) return;
+
+					const prefill =
+						inferParamsForWrapper(templateKey, el) ?? {};
+					let params: Record<string, unknown> | undefined;
+					if (def.paramsSchema && def.paramsSchema.fields?.length) {
+						const schema = {
+							...def.paramsSchema,
+							fields: def.paramsSchema.fields.map((f) => ({
+								...f,
+								defaultValue:
+									prefill[f.name] != null
+										? String(prefill[f.name] ?? "")
+										: f.defaultValue,
+							})),
+						};
+						params = await promptForSchemaParams(
+							plugin.app,
+							templateKey,
+							schema,
+							true
+						);
+					} else {
+						// JSON path
+						const jsonParams = JSON.stringify(
+							prefill ?? {},
+							null,
+							2
+						);
+						params = await new Promise((resolve) => {
+							const modal = new (class extends Modal {
+								private textarea!: HTMLTextAreaElement;
+								private resolved = false;
+								onOpen(): void {
+									this.titleEl.setText(
+										`Params for ${templateKey}`
+									);
+									const { contentEl } = this;
+									contentEl.createEl("p", {
+										text: "Edit template params as JSON.",
+									});
+									this.textarea = contentEl.createEl(
+										"textarea",
+										{
+											attr: {
+												rows: "10",
+												style: "width:100%;",
+											},
+										}
+									);
+									this.textarea.value = jsonParams;
+									const btnRow = contentEl.createEl("div", {
+										attr: {
+											style: "display:flex; gap:8px; margin-top: 12px;",
+										},
+									});
+									const okBtn = btnRow.createEl("button", {
+										text: "Apply",
+									});
+									const cancelBtn = btnRow.createEl(
+										"button",
+										{ text: "Cancel" }
+									);
+									okBtn.addEventListener("click", () => {
+										if (this.resolved) return;
+										this.resolved = true;
+										try {
+											const parsed = JSON.parse(
+												this.textarea.value
+											);
+											this.close();
+											resolve(parsed);
+										} catch (e) {
+											new Notice("Invalid JSON");
+											this.resolved = false;
+										}
+									});
+									cancelBtn.addEventListener("click", () => {
+										if (this.resolved) return;
+										this.resolved = true;
+										this.close();
+										resolve(undefined);
+									});
+								}
+								onClose(): void {
+									this.contentEl.empty();
+								}
+							})(plugin.app);
+							modal.open();
+						});
+					}
+
+					if (!params) return;
+					try {
+						const newHtml = renderTemplateOnly(templateKey, params);
+						el.outerHTML = newHtml;
+					} catch (e) {
+						new Notice(
+							`Failed to update template: ${String(
+								(e as Error)?.message ?? e
+							)}`
+						);
+					}
+				} catch (err) {
+					reportInsertError(err as unknown);
 				}
+			},
+			true
+		);
+
+		// Enter auto-open handler
+		targetEl.addEventListener(
+			"keydown",
+			async (evt: KeyboardEvent) => {
+				if (evt.key !== "Enter") return;
+				setTimeout(async () => {
+					const view =
+						plugin.app.workspace.getActiveViewOfType(MarkdownView);
+					if (!view) return;
+					const editor = view.editor;
+					const ctx = await getCursorContext(
+						plugin.app,
+						view,
+						editor
+					);
+					const prevLine = ctx.lineNumber - 1;
+					if (prevLine < 0) return;
+
+					// Use getTemplateWrapperOnLine from templateApi
+					const wrapperInfo = getTemplateWrapperOnLine(
+						view,
+						prevLine
+					);
+					if (!wrapperInfo || !wrapperInfo.templateKey) return;
+					if (wrapperInfo.orderTag !== "artifact-item-type") return;
+					if ((ctx.lineText ?? "").trim().length > 0) return;
+
+					const [g, k] = (wrapperInfo.templateKey ?? "").split(".");
+					const groupMap = presetTemplates as unknown as Record<
+						string,
+						Record<string, TemplateDefinition>
+					>;
+					const def = groupMap[g]?.[k] as
+						| TemplateDefinition
+						| undefined;
+					if (!def || !def.hasParams) return;
+
+					const schema = def.paramsSchema
+						? {
+								...def.paramsSchema,
+								fields:
+									def.paramsSchema.fields?.map((f) => ({
+										...f,
+									})) ?? [],
+						  }
+						: undefined;
+					if (!schema) return;
+					const params = await promptForSchemaParams(
+						plugin.app,
+						wrapperInfo.templateKey!,
+						schema,
+						false
+					);
+					if (!params) return;
+					insertTemplateAtCursor(
+						wrapperInfo.templateKey!,
+						editor,
+						ctx.filePath,
+						params as Record<string, unknown> | undefined
+					);
+				}, 50);
 			},
 			true
 		);
@@ -631,7 +636,6 @@ export function registerTemplatingCommands(plugin: {
 		wireClickHandler();
 		refresh();
 	});
-
 	plugin.app.workspace.on("active-leaf-change", () => {
 		wireClickHandler();
 		refresh();
@@ -650,9 +654,6 @@ export function registerTemplatingCommands(plugin: {
 	});
 }
 
-/**
- Programmatic API
-*/
 export async function insertTemplateProgrammatically(
 	app: App,
 	editor: MarkdownView["editor"],
@@ -662,21 +663,17 @@ export async function insertTemplateProgrammatically(
 ) {
 	try {
 		const [group, key] = templateId.split(".");
-		let def: TemplateDefinition | undefined = undefined;
-		// Safe access via a cast to avoid TS index signature errors
 		const groupMap = presetTemplates as unknown as Record<
 			string,
 			Record<string, TemplateDefinition>
 		>;
-		if (group in groupMap) {
-			def = groupMap[group]?.[key] as TemplateDefinition | undefined;
-		}
+		const def = groupMap[group]?.[key] as TemplateDefinition | undefined;
 		if (!def) throw new Error(`Template not found: ${templateId}`);
 		const finalParams =
 			params ??
 			(await resolveParamsForTemplate(app, templateId, def, undefined));
 		insertTemplateAtCursor(templateId, editor, filePath, finalParams);
 	} catch (err) {
-		reportInsertError(err);
+		reportInsertError(err as unknown);
 	}
 }
