@@ -10,7 +10,7 @@ import { TemplateInsertError } from "./types";
 import { presetTemplates } from "./presets";
 import { evaluateRules } from "./rules";
 import { getParentChainTemplateIds } from "src/utils/fs/editorUtils";
-import type { Editor } from "obsidian";
+import type { Editor, MarkdownView } from "obsidian";
 import { getLineKind } from "src/utils/fs/fsUtils";
 
 type AllowedOn = "task" | "list" | "any";
@@ -383,4 +383,36 @@ export function resolveModalTitleFromSchema(
 		return titles.create ?? paramsSchema.title ?? "";
 	}
 	return paramsSchema.title ?? "";
+}
+
+export function getTemplateWrapperOnLine(view: MarkdownView | undefined, lineNumber: number): {
+	wrapperEl?: HTMLElement | null;
+	templateKey?: string | null;
+	markId?: string | null;
+	orderTag?: string | null;
+} {
+	if (!view) return {};
+	const cmHolder = (view as unknown) as { editor?: { cm?: { contentDOM?: HTMLElement } } };
+	const cmContent = cmHolder.editor?.cm?.contentDOM;
+	const contentRoot = (cmContent ?? view.containerEl.querySelector('.cm-content')) as HTMLElement | null;
+	if (!contentRoot) return {};
+	const wrappers = Array.from(contentRoot.querySelectorAll('[data-template-wrapper]')) as HTMLElement[];
+	for (const w of wrappers) {
+		const txt = (w.textContent ?? '').trim();
+		const lines = txt.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+		if (lines.length) {
+			if (view && typeof view.editor?.getLine === 'function') {
+				const lineText = view.editor.getLine(lineNumber)?.trim();
+				if (lineText && txt.includes(lineText)) {
+					return {
+						wrapperEl: w,
+						templateKey: w.getAttribute('data-template-key'),
+						markId: w.getAttribute('data-template-mark-id'),
+						orderTag: (w.querySelector('mark[data-template-id]') as HTMLElement | null)?.getAttribute('data-order-tag') ?? null,
+					};
+				}
+			}
+		}
+	}
+	return {};
 }
