@@ -279,3 +279,75 @@ export function isTemplateAllowedAtCursor(
 		return false;
 	}
 }
+
+// Render a template without rule checks (pure render), merging defaults.
+export function renderTemplateOnly<TParams = unknown>(
+	templateId: string,
+	params?: TParams
+): string {
+	const tpl = findTemplateById(templateId) as TemplateDefinition<TParams> | undefined;
+	if (!tpl || typeof tpl !== "object" || typeof tpl.render !== "function") {
+		throw new TemplateInsertError(`Unknown or invalid template: ${templateId}`, {
+			code: "UNKNOWN_TEMPLATE",
+		});
+	}
+	const finalParams = tpl.defaults
+		? ({ ...tpl.defaults, ...(params as Record<string, unknown> | undefined) } as TParams)
+		: params;
+	return tpl.render(finalParams);
+}
+
+// Best-effort params extraction from DOM wrapper, with template-specific override if provided
+export function inferParamsForWrapper(
+	templateId: string,
+	wrapperEl: HTMLElement
+): Record<string, unknown> | undefined {
+	const def = findTemplateById(templateId) as TemplateDefinition | undefined;
+	if (!def) return undefined;
+	if (typeof def.parseParamsFromDom === "function") {
+		try {
+			return def.parseParamsFromDom(wrapperEl);
+		} catch {
+			// fallthrough to generic
+		}
+	}
+	// Generic: use paramsSchema to try to fill fields from the mark's strong contents and following text.
+	// This is heuristic and meant as a fallback.
+	const schema = def.paramsSchema;
+	if (!schema) return undefined;
+
+	const out: Record<string, unknown> = {};
+	const markId = wrapperEl.getAttribute("data-template-mark-id") ?? "";
+	const mark = markId
+		? (wrapperEl.querySelector(`mark[data-template-id="${markId}"]`) as HTMLElement | null)
+		: null;
+	const markStrong = mark?.querySelector("strong");
+	const rawStrong = markStrong?.textContent?.trim() ?? "";
+
+	// Try basic fields commonly used: title and details
+	for (const field of schema.fields) {
+		const n = field.name;
+		if (n.toLowerCase() === "title") {
+			// strip emojis and trailing colon
+			out[n] = rawStrong.replace(/^[^\w]*\s*/, "").replace(/:$/, "").trim();
+			continue;
+		}
+		if (n.toLowerCase() === "details") {
+			// Take tail text: wrapper textContent minus mark textContent
+			const wrapperText = (wrapperEl.textContent ?? "").trim();
+			const markText = (mark?.textContent ?? "").trim();
+			let tail = wrapperText;
+			if (markText && wrapperText.startsWith(markText)) {
+				tail = wrapperText.slice(markText.length).trim();
+			}
+			// If starts with a colon or dash or extra space, normalize
+			tail = tail.replace(/^[\s:–-]+/, "").trim();
+			out[n] = tail;
+			continue;
+		}
+		// default empty if we cannot infer
+		out[n] = "";
+	}
+
+	return out;
+}

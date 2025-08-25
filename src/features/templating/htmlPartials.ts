@@ -70,3 +70,32 @@ export function listLine(inner: string, indent = 0): string {
 	const spaces = " ".repeat(indent);
 	return `${spaces}- ${inner}`;
 }
+
+/**
+ * Provide a stable wrapper around an entire template instance (both its mark and any tail text).
+ * wrapper carries:
+ * - data-template-wrapper: a random instance id (GUID-lite)
+ * - data-template-key: the preset id like "agile.userStory"
+ * - data-template-mark-id: the mark's data-template-id value (e.g., "agile-user-story")
+ *
+ * Consumers can event-delegate clicks to this wrapper to open param modals for edits.
+ */
+export function wrapTemplate(
+	templateKey: string, // e.g., "agile.userStory"
+	markId: string, // e.g., "agile-user-story" (the mark's data-template-id)
+	innerHtml: string // the full template inner HTML (mark + any text)
+): string {
+	const instanceId = makeInstanceId();
+	return `<span data-template-wrapper="${instanceId}" data-template-key="${escapeHtml(
+		templateKey
+	)}" data-template-mark-id="${escapeHtml(markId)}">${innerHtml}</span>`;
+}
+
+export function makeInstanceId(): string {
+	// simple GUID-lite
+	return (
+		"tpl-" +
+		Math.random().toString(36).slice(2, 9) +
+		Date.now().toString(36)
+	);
+}

@@ -1,5 +1,5 @@
 import tokensData from "./tokens.json";
-import { markChip } from "./htmlPartials";
+import { markChip, wrapTemplate } from "./htmlPartials";
 import type { TemplateDefinition } from "./types";
 
 // Derive from JSON
@@ -66,14 +66,17 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 			const title = params?.title?.trim() ?? "";
 			const details = params?.details?.trim() ?? "";
 			const text = `<strong>${emojis.initiative} ${title}</strong>${
-				details && `:`
+				details ? `:` : ""
 			}`;
-			return `${chip({
+
+			const inner = `${chip({
 				id: "agile-initiative",
 				text,
 				orderTag: "artifact-item-type",
 				bg: colors.artifactGrey,
 			})}${details ? ` ${details}` : ""}`;
+
+			return wrapTemplate("agile.initiative", "agile-initiative", inner);
 		},
 	},
 
@@ -83,8 +86,7 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 		hasParams: true,
 		paramsSchema: {
 			title: "Create Epic",
-			description:
-				"Provide a title and optional details for the epic.",
+			description: "Provide a title and optional details for the epic.",
 			fields: [
 				{
 					name: "title",
@@ -104,14 +106,15 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 		render(params?: { title?: string; details?: string }) {
 			const title = params?.title?.trim() ?? "";
 			const details = params?.details?.trim() ?? "";
-			return `${chip({
+			const inner = `${chip({
 				id: "agile-epic",
 				text: `<strong>${emojis.epic} ${title}${
 					details ? ":" : ""
 				}</strong>`,
 				orderTag: "artifact-item-type",
 				bg: colors.artifactGrey,
-			})}${details && ` ${details}`}`;
+			})}${details ? ` ${details}` : ""}`;
+			return wrapTemplate("agile.epic", "agile-epic", inner);
 		},
 	},
 
@@ -145,12 +148,13 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 			const text = `<strong>${emojis.feature} ${title}</strong>${
 				details ? `:` : ""
 			}`;
-			return `${chip({
+			const inner = `${chip({
 				id: "agile-feature",
 				text,
 				orderTag: "artifact-item-type",
 				bg: colors.artifactGrey,
 			})}${details ? ` ${details}` : ""}`;
+			return wrapTemplate("agile.feature", "agile-feature", inner);
 		},
 	},
 
@@ -167,12 +171,13 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 				  }</strong>`
 				: `<strong>${emojis.product} </strong>`;
 			const tail = details ? ` ${details}` : "";
-			return chip({
+			const inner = chip({
 				id: "agile-product",
 				text: `${main}${tail}`,
 				orderTag: "artifact-item-type",
 				bg: colors.artifactGrey,
 			});
+			return wrapTemplate("agile.product", "agile-product", inner);
 		},
 	},
 
@@ -209,6 +214,46 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["task"] },
+
+		parseParamsFromDom(wrapperEl) {
+			const mark = wrapperEl.querySelector(
+				"mark[data-template-id='agile-user-story']"
+			);
+			const data: Record<string, string> = {
+				title: "",
+				persona: "",
+				desire: "",
+				outcome: "",
+			};
+
+			if (mark) {
+				const strong = mark.querySelector("strong");
+				if (strong) {
+					const raw = strong.textContent ?? "";
+					const withoutEmoji = raw.replace("📝", "").trim();
+					data.title = withoutEmoji.replace(/:$/, "").trim();
+				}
+			}
+
+			const textNodes: string[] = [];
+			for (const node of Array.from(wrapperEl.childNodes)) {
+				if ((node as HTMLElement).tagName?.toLowerCase() === "mark")
+					continue;
+				textNodes.push((node.textContent ?? "").trim());
+			}
+			const tail = textNodes.join(" ").trim();
+			const cleaned = tail.replace(/\*\*/g, "").trim();
+			const personaMatch = cleaned.match(/As a\s+([^,]+)\s*,/i);
+			const desireMatch = cleaned.match(/I want to\s+([^,]+)\s*,/i);
+			const outcomeMatch = cleaned.match(/so that\s+(.+)$/i);
+
+			if (personaMatch) data.persona = personaMatch[1].trim();
+			if (desireMatch) data.desire = desireMatch[1].trim();
+			if (outcomeMatch) data.outcome = outcomeMatch[1].trim();
+
+			return data;
+		},
+
 		render(params: {
 			title: string;
 			persona?: string;
@@ -229,12 +274,14 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 				clause ? ":" : ""
 			}</strong>`;
 
-			return `${chip({
+			const inner = `${chip({
 				id: "agile-user-story",
 				text,
 				orderTag: "artifact-item-type",
 				bg: `linear-gradient(to right, ${colors.userStoryFrom}, ${colors.userStoryTo})`,
-			})}${clause && ` ${clause}`}`;
+			})}${clause ? ` ${clause}` : ""}`;
+
+			return wrapTemplate("agile.userStory", "agile-user-story", inner);
 		},
 	},
 
@@ -266,12 +313,17 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 			const text = `<strong>${emojis.accept} ${title}</strong>${
 				details ? `:` : ""
 			}`;
-			return `${chip({
+			const inner = `${chip({
 				id: "agile-acceptance",
 				text,
 				orderTag: "artifact-item-type",
 				bg: colors.artifactGrey,
 			})}${details ? ` ${details}` : ""}`;
+			return wrapTemplate(
+				"agile.acceptanceCriteria",
+				"agile-acceptance",
+				inner
+			);
 		},
 	},
 
@@ -303,12 +355,13 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 			const text = `<strong>${emojis.kpi} ${title}</strong>${
 				details ? `:` : ""
 			}`;
-			return `${chip({
+			const inner = `${chip({
 				id: "agile-kpi",
 				text,
 				orderTag: "artifact-item-type",
 				bg: colors.artifactGrey,
 			})}${details ? ` ${details}` : ""}`;
+			return wrapTemplate("agile.kpi", "agile-kpi", inner);
 		},
 	},
 
@@ -340,12 +393,13 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 			const text = `<strong>${emojis.okr} ${title}</strong>${
 				details ? `:` : ""
 			}`;
-			return `${chip({
+			const inner = `${chip({
 				id: "agile-okr",
 				text,
 				orderTag: "artifact-item-type",
 				bg: `linear-gradient(to left, ${colors.okrFrom}, ${colors.okrTo})`,
 			})}${details ? ` ${details}` : ""}`;
+			return wrapTemplate("agile.okr", "agile-okr", inner);
 		},
 	},
 
@@ -354,12 +408,17 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 		label: "Agile - Artifact Parent Link",
 		rules: { allowedOn: ["task"] },
 		render() {
-			return chip({
+			const inner = chip({
 				id: "agile-artifact-parent-link",
 				text: `${emojis.linkArrowUp}`,
 				orderTag: "parent-link",
 				href: "",
 			});
+			return wrapTemplate(
+				"agile.parentLink",
+				"agile-artifact-parent-link",
+				inner
+			);
 		},
 	},
 
@@ -376,13 +435,18 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 				  }</strong>`
 				: `<strong>${emojis.learningGrad} </strong>`;
 			const tail = details ? ` ${details}` : "";
-			return chip({
+			const inner = chip({
 				id: "agile-personal-learning-initiative",
 				text: `${main}${tail}`,
 				orderTag: "artifact-item-type",
 				bg: `linear-gradient(to right, ${colors.personalInitFrom}, ${colors.personalInitTo})`,
 				color: "#FFFFFF",
 			});
+			return wrapTemplate(
+				"agile.personalLearningInitiative",
+				"agile-personal-learning-initiative",
+				inner
+			);
 		},
 	},
 
@@ -399,13 +463,18 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 				  }</strong>`
 				: `<strong>${emojis.learningBook} </strong>`;
 			const tail = details ? ` ${details}` : "";
-			return chip({
+			const inner = chip({
 				id: "agile-personal-learning-epic",
 				text: `${main}${tail}`,
 				orderTag: "artifact-item-type",
 				bg: `linear-gradient(to right, ${colors.personalEpicFrom}, ${colors.personalEpicTo})`,
 				color: "#FFFFFF",
 			});
+			return wrapTemplate(
+				"agile.personalLearningEpic",
+				"agile-personal-learning-epic",
+				inner
+			);
 		},
 	},
 };
@@ -419,12 +488,13 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 		label: "CRM - Abandoned",
 		rules: { allowedOn: ["list"] },
 		render() {
-			return chip({
+			const inner = chip({
 				id: "crm-abandoned",
 				text: `<strong>Abandoned</strong>`,
 				orderTag: "metadata-tag",
 				bg: colors.crmAbandoned,
 			});
+			return wrapTemplate("crm.abandoned", "crm-abandoned", inner);
 		},
 	},
 	awaitingDeposit: {
@@ -432,12 +502,17 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 		label: "CRM - Awaiting Deposit",
 		rules: { allowedOn: ["list"] },
 		render() {
-			return chip({
+			const inner = chip({
 				id: "crm-awaiting-deposit",
 				text: `<strong>Awaiting Deposit</strong>`,
 				orderTag: "metadata-tag",
 				bg: colors.crmAwaiting,
 			});
+			return wrapTemplate(
+				"crm.awaitingDeposit",
+				"crm-awaiting-deposit",
+				inner
+			);
 		},
 	},
 	commission: {
@@ -445,12 +520,13 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 		label: "CRM - Commission",
 		rules: { allowedOn: ["list"] },
 		render() {
-			return chip({
+			const inner = chip({
 				id: "crm-commission",
 				text: `<strong>Commission Paid /</strong>`,
 				orderTag: "metadata-tag",
 				bg: colors.crmCommission,
 			});
+			return wrapTemplate("crm.commission", "crm-commission", inner);
 		},
 	},
 	depositPaid: {
@@ -458,12 +534,13 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 		label: "CRM - Deposit Paid",
 		rules: { allowedOn: ["list"] },
 		render() {
-			return chip({
+			const inner = chip({
 				id: "crm-deposit",
 				text: `<strong>Deposit Paid /</strong>`,
 				orderTag: "metadata-tag",
 				bg: colors.crmDeposit,
 			});
+			return wrapTemplate("crm.depositPaid", "crm-deposit", inner);
 		},
 	},
 	paidInFull: {
@@ -471,12 +548,13 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 		label: "CRM - Paid in Full",
 		rules: { allowedOn: ["list"] },
 		render() {
-			return chip({
+			const inner = chip({
 				id: "crm-paid-full",
 				text: `<strong>Paid in Full / </strong>`,
 				orderTag: "metadata-tag",
 				bg: colors.crmPaidFull,
 			});
+			return wrapTemplate("crm.paidInFull", "crm-paid-full", inner);
 		},
 	},
 	partiallyPaid: {
@@ -484,12 +562,17 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 		label: "CRM - Partially Paid",
 		rules: { allowedOn: ["list"] },
 		render() {
-			return chip({
+			const inner = chip({
 				id: "crm-partially-paid",
 				text: `<strong>Paid  / </strong>`,
 				orderTag: "metadata-tag",
 				bg: colors.crmPartially,
 			});
+			return wrapTemplate(
+				"crm.partiallyPaid",
+				"crm-partially-paid",
+				inner
+			);
 		},
 	},
 	paymentPlan: {
@@ -497,12 +580,13 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 		label: "CRM - Payment Plan",
 		rules: { allowedOn: ["list"] },
 		render() {
-			return chip({
+			const inner = chip({
 				id: "crm-payment-plan",
 				text: `<strong>Payment Plan - [Number] Months - [End Date YYYY-MM-DD] - Paid  / </strong>`,
 				orderTag: "metadata-tag",
 				bg: colors.crmPaymentPlan,
 			});
+			return wrapTemplate("crm.paymentPlan", "crm-payment-plan", inner);
 		},
 	},
 };
@@ -514,11 +598,12 @@ export const Members: Record<string, TemplateDefinition<any>> = {
 	assignee: {
 		id: "members.assignee",
 		label: "Members - Assignee",
+		hiddenFromDynamicCommands: true, // Block from dynamic builder
 		rules: { allowedOn: ["task"] },
 		render(params?: { label?: string; everyoneIcon?: string }) {
 			const label = params?.label?.trim() ?? "Everyone";
 			const everyoneIcon = params?.everyoneIcon ?? emojis.everyone;
-			return chip({
+			const inner = chip({
 				id: "assignee",
 				text: `<strong>${everyoneIcon} ${label}</strong>`,
 				orderTag: "assignee",
@@ -526,6 +611,7 @@ export const Members: Record<string, TemplateDefinition<any>> = {
 				color: "#000000",
 				extraAttrs: { class: "active-team internal-link" },
 			});
+			return wrapTemplate("members.assignee", "assignee", inner);
 		},
 	},
 };
@@ -539,12 +625,17 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		label: "Kano - Dissatisfier",
 		rules: { allowedOn: ["list"] },
 		render() {
-			return chip({
+			const inner = chip({
 				id: "kano-dissatisfier",
 				text: `<strong>${emojis.kanoLeft} Kano - Dissatisfier</strong>`,
 				orderTag: "artifact-item-type",
 				bg: colors.kanoDissatisfier,
 			});
+			return wrapTemplate(
+				"prio.kano.dissatisfier",
+				"kano-dissatisfier",
+				inner
+			);
 		},
 	},
 	kanoIndifferent: {
@@ -552,12 +643,17 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		label: "Kano - Indifferent",
 		rules: { allowedOn: ["list"] },
 		render() {
-			return chip({
+			const inner = chip({
 				id: "kano-indifferent",
 				text: `<strong>${emojis.kanoIndiff} Kano - Indifferent</strong>`,
 				orderTag: "artifact-item-type",
 				bg: colors.kanoIndifferent,
 			});
+			return wrapTemplate(
+				"prio.kano.indifferent",
+				"kano-indifferent",
+				inner
+			);
 		},
 	},
 	kanoBasic: {
@@ -565,12 +661,13 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		label: "Kano - Basic",
 		rules: { allowedOn: ["list"] },
 		render() {
-			return chip({
+			const inner = chip({
 				id: "kano-basic",
 				text: `<strong>${emojis.kanoBasic} Kano - Basic</strong>`,
 				orderTag: "artifact-item-type",
 				bg: colors.kanoBasic,
 			});
+			return wrapTemplate("prio.kano.basic", "kano-basic", inner);
 		},
 	},
 	kanoPerformantHeader: {
@@ -578,12 +675,17 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		label: "Kano - Performant - Header",
 		rules: { allowedOn: ["list"] },
 		render() {
-			return chip({
+			const inner = chip({
 				id: "kano-performant-header",
 				text: `<strong>${emojis.kanoPerf} Kano - Performant</strong>`,
 				orderTag: "artifact-item-type",
 				bg: colors.kanoPerformant,
 			});
+			return wrapTemplate(
+				"prio.kano.performantHeader",
+				"kano-performant-header",
+				inner
+			);
 		},
 	},
 	kanoDelighter: {
@@ -591,12 +693,13 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		label: "Kano - Delighter",
 		rules: { allowedOn: ["list"] },
 		render() {
-			return chip({
+			const inner = chip({
 				id: "kano-delighter",
 				text: `<strong>${emojis.kanoDelight} Kano - Delighter</strong>`,
 				orderTag: "artifact-item-type",
 				bg: colors.kanoDelighter,
 			});
+			return wrapTemplate("prio.kano.delighter", "kano-delighter", inner);
 		},
 	},
 	moscowCould: {
@@ -604,12 +707,13 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		label: "MoSCoW - Could Have",
 		rules: { allowedOn: ["list"] },
 		render() {
-			return chip({
+			const inner = chip({
 				id: "moscow-could",
 				text: `<strong>❓ Could Have</strong>`,
 				orderTag: "artifact-item-type",
 				bg: colors.moscowCould,
 			});
+			return wrapTemplate("prio.moscow.could", "moscow-could", inner);
 		},
 	},
 	moscowMust: {
@@ -617,12 +721,13 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		label: "MoSCoW - Must Have",
 		rules: { allowedOn: ["list"] },
 		render() {
-			return chip({
+			const inner = chip({
 				id: "moscow-must",
 				text: `<strong>❗Must-Have</strong>`,
 				orderTag: "artifact-item-type",
 				bg: colors.moscowMust,
 			});
+			return wrapTemplate("prio.moscow.must", "moscow-must", inner);
 		},
 	},
 	moscowShould: {
@@ -630,12 +735,13 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		label: "MoSCoW - Should Have",
 		rules: { allowedOn: ["list"] },
 		render() {
-			return chip({
+			const inner = chip({
 				id: "moscow-should",
 				text: `<strong>🎁 Should Have</strong>`,
 				orderTag: "artifact-item-type",
 				bg: colors.moscowShould,
 			});
+			return wrapTemplate("prio.moscow.should", "moscow-should", inner);
 		},
 	},
 	moscowWont: {
@@ -643,22 +749,29 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		label: "MoSCoW - Won’t Have",
 		rules: { allowedOn: ["list"] },
 		render() {
-			return chip({
+			const inner = chip({
 				id: "moscow-wont",
 				text: `<strong>❌ Won’t Have</strong>`,
 				orderTag: "artifact-item-type",
 				bg: colors.moscowWont,
 			});
+			return wrapTemplate("prio.moscow.wont", "moscow-wont", inner);
 		},
 	},
 
-	// NALAp
+	// NALAp (convert to chips so they are clickable and discoverable)
 	nalapAdhoc: {
 		id: "prio.nalap.adhoc",
 		label: "NALAp - Adhoc",
 		rules: { allowedOn: ["list"] },
 		render() {
-			return `📂 **Adhoc**`;
+			const inner = chip({
+				id: "nalap-adhoc",
+				text: `📂 <strong>Adhoc</strong>`,
+				orderTag: "metadata-tag",
+				bg: colors.kanoBasic, // reuse a neutral tone or create a new one if desired
+			});
+			return wrapTemplate("prio.nalap.adhoc", "nalap-adhoc", inner);
 		},
 	},
 	nalapAlways: {
@@ -666,7 +779,13 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		label: "NALAp - Always",
 		rules: { allowedOn: ["list"] },
 		render() {
-			return `📍 **Always**`;
+			const inner = chip({
+				id: "nalap-always",
+				text: `📍 <strong>Always</strong>`,
+				orderTag: "metadata-tag",
+				bg: colors.kanoPerformant, // neutral-ish
+			});
+			return wrapTemplate("prio.nalap.always", "nalap-always", inner);
 		},
 	},
 	nalapDone: {
@@ -674,7 +793,13 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		label: "NALAp - Done",
 		rules: { allowedOn: ["list"] },
 		render() {
-			return `✅ **Done**`;
+			const inner = chip({
+				id: "nalap-done",
+				text: `✅ <strong>Done</strong>`,
+				orderTag: "metadata-tag",
+				bg: colors.crmPaidFull,
+			});
+			return wrapTemplate("prio.nalap.done", "nalap-done", inner);
 		},
 	},
 	nalapDropped: {
@@ -682,7 +807,13 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		label: "NALAp - Dropped",
 		rules: { allowedOn: ["list"] },
 		render() {
-			return `❌ **Dropped**`;
+			const inner = chip({
+				id: "nalap-dropped",
+				text: `❌ <strong>Dropped</strong>`,
+				orderTag: "metadata-tag",
+				bg: colors.moscowWont,
+			});
+			return wrapTemplate("prio.nalap.dropped", "nalap-dropped", inner);
 		},
 	},
 	nalapLater: {
@@ -690,7 +821,13 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		label: "NALAp - Later",
 		rules: { allowedOn: ["list"] },
 		render() {
-			return `🛠️ **Later**`;
+			const inner = chip({
+				id: "nalap-later",
+				text: `🛠️ <strong>Later</strong>`,
+				orderTag: "metadata-tag",
+				bg: colors.moscowShould,
+			});
+			return wrapTemplate("prio.nalap.later", "nalap-later", inner);
 		},
 	},
 	nalapNow: {
@@ -698,7 +835,13 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		label: "NALAp - Now",
 		rules: { allowedOn: ["list"] },
 		render() {
-			return `🚀 **Now**`;
+			const inner = chip({
+				id: "nalap-now",
+				text: `🚀 <strong>Now</strong>`,
+				orderTag: "metadata-tag",
+				bg: colors.moscowMust,
+			});
+			return wrapTemplate("prio.nalap.now", "nalap-now", inner);
 		},
 	},
 };
@@ -715,13 +858,14 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 		render(params?: { href?: string }) {
 			const href = (params?.href ?? "").trim();
 			const anchorOpen = href ? `<a href="${href}">` : `<a href="">`;
-			return chip({
+			const inner = chip({
 				id: "wf-pr",
 				text: `<strong>${anchorOpen}${emojis.pr} </a></strong>`,
 				orderTag: "metadata-tag",
 				bg: colors.black,
 				color: colors.textGrey,
 			});
+			return wrapTemplate("workflows.metadata.pr", "wf-pr", inner);
 		},
 	},
 	branch: {
@@ -731,13 +875,18 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 		render(params?: { href?: string }) {
 			const href = (params?.href ?? "").trim();
 			const anchorOpen = href ? `<a href="${href}">` : `<a href="">`;
-			return chip({
+			const inner = chip({
 				id: "wf-branch",
 				text: `<strong>${anchorOpen}${emojis.branch} </a></strong>`,
 				orderTag: "metadata-tag",
 				bg: colors.black,
 				color: colors.textGrey,
 			});
+			return wrapTemplate(
+				"workflows.metadata.branch",
+				"wf-branch",
+				inner
+			);
 		},
 	},
 	linkToArtifact: {
@@ -749,13 +898,18 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 				params?.href ?? "Artifact-block-link-with-no-square-brackets"
 			).trim();
 			const text = (params?.text ?? "🔗").trim();
-			return chip({
+			const inner = chip({
 				id: "wf-link-to-artifact",
 				text: `<strong><a class="internal-link" href="${href}">${text}</a></strong>`,
 				orderTag: "metadata-tag",
 				bg: colors.black,
 				color: colors.textGrey,
 			});
+			return wrapTemplate(
+				"workflows.metadata.linkToArtifact",
+				"wf-link-to-artifact",
+				inner
+			);
 		},
 	},
 
@@ -768,12 +922,17 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 			const requires = (params?.requires ?? "").trim();
 			const href = (params?.href ?? "").trim();
 			const anchorOpen = `<a class="internal-link" href="${href}">`;
-			return chip({
+			const inner = chip({
 				id: "state-blocked",
 				text: `⛔ Requires: ${anchorOpen}<strong>${requires}</strong></a>`,
 				orderTag: "metadata-tag",
 				bg: colors.statesBlocked,
 			});
+			return wrapTemplate(
+				"workflows.states.blocked",
+				"state-blocked",
+				inner
+			);
 		},
 	},
 	pending: {
@@ -782,12 +941,17 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 		rules: { allowedOn: ["task"] },
 		render(params?: { resumes?: string }) {
 			const resumes = (params?.resumes ?? "").trim();
-			return chip({
+			const inner = chip({
 				id: "state-pending",
 				text: `🕒 Resumes: <strong>${resumes}</strong>`,
 				orderTag: "metadata-tag",
 				bg: colors.statesPending,
 			});
+			return wrapTemplate(
+				"workflows.states.pending",
+				"state-pending",
+				inner
+			);
 		},
 	},
 	waiting: {
@@ -796,12 +960,17 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 		rules: { allowedOn: ["task"] },
 		render(params?: { for?: string }) {
 			const forWho = (params?.for ?? "").trim();
-			return chip({
+			const inner = chip({
 				id: "state-waiting",
 				text: `⌛ For: <strong>${forWho}</strong>`,
 				orderTag: "metadata-tag",
 				bg: colors.statesWaiting,
 			});
+			return wrapTemplate(
+				"workflows.states.waiting",
+				"state-waiting",
+				inner
+			);
 		},
 	},
 	review: {
@@ -822,13 +991,18 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 		rules: { allowedOn: ["task"] },
 		render(params: { teamMember: string }) {
 			const teamMember = params?.teamMember?.trim() ?? "";
-			return chip({
+			const inner = chip({
 				id: "agile-review",
 				text: `Awaiting Review from ${teamMember}`,
 				orderTag: "metadata-tag",
 				bg: `linear-gradient(to right, ${colors.reviewFrom}, ${colors.reviewTo})`,
 				color: colors.reviewText,
 			});
+			return wrapTemplate(
+				"workflows.states.review",
+				"agile-review",
+				inner
+			);
 		},
 	},
 };
@@ -862,12 +1036,17 @@ export const ObsidianExtensions: Record<string, TemplateDefinition<any>> = {
 		render(params: { href: string; linkContent: string }) {
 			const href = params?.href?.trim() ?? "";
 			const linkContent = params?.linkContent?.trim() ?? "";
-			return chip({
+			const inner = chip({
 				id: "obsidian-internal-link",
 				text: `<a href="${href}" class="internal-link">${linkContent}</a>`,
 				orderTag: "metadata-tag",
 				bg: colors.obsidianTagGrey,
 			});
+			return wrapTemplate(
+				"obsidian.internalInlineLink",
+				"obsidian-internal-link",
+				inner
+			);
 		},
 	},
 	timestamp: {
@@ -875,12 +1054,17 @@ export const ObsidianExtensions: Record<string, TemplateDefinition<any>> = {
 		label: "Obsidian - Timestamp",
 		rules: { allowedOn: ["any"] },
 		render() {
-			return chip({
+			const inner = chip({
 				id: "obsidian-timestamp",
 				text: `<strong>${emojis.timestamp} {{date:YYYY-MM-DD HH:MM:SS}}</strong>`,
 				orderTag: "metadata-tag",
 				bg: colors.obsidianTagGrey,
 			});
+			return wrapTemplate(
+				"obsidian.timestamp",
+				"obsidian-timestamp",
+				inner
+			);
 		},
 	},
 	datestamp: {
@@ -888,12 +1072,17 @@ export const ObsidianExtensions: Record<string, TemplateDefinition<any>> = {
 		label: "Obsidian - Datestamp",
 		rules: { allowedOn: ["any"] },
 		render() {
-			return chip({
+			const inner = chip({
 				id: "obsidian-datestamp",
 				text: `<strong>${emojis.datestamp} {{date:YYYY-MM-DD}}</strong>`,
 				orderTag: "metadata-tag",
 				bg: colors.obsidianTagGrey,
 			});
+			return wrapTemplate(
+				"obsidian.datestamp",
+				"obsidian-datestamp",
+				inner
+			);
 		},
 	},
 };

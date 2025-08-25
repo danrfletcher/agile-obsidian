@@ -2,6 +2,8 @@ import { Notice, MarkdownView, Modal, App, debounce } from "obsidian";
 import {
 	insertTemplateAtCursor,
 	isTemplateAllowedAtCursor,
+	renderTemplateOnly,
+	inferParamsForWrapper,
 } from "./templateApi";
 import { presetTemplates } from "./presets";
 import type { TemplateDefinition, ParamSchema } from "./types";
@@ -195,6 +197,7 @@ function promptForJsonParams(app: App, templateId: string): Promise<any> {
 						new Notice(
 							`Invalid JSON: ${e?.message ?? "Parse error"}`
 						);
+						this.resolved = false;
 					}
 				});
 				cancelBtn.addEventListener("click", () => {
@@ -226,6 +229,118 @@ function reportInsertError(err: any): void {
 	new Notice(`Template insert failed [${code}]${extra}`);
 }
 
+// Find the nearest template wrapper for a click target
+function findTemplateWrapper(el: HTMLElement | null): HTMLElement | null {
+	while (el) {
+		if (el.hasAttribute("data-template-wrapper")) return el;
+		el = el.parentElement;
+	}
+	return null;
+}
+
+async function onTemplateWrapperClick(
+	app: App,
+	wrapperEl: HTMLElement
+): Promise<void> {
+	const templateKey = wrapperEl.getAttribute("data-template-key") ?? "";
+	if (!templateKey) return;
+
+	// Lookup definition
+	const [group, key] = templateKey.split(".");
+	const def = (presetTemplates as any)?.[group]?.[key] as
+		| TemplateDefinition
+		| undefined;
+	if (!def) return;
+
+	// Only parameterized templates open a modal
+	if (!def.hasParams) return;
+
+	// Prefill values from DOM if we can
+	const prefill = inferParamsForWrapper(templateKey, wrapperEl) ?? {};
+
+	// If no schema provided, fall back to JSON modal; else use schema modal
+	let params: Record<string, unknown> | undefined;
+	if (def.paramsSchema && def.paramsSchema.fields?.length) {
+		const schema = {
+			...def.paramsSchema,
+			fields: def.paramsSchema.fields.map((f) => ({
+				...f,
+				defaultValue:
+					prefill[f.name] != null
+						? String(prefill[f.name] ?? "")
+						: f.defaultValue,
+			})),
+		};
+		params = await promptForSchemaParams(app, templateKey, schema);
+	} else {
+		// JSON path: seed with prefill
+		const jsonParams = JSON.stringify(prefill ?? {}, null, 2);
+		params = await new Promise((resolve) => {
+			const modal = new (class extends Modal {
+				private textarea!: HTMLTextAreaElement;
+				private resolved = false;
+
+				onOpen(): void {
+					this.titleEl.setText(`Params for ${templateKey}`);
+					const { contentEl } = this;
+					contentEl.createEl("p", {
+						text: "Edit template params as JSON.",
+					});
+					this.textarea = contentEl.createEl("textarea", {
+						attr: { rows: "10", style: "width: 100%;" },
+					});
+					this.textarea.value = jsonParams;
+
+					const btnRow = contentEl.createEl("div", {
+						attr: {
+							style: "display:flex; gap:8px; margin-top: 12px;",
+						},
+					});
+					const okBtn = btnRow.createEl("button", { text: "Apply" });
+					const cancelBtn = btnRow.createEl("button", {
+						text: "Cancel",
+					});
+					okBtn.addEventListener("click", () => {
+						if (this.resolved) return;
+						this.resolved = true;
+						try {
+							const parsed = JSON.parse(this.textarea.value);
+							this.close();
+							resolve(parsed);
+						} catch (e: any) {
+							new Notice(
+								`Invalid JSON: ${e?.message ?? "Parse error"}`
+							);
+							this.resolved = false;
+						}
+					});
+					cancelBtn.addEventListener("click", () => {
+						if (this.resolved) return;
+						this.resolved = true;
+						this.close();
+						resolve(undefined);
+					});
+				}
+				onClose(): void {
+					this.contentEl.empty();
+				}
+			})(app);
+			modal.open();
+		});
+	}
+
+	if (!params) return;
+
+	// Re-render the template HTML with new params and replace wrapper element wholesale
+	try {
+		const newHtml = renderTemplateOnly(templateKey, params);
+		// Replace the entire wrapper element (outerHTML) so a fresh instanceId is used
+		wrapperEl.outerHTML = newHtml;
+	} catch (e: any) {
+		new Notice(`Failed to update template: ${e?.message ?? String(e)}`);
+	}
+}
+
 /**
  Flatten presetTemplates into a list of { id, name, entry }.
 */
@@ -247,16 +362,23 @@ function enumeratePresetTemplates(): Array<{
 	for (const [group, groupObj] of Object.entries(
 		presetTemplates as Record<string, any>
 	)) {
+		// Block Members group from dynamic commands
+		if (group === "members") continue;
+
 		for (const [key, entry] of Object.entries(groupObj ?? {})) {
 			if (
 				entry &&
 				typeof entry === "object" &&
 				typeof (entry as TemplateDefinition).render === "function"
 			) {
+				const def = entry as TemplateDefinition;
+				// Skip dynamic registration if hidden
+				if (def.hiddenFromDynamicCommands) continue;
+
 				out.push({
 					id: `${group}.${key}`,
 					name: makeName(`${group}.${key}`),
-					def: entry as TemplateDefinition,
+					def,
 				});
 			}
 		}
@@ -283,15 +405,10 @@ class DynamicTemplateCommandManager {
 					view: MarkdownView
 				) => void;
 			}) => void;
-			// optional: removeCommand is not in official API;
-			// we simulate removal by tracking and not re-adding duplicates.
 		}
 	) {}
 
 	clearCommands() {
-		// Obsidian doesn't expose removeCommand for 3rd party easily.
-		// We "logically" clear by resetting our ID set so re-registering
-		// won't create duplicates (IDs must be unique).
 		this.registeredIds.clear();
 	}
 
@@ -299,6 +416,10 @@ class DynamicTemplateCommandManager {
 		allowed: Array<{ id: string; name: string; def: TemplateDefinition }>
 	) {
 		for (const { id, name, def } of allowed) {
+			// Double-guard: do not allow members.* under any circumstance
+			if (id.startsWith("members.")) continue;
+			if (def.hiddenFromDynamicCommands) continue;
+
 			const cmdId = `tpl-${id.replace(/\./g, "-")}`;
 			if (this.registeredIds.has(cmdId)) continue;
 
@@ -311,11 +432,17 @@ class DynamicTemplateCommandManager {
 						const filePath = (view as any)?.file?.path ?? "";
 						if (!filePath) return;
 
+						const [group, key] = id.split(".");
+						const defRef = (presetTemplates as any)?.[group]?.[
+							key
+						] as TemplateDefinition | undefined;
+						if (!defRef) return;
+
 						// Resolve params (schema or JSON) if needed
 						const params = await resolveParamsForTemplate(
 							this.plugin.app,
 							id,
-							def,
+							defRef,
 							undefined
 						);
 
@@ -331,10 +458,16 @@ class DynamicTemplateCommandManager {
 	}
 }
 
+function resolveContentRoot(view: MarkdownView): HTMLElement | null {
+	// Prefer the actual CodeMirror 6 content surface
+	const cmContent =
+		(view as any)?.editor?.cm?.contentDOM ||
+		view.containerEl.querySelector(".cm-content");
+	return (cmContent as HTMLElement) ?? null;
+}
+
 /**
  Public API: register all template commands dynamically based on context.
- - No modal/selector; only permitted commands are available in palette/slash list.
- - Future-proof: validity defers to evaluateRules (including any new rules added later).
 */
 export function registerTemplatingCommands(plugin: {
 	app: App;
@@ -349,7 +482,7 @@ export function registerTemplatingCommands(plugin: {
 	registerEvent?: (evt: any) => void;
 	onLayoutReady?: (cb: () => void) => void;
 }): void {
-	const allTemplates = enumeratePresetTemplates();
+	// Do NOT cache allTemplates permanently if presets may change; recompute inside refresh.
 	const manager = new DynamicTemplateCommandManager(plugin);
 
 	// Debounced refresh: re-register commands allowed in the current context
@@ -361,12 +494,17 @@ export function registerTemplatingCommands(plugin: {
 			const filePath = (view as any)?.file?.path ?? "";
 			if (!filePath) return;
 
+			// Recompute the pool each refresh to reflect any updates
+			const pool = enumeratePresetTemplates();
+
 			const allowed: Array<{
 				id: string;
 				name: string;
 				def: TemplateDefinition;
 			}> = [];
-			for (const entry of allTemplates) {
+			for (const entry of pool) {
+				// Double-guard here too
+				if (entry.id.startsWith("members.")) continue;
 				if (isTemplateAllowedAtCursor(entry.id, editor, filePath)) {
 					allowed.push(entry);
 				}
@@ -379,34 +517,71 @@ export function registerTemplatingCommands(plugin: {
 		true
 	);
 
-	// Initial after layout ready
+	// Click-to-edit: delegate on the CodeMirror content area specifically
+	const wireClickHandler = () => {
+		const view = plugin.app.workspace.getActiveViewOfType(MarkdownView);
+		if (!view) return;
+
+		// Resolve the content root reliably
+		const contentRoot = resolveContentRoot(view) as any;
+		// Fallback to containerEl if content root not present yet
+		const targetEl: HTMLElement =
+			(contentRoot as HTMLElement) ?? (view as any).containerEl;
+		if (!targetEl) return;
+
+		// Avoid multiple listeners
+		const MARKER = "__tplClickWired";
+		if ((targetEl as any)[MARKER]) return;
+		(targetEl as any)[MARKER] = true;
+
+		// Capture-phase to intercept before default link/navigation handlers
+		targetEl.addEventListener(
+			"click",
+			async (evt: MouseEvent) => {
+				const target = evt.target as HTMLElement | null;
+				if (!target) return;
+
+				const wrapper = findTemplateWrapper(target);
+				if (!wrapper) return;
+
+				evt.preventDefault();
+				evt.stopPropagation();
+
+				try {
+					await onTemplateWrapperClick(plugin.app, wrapper);
+				} catch {
+					// ignore
+				}
+			},
+			true
+		);
+	};
+
 	plugin.onLayoutReady?.(() => {
+		wireClickHandler();
 		refresh();
 	});
 
-	// When active leaf (view) changes, refresh
 	plugin.app.workspace.on("active-leaf-change", () => {
+		wireClickHandler();
 		refresh();
 	});
-
-	// On editor-change (content changes at view level), refresh
-	// Signature: (editor: Editor, markdownView: MarkdownView) => void
 	plugin.app.workspace.on("editor-change", () => {
+		wireClickHandler();
 		refresh();
 	});
-
-	// On file open (may change context), refresh
 	plugin.app.workspace.on("file-open", () => {
+		wireClickHandler();
 		refresh();
 	});
-
-	// Also refresh when metadata cache changes (parents/structure may affect rules)
-	plugin.app.metadataCache.on("changed", () => refresh());
+	plugin.app.metadataCache.on("changed", () => {
+		wireClickHandler();
+		refresh();
+	});
 }
 
 /**
- Example: programmatic insertion with params from your own code (not the command palette).
- You can call this helper wherever you want inside your plugin code.
+ Programmatic API
 */
 export async function insertTemplateProgrammatically(
 	app: App,
@@ -416,17 +591,13 @@ export async function insertTemplateProgrammatically(
 	params?: Record<string, unknown>
 ) {
 	try {
-		// Find definition for schema/hasParams decisions (not strictly required to call here,
-		// but helpful if you want to optionally open the modal when params missing).
 		const [group, key] = templateId.split(".");
 		const def = (presetTemplates as any)?.[group]?.[key] as
 			| TemplateDefinition
 			| undefined;
-
 		const finalParams =
 			params ??
 			(await resolveParamsForTemplate(app, templateId, def!, undefined));
-
 		insertTemplateAtCursor(templateId, editor, filePath, finalParams);
 	} catch (err: any) {
 		reportInsertError(err);

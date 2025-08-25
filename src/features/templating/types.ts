@@ -39,7 +39,7 @@ export interface TemplateDefinition<TParams = any> {
 	description?: string;
 	rules?: Rule;
 
-	// If true, we will prompt for parameters before insert unless params are supplied programmatically.
+	// If true, we will prompt for parameters before insert unless params are supplied programmaticlly.
 	hasParams?: boolean;
 
 	// If present, we use this schema to render a form-based modal instead of raw-JSON.
@@ -48,7 +48,18 @@ export interface TemplateDefinition<TParams = any> {
 	// Optional: default param values if user omits fields in modal or programmatic calls
 	defaults?: Partial<TParams>;
 
-	// Render returns inline HTML (no "- [ ]" / "- " prefix). Wrapping happens in templateApi insertTemplateAtCursor.
+	// Optional: hide this template from dynamic command registration.
+	// Useful when you plan to provide custom command factory functions for it later.
+	hiddenFromDynamicCommands?: boolean;
+
+	// Optional: Extract params from a rendered DOM wrapper (post-insert editing).
+	// If not supplied, a best-effort generic extractor is used (based on paramsSchema).
+	parseParamsFromDom?: (
+		wrapperEl: HTMLElement
+	) => Record<string, unknown> | undefined;
+
+	// Render returns inline HTML (no "- [ ]" / "- " prefix). Wrapping happens in insertTemplateAtCursor and
+	// we additionally wrap with a consistent outer span for edit-clicks (see htmlPartials.wrapTemplate).
 	render: (params?: TParams) => string;
 }
 
