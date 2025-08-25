@@ -98,7 +98,7 @@ export function insertTemplate<TParams = unknown>(
 			? ({
 					...tpl.defaults,
 					...(params as Record<string, unknown> | undefined),
-			} as TParams)
+			  } as TParams)
 			: params;
 
 		// Render inline content; no task/list prefix here
@@ -300,7 +300,7 @@ export function renderTemplateOnly<TParams = unknown>(
 		? ({
 				...tpl.defaults,
 				...(params as Record<string, unknown> | undefined),
-		} as TParams)
+		  } as TParams)
 		: params;
 	return tpl.render(finalParams);
 }
@@ -329,7 +329,7 @@ export function inferParamsForWrapper(
 	const mark = markId
 		? (wrapperEl.querySelector(
 				`mark[data-template-id="${markId}"]`
-		) as HTMLElement | null)
+		  ) as HTMLElement | null)
 		: null;
 	const markStrong = mark?.querySelector("strong");
 	const rawStrong = markStrong?.textContent?.trim() ?? "";
@@ -385,33 +385,44 @@ export function resolveModalTitleFromSchema(
 	return paramsSchema.title ?? "";
 }
 
-export function getTemplateWrapperOnLine(view: MarkdownView | undefined, lineNumber: number): {
+export function getTemplateWrapperOnLine(
+	view: MarkdownView | undefined,
+	lineNumber: number
+): {
 	wrapperEl?: HTMLElement | null;
 	templateKey?: string | null;
 	markId?: string | null;
 	orderTag?: string | null;
 } {
 	if (!view) return {};
-	const cmHolder = (view as unknown) as { editor?: { cm?: { contentDOM?: HTMLElement } } };
+	const cmHolder = view as unknown as {
+		editor?: { cm?: { contentDOM?: HTMLElement } };
+	};
 	const cmContent = cmHolder.editor?.cm?.contentDOM;
-	const contentRoot = (cmContent ?? view.containerEl.querySelector('.cm-content')) as HTMLElement | null;
+	const contentRoot = (cmContent ??
+		view.containerEl.querySelector(".cm-content")) as HTMLElement | null;
 	if (!contentRoot) return {};
-	const wrappers = Array.from(contentRoot.querySelectorAll('[data-template-wrapper]')) as HTMLElement[];
+	const wrappers = Array.from(
+		contentRoot.querySelectorAll("[data-template-wrapper]")
+	) as HTMLElement[];
+	let lineText = "";
+	if (view && typeof view.editor?.getLine === "function") {
+		lineText = view.editor.getLine(lineNumber)?.trim() ?? "";
+	}
 	for (const w of wrappers) {
-		const txt = (w.textContent ?? '').trim();
-		const lines = txt.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-		if (lines.length) {
-			if (view && typeof view.editor?.getLine === 'function') {
-				const lineText = view.editor.getLine(lineNumber)?.trim();
-				if (lineText && txt.includes(lineText)) {
-					return {
-						wrapperEl: w,
-						templateKey: w.getAttribute('data-template-key'),
-						markId: w.getAttribute('data-template-mark-id'),
-						orderTag: (w.querySelector('mark[data-template-id]') as HTMLElement | null)?.getAttribute('data-order-tag') ?? null,
-					};
-				}
-			}
+		const wrapperId = w.getAttribute("data-template-wrapper");
+		if (wrapperId && lineText.includes(wrapperId)) {
+			return {
+				wrapperEl: w,
+				templateKey: w.getAttribute("data-template-key"),
+				markId: w.getAttribute("data-template-mark-id"),
+				orderTag:
+					(
+						w.querySelector(
+							"mark[data-template-id]"
+						) as HTMLElement | null
+					)?.getAttribute("data-order-tag") ?? null,
+			};
 		}
 	}
 	return {};

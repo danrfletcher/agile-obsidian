@@ -584,15 +584,15 @@ export function registerTemplatingCommands(plugin: {
 					const prevLine = ctx.lineNumber - 1;
 					if (prevLine < 0) return;
 
-					// Use getTemplateWrapperOnLine from templateApi
 					const wrapperInfo = getTemplateWrapperOnLine(
 						view,
 						prevLine
 					);
 					if (!wrapperInfo || !wrapperInfo.templateKey) return;
 					if (wrapperInfo.orderTag !== "artifact-item-type") return;
-					if ((ctx.lineText ?? "").trim().length > 0) return;
-
+					// Only trigger if the new line is a blank task
+					if (!/^s*[-*+]s*[.?]s*$/.test(ctx.lineText ?? ""))
+						return;
 					const [g, k] = (wrapperInfo.templateKey ?? "").split(".");
 					const groupMap = presetTemplates as unknown as Record<
 						string,
@@ -615,13 +615,13 @@ export function registerTemplatingCommands(plugin: {
 					if (!schema) return;
 					const params = await promptForSchemaParams(
 						plugin.app,
-						wrapperInfo.templateKey!,
+						wrapperInfo.templateKey,
 						schema,
 						false
 					);
 					if (!params) return;
 					insertTemplateAtCursor(
-						wrapperInfo.templateKey!,
+						wrapperInfo.templateKey,
 						editor,
 						ctx.filePath,
 						params as Record<string, unknown> | undefined
