@@ -80,9 +80,6 @@ export async function hydrateTeamsFromVault(
 ): Promise<number> {
 	const TAG = "[hydrateTeamsFromVault]";
 	try {
-		console.time(`${TAG} total`);
-		console.log(`${TAG} start`);
-
 		// 1) Collect all folders we can see by walking file parents upward
 		const allFolders = new Set<TFolder>();
 		for (const f of vault.getAllLoadedFiles()) {
@@ -96,7 +93,6 @@ export async function hydrateTeamsFromVault(
 				}
 			}
 		}
-		console.log(`${TAG} unique folders scanned:`, allFolders.size);
 
 		// 2) Detect only valid team folders by their own name
 		const slugTeams: DetectedFolderTeam[] = [];
@@ -137,15 +133,6 @@ export async function hydrateTeamsFromVault(
 		}
 
 		slugTeams.sort((a, b) => a.displayName.localeCompare(b.displayName));
-		console.log(`${TAG} slugTeams found:`, slugTeams.length);
-		console.log(
-			`${TAG} slugTeams sample:`,
-			slugTeams.slice(0, 10).map((t) => ({
-				name: t.name,
-				slug: t.slug,
-				rootPath: t.rootPath,
-			}))
-		);
 		// Sanity duplicate checks
 		{
 			const pathCounts = new Map<string, number>();
@@ -236,22 +223,6 @@ export async function hydrateTeamsFromVault(
 		const parentsWithChildren = Array.from(byPath.values()).filter(
 			(n) => n.children.length > 0
 		);
-		if (parentsWithChildren.length) {
-			console.log(
-				`${TAG} parents with children:`,
-				parentsWithChildren.map((p) => ({
-					name: p.name,
-					slug: p.slug,
-					children: p.children.length,
-				}))
-			);
-			for (const p of parentsWithChildren.slice(0, 10)) {
-				console.log(
-					`${TAG} children of ${p.name} (${p.slug}):`,
-					p.children.map((cp) => byPath.get(cp)?.slug ?? cp)
-				);
-			}
-		}
 
 		// 4) Build detected map keyed by slug (unique ID)
 		const detectedBySlug = new Map<
@@ -271,15 +242,11 @@ export async function hydrateTeamsFromVault(
 				slug: t.slug,
 			});
 		}
-		console.log(`${TAG} detectedBySlug (seeded):`, detectedBySlug.size);
 
 		// 5) Extract members by scanning md files under each team root
 		const allFiles = vault.getAllLoadedFiles();
-		let totalMemberMentions = 0;
-		let teamsWithMembers = 0;
 		for (const [slug, info] of detectedBySlug.entries()) {
 			const root = info.rootPath.replace(/\/+$/g, "");
-			let addedForTeam = 0;
 			for (const af of allFiles) {
 				if (
 					af instanceof TFile &&
@@ -305,32 +272,15 @@ export async function hydrateTeamsFromVault(
 								name: aliasToName(alias),
 								type,
 							});
-							addedForTeam++;
-							totalMemberMentions++;
 						}
 					}
 				}
 			}
-			if (addedForTeam > 0) {
-				teamsWithMembers++;
-				console.log(`${TAG} members extracted for`, {
-					team: info.name,
-					slug,
-					root,
-					count: addedForTeam,
-				});
-			}
 		}
-		console.log(
-			`${TAG} total unique member aliases extracted:`,
-			totalMemberMentions,
-			{ teamsWithMembers }
-		);
 
 		// 6) Merge with existing settings (strict slug-only):
 		// Keep ONLY detected slugs. If an existing entry has the same slug, we may keep its customized rootPath.
 		const existing = Array.isArray(settings.teams) ? settings.teams : [];
-		console.log(`${TAG} existing teams before merge:`, existing.length);
 
 		type Merged = {
 			name: string;
@@ -382,15 +332,6 @@ export async function hydrateTeamsFromVault(
 					? parseTeamFolderName(existingFolder.name)
 					: null;
 				if (parsed && parsed.slug.toLowerCase() === key.toLowerCase()) {
-					console.log(
-						`${TAG} overriding detected rootPath with existing customized rootPath:`,
-						{
-							name: t.name,
-							slug: key,
-							from: entry.rootPath,
-							to: t.rootPath,
-						}
-					);
 					entry.rootPath = t.rootPath;
 					updatedRootPaths++;
 				} else {
@@ -406,11 +347,6 @@ export async function hydrateTeamsFromVault(
 				}
 			}
 		}
-
-		console.log(`${TAG} merged size after strict merge:`, merged.size, {
-			updatedRootPaths,
-			droppedExisting,
-		});
 
 		// 7) Canonicalize
 		const rank = (t: MemberType) =>
@@ -486,10 +422,7 @@ export async function hydrateTeamsFromVault(
 		}
 
 		settings.teams = canonical;
-		console.log(
-			`${TAG} final canonical teams (slug-only):`,
-			canonical.length
-		);
+
 		console.timeEnd(`${TAG} total`);
 		return canonical.length;
 	} catch (err) {
