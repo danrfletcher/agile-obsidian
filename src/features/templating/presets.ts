@@ -273,7 +273,7 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 
 			const clause =
 				persona && desire && outcome
-					? ` **As a** ${persona} , **I want to** ${desire} , **so that** ${outcome}`
+					? ` <strong>As a</strong> ${persona}, <strong>I want to</strong> ${desire}, <strong>so that</strong> ${outcome}`
 					: "";
 
 			const text = `<strong>${emojis.story} ${title}${
