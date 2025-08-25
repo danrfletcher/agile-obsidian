@@ -44,6 +44,8 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 		hasParams: true,
 		paramsSchema: {
 			title: "Create Initiative",
+			// Add explicit create/edit variants for modal titles
+			titles: { create: "Create Initiative", edit: "Edit Initiative" },
 			description:
 				"Provide a title and optional details for the initiative.",
 			fields: [
@@ -85,7 +87,7 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 		label: "Agile - Epic",
 		hasParams: true,
 		paramsSchema: {
-			title: "Create Epic",
+			titles: { create: "Create Epic", edit: "Edit Epic" },
 			description: "Provide a title and optional details for the epic.",
 			fields: [
 				{
@@ -124,6 +126,8 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 		hasParams: true,
 		paramsSchema: {
 			title: "Create Feature",
+			// Add explicit create/edit variants for modal titles
+			titles: { create: "Create Feature", edit: "Edit Feature" },
 			description:
 				"Provide a title and optional details for the feature.",
 			fields: [
@@ -187,6 +191,8 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 		hasParams: true,
 		paramsSchema: {
 			title: "Create User Story",
+			// Add explicit create/edit variants for modal titles
+			titles: { create: "Create User Story", edit: "Edit User Story" },
 			description:
 				"Provide the story title. Optionally add persona, desire, and outcome to auto-generate the ‘As a / I want / so that’ clause.",
 			fields: [

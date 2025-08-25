@@ -98,7 +98,7 @@ export function insertTemplate<TParams = unknown>(
 			? ({
 					...tpl.defaults,
 					...(params as Record<string, unknown> | undefined),
-			  } as TParams)
+			} as TParams)
 			: params;
 
 		// Render inline content; no task/list prefix here
@@ -285,14 +285,22 @@ export function renderTemplateOnly<TParams = unknown>(
 	templateId: string,
 	params?: TParams
 ): string {
-	const tpl = findTemplateById(templateId) as TemplateDefinition<TParams> | undefined;
+	const tpl = findTemplateById(templateId) as
+		| TemplateDefinition<TParams>
+		| undefined;
 	if (!tpl || typeof tpl !== "object" || typeof tpl.render !== "function") {
-		throw new TemplateInsertError(`Unknown or invalid template: ${templateId}`, {
-			code: "UNKNOWN_TEMPLATE",
-		});
+		throw new TemplateInsertError(
+			`Unknown or invalid template: ${templateId}`,
+			{
+				code: "UNKNOWN_TEMPLATE",
+			}
+		);
 	}
 	const finalParams = tpl.defaults
-		? ({ ...tpl.defaults, ...(params as Record<string, unknown> | undefined) } as TParams)
+		? ({
+				...tpl.defaults,
+				...(params as Record<string, unknown> | undefined),
+		} as TParams)
 		: params;
 	return tpl.render(finalParams);
 }
@@ -319,7 +327,9 @@ export function inferParamsForWrapper(
 	const out: Record<string, unknown> = {};
 	const markId = wrapperEl.getAttribute("data-template-mark-id") ?? "";
 	const mark = markId
-		? (wrapperEl.querySelector(`mark[data-template-id="${markId}"]`) as HTMLElement | null)
+		? (wrapperEl.querySelector(
+				`mark[data-template-id="${markId}"]`
+		) as HTMLElement | null)
 		: null;
 	const markStrong = mark?.querySelector("strong");
 	const rawStrong = markStrong?.textContent?.trim() ?? "";
@@ -329,7 +339,10 @@ export function inferParamsForWrapper(
 		const n = field.name;
 		if (n.toLowerCase() === "title") {
 			// strip emojis and trailing colon
-			out[n] = rawStrong.replace(/^[^\w]*\s*/, "").replace(/:$/, "").trim();
+			out[n] = rawStrong
+				.replace(/^[^\w]*\s*/, "")
+				.replace(/:$/, "")
+				.trim();
 			continue;
 		}
 		if (n.toLowerCase() === "details") {
@@ -350,4 +363,24 @@ export function inferParamsForWrapper(
 	}
 
 	return out;
+}
+
+/**
+ * Resolve modal title from a paramsSchema object. If isEdit is true, prefer paramsSchema.titles.edit, else paramsSchema.titles.create.
+ * Fallbacks: titles.create/edit -> paramsSchema.title -> empty string
+ */
+export function resolveModalTitleFromSchema(
+	paramsSchema:
+		| { title?: string; titles?: { create?: string; edit?: string } }
+		| undefined,
+	isEdit = false
+): string {
+	if (!paramsSchema) return "";
+	const titles = paramsSchema.titles;
+	if (titles) {
+		if (isEdit)
+			return titles.edit ?? titles.create ?? paramsSchema.title ?? "";
+		return titles.create ?? paramsSchema.title ?? "";
+	}
+	return paramsSchema.title ?? "";
 }

@@ -17,59 +17,50 @@ export type Rule = RuleObject | RuleObject[];
 */
 export type ParamInputType = "text" | "textarea";
 
-export interface ParamSchemaField {
-	name: string; // field name used in render(params)
-	label: string; // human-facing label
-	description?: string; // helper text shown under the input
-	required?: boolean; // default false = optional
-	type?: ParamInputType; // default "text"
-	placeholder?: string; // input placeholder
-	defaultValue?: string; // suggested value (pre-filled)
-}
+// Add optional titles (create/edit) to params schema to support different modal titles
+export type ParamsSchemaTitles = {
+	create?: string;
+	edit?: string;
+};
 
-export interface ParamSchema {
-	title?: string; // modal title override
-	description?: string; // shown at the top of the modal
-	fields: ParamSchemaField[]; // ordered list of fields to render
-}
-
-export interface TemplateDefinition<TParams = any> {
-	id: string;
-	label: string;
+export type ParamsSchemaField = {
+	name: string;
+	label?: string;
+	type?: string;
+	placeholder?: string;
+	defaultValue?: string | number | boolean | null;
 	description?: string;
-	rules?: Rule;
+	required?: boolean;
+	options?: Array<{ label: string; value: string }>;
+};
 
-	// If true, we will prompt for parameters before insert unless params are supplied programmaticlly.
+// Extend ParamsSchema to optionally include titles. 'fields' is required to simplify downstream code.
+export type ParamsSchema = {
+	title?: string;
+	description?: string;
+	fields: ParamsSchemaField[];
+	// optional object with create/edit variants
+	titles?: ParamsSchemaTitles;
+};
+
+// Update TemplateDefinition to use ParamsSchema and include optional defaults and hidden flag used elsewhere
+export interface TemplateDefinition<TParams = unknown> {
+	id: string;
+	label?: string;
 	hasParams?: boolean;
-
-	// If present, we use this schema to render a form-based modal instead of raw-JSON.
-	paramsSchema?: ParamSchema;
-
-	// Optional: default param values if user omits fields in modal or programmatic calls
+	paramsSchema?: ParamsSchema;
 	defaults?: Partial<TParams>;
-
-	// Optional: hide this template from dynamic command registration.
-	// Useful when you plan to provide custom command factory functions for it later.
-	hiddenFromDynamicCommands?: boolean;
-
-	// Optional: Extract params from a rendered DOM wrapper (post-insert editing).
-	// If not supplied, a best-effort generic extractor is used (based on paramsSchema).
+	rules?: Record<string, unknown>;
+	render?: (params?: TParams) => string;
 	parseParamsFromDom?: (
-		wrapperEl: HTMLElement
-	) => Record<string, unknown> | undefined;
-
-	// Render returns inline HTML (no "- [ ]" / "- " prefix). Wrapping happens in insertTemplateAtCursor and
-	// we additionally wrap with a consistent outer span for edit-clicks (see htmlPartials.wrapTemplate).
-	render: (params?: TParams) => string;
+		el: HTMLElement
+	) => Partial<TParams> | Record<string, string>;
+	hiddenFromDynamicCommands?: boolean;
 }
 
-export interface TemplateGroup {
-	[key: string]: TemplateDefinition<any>;
-}
-
-export interface PresetTemplates {
-	[group: string]: TemplateGroup | { [subgroup: string]: TemplateGroup };
-}
+export type TemplateCollection = {
+	[key: string]: TemplateDefinition<unknown>;
+};
 
 export interface TemplateContext {
 	line: string;
