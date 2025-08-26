@@ -1,36 +1,36 @@
 import { Plugin, TFile, MarkdownView } from "obsidian";
-import { AgileSettingTab } from "./settings/settings.ui";
-import { DEFAULT_SETTINGS } from "./settings/settings.store";
+import { AgileSettingTab } from "./ui/settings/settings.ui";
+import { DEFAULT_SETTINGS } from "./infra/persistence/settings-store";
 import type {
 	AgileObsidianSettings,
 	TeamInfo,
 	MemberInfo,
-} from "./settings/settings.types";
-import { hydrateTeamsFromVault } from "./features/orgStructure/teamDetection";
+} from "./app/config/settings.types";
+import { hydrateTeamsFromVault } from "./domain/org/team-detection";
 import {
 	createOrganizationFromTeam,
 	addTeamsToExistingOrganization,
 	createSubteams,
-} from "./features/orgStructure/organizations";
-import { createTeamResources } from "./features/orgStructure/teamCreation";
+} from "src/domain/org/organizations";
+import { createTeamResources } from "./domain/org/creation";
 import {
 	slugifyName,
 	resolveTeamForPath,
 	isUncheckedTaskLine,
-} from "./utils/commands/commandUtils";
+} from "src/domain/slugs/slug-utils";
 import { injectCheckboxStyles, removeCheckboxStyles } from "./styles/injection";
-import { TaskIndex } from "./features/taskIndex/TaskIndex";
-import { registerMarkClickHandlers } from "./ui/markContextMenu";
-import { findTargetLineFromClick } from "./utils/fs/editorUtils";
-import { normalizeTaskLine } from "./utils/format/taskFormatter";
+import { TaskIndex } from "./domain/task-index/task-index";
+import { registerMarkClickHandlers } from "./ui/components/mark-context-menu";
+import { findTargetLineFromClick } from "./app/editor/editor-context-utils";
+import { normalizeTaskLine } from "./domain/tasks/task-formatter";
 import {
 	getExplicitAssigneeAliasFromText,
 	buildAssigneeMarkForAlias,
-} from "./features/taskAssignment/assigneeMarks";
-import { applyAssigneeChangeWithCascade } from "./features/taskAssignment/assignmentCascade";
-import { renderDelegateMark } from "./features/taskAssignment/markTemplates";
-import { DelegateSlashSuggest } from "./utils/commands/slashDelegate";
-import { registerTemplatingCommands } from "./features/templating/templatingCommands";
+} from "src/domain/tasks/assignment/assignee-marks";
+import { applyAssigneeChangeWithCascade } from "src/domain/tasks/assignment/assignment-cascade";
+import { renderDelegateMark } from "./domain/tasks/assignment/mark-templates";
+import { DelegateSlashSuggest } from "./app/commands/delegate-commands";
+import { registerTemplatingCommands } from "./app/commands/templating-commands";
 
 export default class AgileObsidianPlugin extends Plugin {
 	settings: AgileObsidianSettings;
