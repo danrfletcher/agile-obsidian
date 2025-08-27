@@ -139,6 +139,9 @@ export default class AgileObsidianPlugin extends Plugin {
 		await this.registerTaskFeatures();
 
 		registerTemplatingCommands(this);
+		console.debug(
+			`[agile] AgileObsidianPlugin loaded at ${new Date().toISOString()}`
+		);
 	}
 
 	onunload() {

@@ -411,15 +411,18 @@ export function registerTemplatingCommands(plugin: {
 	);
 	console.debug("[agile] registerTemplatingCommands: start");
 	const wireClickHandler = () => {
-		console.debug("[agile] wireClickHandler: start");
+		console.debug(
+			"[agile] wireClickHandler: entering handler setup - checking for active MarkdownView"
+		);
 		const view = plugin.app.workspace.getActiveViewOfType(MarkdownView);
 		if (!view) {
 			console.debug(
-				"[agile] wireClickHandler: no active MarkdownView - aborting handler setup"
+				"[agile] wireClickHandler: no active MarkdownView found - skipping wiring"
 			);
 			return;
 		}
-		console.debug("[agile] wireClickHandler: active MarkdownView found");
+
+		// Resolve editor holder and content DOM first so we can safely reference targetEl below
 		const cmHolder = view as unknown as {
 			editor?: { cm?: { contentDOM?: HTMLElement } };
 		};
@@ -429,31 +432,42 @@ export function registerTemplatingCommands(plugin: {
 				".cm-content"
 			)) as HTMLElement | null;
 		const targetEl: HTMLElement = contentRoot ?? view.containerEl;
-		if (!targetEl) {
-			console.debug(
-				"[agile] wireClickHandler: no target element (content root or container) - aborting"
-			);
-			return;
-		}
+
+		// now it's safe to log targetEl properties
+		console.debug(
+			"[agile] wireClickHandler: active MarkdownView is available",
+			{
+				viewType: view?.type,
+				fileName: view?.file?.name,
+				cmContentTag: cmContent?.tagName,
+				contentRootTag: contentRoot?.tagName,
+				targetElTag: targetEl?.tagName,
+			}
+		);
+
 		const MARKER = "__tplClickWired";
 		const markerObj = targetEl as unknown as Record<string, unknown>;
 		if (markerObj[MARKER]) {
 			console.debug(
-				"[agile] wireClickHandler: handlers already wired on this targetEl"
+				"[agile] wireClickHandler: target element already marked as wired - skipping reattach",
+				{ marker: MARKER, element: targetEl.tagName }
 			);
 			return;
 		}
 		markerObj[MARKER] = true;
 		console.debug(
-			"[agile] wireClickHandler: wiring click and keydown handlers on targetEl"
+			"[agile] wireClickHandler: wiring event handlers on target element",
+			{ targetTag: targetEl.tagName, markerSet: true }
 		);
 
 		// Click to edit handler
 		targetEl.addEventListener(
 			"click",
 			async (evt: MouseEvent) => {
-				console.debug("[agile] click handler: event received", {
-					target: (evt.target as HTMLElement)?.tagName,
+				console.debug("[agile] click handler: event start", {
+					eventTarget: (evt.target as HTMLElement)?.tagName,
+					clientX: (evt as MouseEvent).clientX,
+					clientY: (evt as MouseEvent).clientY,
 				});
 				const target = evt.target as HTMLElement | null;
 				if (!target) {
@@ -470,22 +484,28 @@ export function registerTemplatingCommands(plugin: {
 				}
 				if (!el) {
 					console.debug(
-						"[agile] click handler: no data-template-wrapper found in clicked element ancestry"
+						"[agile] click handler: clicked element is not inside a template wrapper - ignoring",
+						{ clickedTag: target.tagName }
 					);
 					return;
 				}
 				evt.preventDefault();
 				evt.stopPropagation();
 				try {
-					// call click-to-edit
 					const templateKey =
 						el.getAttribute("data-template-key") ?? "";
-					console.debug("[agile] click handler: found wrapper", {
-						templateKey,
-					});
+					console.debug(
+						"[agile] click handler: found template wrapper",
+						{
+							templateKey,
+							wrapperAttrs: Array.from(el.attributes).map(
+								(a) => `${a.name}=${a.value}`
+							),
+						}
+					);
 					if (!templateKey) {
 						console.debug(
-							"[agile] click handler: wrapper has no templateKey - abort"
+							"[agile] click handler: wrapper missing data-template-key attribute - abort"
 						);
 						return;
 					}
@@ -499,20 +519,22 @@ export function registerTemplatingCommands(plugin: {
 						| undefined;
 					if (!def) {
 						console.debug(
-							"[agile] click handler: template definition not found for",
-							templateKey
+							"[agile] click handler: template definition not found in presets",
+							{ templateKey }
 						);
 						return;
 					}
 					console.debug(
 						"[agile] click handler: template definition loaded",
 						{
+							templateKey,
 							hasParams: def.hasParams,
+							paramsSchemaPresent: !!def.paramsSchema,
 						}
 					);
 					if (!def.hasParams) {
 						console.debug(
-							"[agile] click handler: template has no params - nothing to edit"
+							"[agile] click handler: template has no params to edit - abort"
 						);
 						return;
 					}
@@ -520,8 +542,11 @@ export function registerTemplatingCommands(plugin: {
 					const prefill =
 						inferParamsForWrapper(templateKey, el) ?? {};
 					console.debug(
-						"[agile] click handler: inferred prefill params",
-						prefill
+						"[agile] click handler: inferred prefill params from wrapper",
+						{
+							templateKey,
+							prefill,
+						}
 					);
 					let params: Record<string, unknown> | undefined;
 					if (def.paramsSchema && def.paramsSchema.fields?.length) {
@@ -535,6 +560,13 @@ export function registerTemplatingCommands(plugin: {
 										: f.defaultValue,
 							})),
 						};
+						console.debug(
+							"[agile] click handler: opening schema param modal (edit)",
+							{
+								templateKey,
+								schemaTitle: schema.title,
+							}
+						);
 						params = await promptForSchemaParams(
 							plugin.app,
 							templateKey,
@@ -542,6 +574,13 @@ export function registerTemplatingCommands(plugin: {
 							true
 						);
 					} else {
+						console.debug(
+							"[agile] click handler: opening JSON param modal (edit)",
+							{
+								templateKey,
+								prefill,
+							}
+						);
 						// JSON path
 						const jsonParams = JSON.stringify(
 							prefill ?? {},
@@ -613,20 +652,24 @@ export function registerTemplatingCommands(plugin: {
 
 					if (!params) {
 						console.debug(
-							"[agile] click handler: user cancelled editing params or none provided"
+							"[agile] click handler: user cancelled params editing or returned no params - abort update"
 						);
 						return;
 					}
 					try {
 						const newHtml = renderTemplateOnly(templateKey, params);
 						console.debug(
-							"[agile] click handler: rendering template with params, replacing wrapper with new HTML"
+							"[agile] click handler: rendering template and replacing wrapper HTML",
+							{
+								templateKey,
+								params,
+							}
 						);
 						el.outerHTML = newHtml;
 					} catch (e) {
 						console.debug(
-							"[agile] click handler: failed to update template",
-							e
+							"[agile] click handler: renderTemplateOnly failed",
+							{ error: e }
 						);
 						new Notice(
 							`Failed to update template: ${String(
@@ -635,6 +678,10 @@ export function registerTemplatingCommands(plugin: {
 						);
 					}
 				} catch (err) {
+					console.debug(
+						"[agile] click handler: unexpected error handling click",
+						{ err }
+					);
 					reportInsertError(err as unknown);
 				}
 			},
@@ -645,19 +692,34 @@ export function registerTemplatingCommands(plugin: {
 		targetEl.addEventListener(
 			"keydown",
 			async (evt: KeyboardEvent) => {
-				console.debug("[agile] keydown handler: key event", {
-					key: evt.key,
-				});
-				if (evt.key !== "Enter") return;
+				// log full event details to help determine if events arrive here
+				console.debug(
+					"[agile] keydown handler: received keydown event",
+					{
+						key: evt.key,
+						code: (evt as KeyboardEvent).code,
+						repeat: evt.repeat,
+						altKey: evt.altKey,
+						ctrlKey: evt.ctrlKey,
+						metaKey: evt.metaKey,
+						shiftKey: evt.shiftKey,
+						targetTag: (evt.target as HTMLElement)?.tagName,
+					}
+				);
+				if (evt.key !== "Enter") {
+					// other keys are expected frequently - only trace Enter further
+					return;
+				}
+				// allow editor to update line content first
 				setTimeout(async () => {
 					console.debug(
-						"[agile] keydown handler: Enter detected, running after timeout to allow editor state update"
+						"[agile] keydown handler: processing Enter after timeout to allow editor update"
 					);
 					const view =
 						plugin.app.workspace.getActiveViewOfType(MarkdownView);
 					if (!view) {
 						console.debug(
-							"[agile] keydown handler: no active MarkdownView - abort"
+							"[agile] keydown handler: no active MarkdownView at timeout - abort"
 						);
 						return;
 					}
@@ -667,14 +729,19 @@ export function registerTemplatingCommands(plugin: {
 						view,
 						editor
 					);
-					console.debug("[agile] keydown handler: cursor context", {
-						lineNumber: ctx.lineNumber,
-						lineText: ctx.lineText,
-					});
+					console.debug(
+						"[agile] keydown handler: cursor context after Enter",
+						{
+							filePath: ctx.filePath,
+							lineNumber: ctx.lineNumber,
+							lineTextPreview: String(ctx.lineText).slice(0, 120),
+						}
+					);
 					const prevLine = ctx.lineNumber - 1;
 					if (prevLine < 0) {
 						console.debug(
-							"[agile] keydown handler: prevLine < 0 - abort"
+							"[agile] keydown handler: prior line index < 0 - nothing to inspect",
+							{ lineNumber: ctx.lineNumber }
 						);
 						return;
 					}
@@ -684,19 +751,25 @@ export function registerTemplatingCommands(plugin: {
 						prevLine
 					);
 					console.debug(
-						"[agile] keydown handler: wrapperInfo on prevLine",
-						wrapperInfo
+						"[agile] keydown handler: wrapperInfo read from previous line",
+						{
+							prevLine,
+							wrapperInfo,
+						}
 					);
 					if (!wrapperInfo || !wrapperInfo.templateKey) {
 						console.debug(
-							"[agile] keydown handler: no wrapperInfo.templateKey found - abort"
+							"[agile] keydown handler: no template wrapper found on previous line - abort",
+							{ prevLine }
 						);
 						return;
 					}
 					if (wrapperInfo.orderTag !== "artifact-item-type") {
 						console.debug(
-							"[agile] keydown handler: wrapperInfo.orderTag mismatch",
-							wrapperInfo.orderTag
+							"[agile] keydown handler: template wrapper orderTag does not match 'artifact-item-type' - abort",
+							{
+								foundOrderTag: wrapperInfo.orderTag,
+							}
 						);
 						return;
 					}
@@ -704,11 +777,20 @@ export function registerTemplatingCommands(plugin: {
 					const isBlankTask = /^\s*[-*+]\s*\[\s*\.?\s*\]\s*$/.test(
 						ctx.lineText ?? ""
 					);
-					console.debug("[agile] keydown handler: isBlankTask test", {
-						lineText: ctx.lineText,
-						isBlankTask,
-					});
-					if (!isBlankTask) return;
+					console.debug(
+						"[agile] keydown handler: blank task detection",
+						{
+							lineText: ctx.lineText,
+							isBlankTask,
+						}
+					);
+					if (!isBlankTask) {
+						console.debug(
+							"[agile] keydown handler: new line is not a blank task - abort"
+						);
+						return;
+					}
+
 					const [g, k] = (wrapperInfo.templateKey ?? "").split(".");
 					const groupMap = presetTemplates as unknown as Record<
 						string,
@@ -719,7 +801,12 @@ export function registerTemplatingCommands(plugin: {
 						| undefined;
 					if (!def || !def.hasParams) {
 						console.debug(
-							"[agile] keydown handler: no template def or hasParams=false - abort"
+							"[agile] keydown handler: no template definition found or template requires no params - abort",
+							{
+								templateKey: wrapperInfo.templateKey,
+								defExists: !!def,
+								hasParams: def?.hasParams,
+							}
 						);
 						return;
 					}
@@ -735,13 +822,19 @@ export function registerTemplatingCommands(plugin: {
 						: undefined;
 					if (!schema) {
 						console.debug(
-							"[agile] keydown handler: no params schema available - abort"
+							"[agile] keydown handler: params schema missing or empty - abort",
+							{
+								templateKey: wrapperInfo.templateKey,
+							}
 						);
 						return;
 					}
 					console.debug(
 						"[agile] keydown handler: opening params modal for template",
-						wrapperInfo.templateKey
+						{
+							templateKey: wrapperInfo.templateKey,
+							schemaTitle: schema?.title,
+						}
 					);
 					const params = await promptForSchemaParams(
 						plugin.app,
@@ -751,19 +844,21 @@ export function registerTemplatingCommands(plugin: {
 					);
 					console.debug(
 						"[agile] keydown handler: params modal returned",
-						params
+						{ paramsReturned: !!params }
 					);
 					if (!params) {
 						console.debug(
-							"[agile] keydown handler: user dismissed params modal - abort"
+							"[agile] keydown handler: user dismissed params modal or provided no params - abort"
 						);
 						return;
 					}
 					console.debug(
-						"[agile] keydown handler: inserting template",
+						"[agile] keydown handler: inserting template at cursor",
 						{
 							templateKey: wrapperInfo.templateKey,
 							params,
+							filePath: ctx.filePath,
+							cursorLine: ctx.lineNumber,
 						}
 					);
 					insertTemplateAtCursor(
@@ -823,3 +918,17 @@ export async function insertTemplateProgrammatically(
 		reportInsertError(err as unknown);
 	}
 }
+
+console.debug(
+	"[agile] DEBUG: attach temporary global key listener to inspect Enter events"
+);
+document.addEventListener(
+	"keydown",
+	(e) => {
+		console.debug("[agile] DEBUG: document keydown", {
+			key: e.key,
+			targetTag: (e.target as HTMLElement)?.tagName,
+		});
+	},
+	true
+);
