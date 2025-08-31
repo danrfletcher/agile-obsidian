@@ -1,19 +1,17 @@
 import { ItemView, WorkspaceLeaf, TFile, TAbstractFile } from "obsidian";
-import { TaskIndex } from "src/domain/task-index/task-index";
-import { TaskItem } from "src/domain/tasks/task-item";
-import manifest from "../../../manifest.json";
-import { cleanupExpiredSnoozes } from "../../domain/tasks/snooze/snooze-utils";
-import { getCurrentUserDisplayName } from "src/infra/persistence/settings-store";
+import { TaskIndex } from "src/features/task-index/task-index";
+import { TaskItem } from "src/features/tasks/task-item";
+import manifest from "manifest.json";
+import { cleanupExpiredSnoozes } from "src/features/task-snooze/snooze-utils";
+import { getCurrentUserDisplayName } from "src/features/settings/infra/settings-store";
 
 // Section processors
-import { processAndRenderObjectives } from "../sections/objectives-section";
-import { processAndRenderTasks } from "../sections/tasks-section";
-import { processAndRenderStories } from "../sections/stories-section";
-import { processAndRenderEpics } from "../sections/epics-section";
-import { processAndRenderInitiatives } from "../sections/initiatives-section";
-import { processAndRenderResponsibilities } from "../sections/responsibilities-section";
-import { processAndRenderPriorities } from "../sections/priorities-section";
-import type AgileObsidianPlugin from "../../main";
+import { processAndRenderObjectives } from "../components/objectives";
+import { processAndRenderArtifacts } from "../components/artifacts";
+import { processAndRenderInitiatives } from "../components/initiatives";
+import { processAndRenderResponsibilities } from "../components/responsibilities";
+import { processAndRenderPriorities } from "../components/priorities";
+import type AgileObsidianPlugin from "src/main.ts";
 
 export const VIEW_TYPE_AGILE_DASHBOARD = "agile-dashboard-view";
 
@@ -376,42 +374,18 @@ export class AgileDashboardView extends ItemView {
 				taskParams
 			);
 		}
-		if (this.plugin.settings.showTasks) {
-			processAndRenderTasks(
-				container,
-				currentTasks,
-				status,
-				selectedAlias,
-				this.app,
-				taskMap,
-				childrenMap,
-				taskParams
-			);
-		}
-		if (this.plugin.settings.showStories) {
-			processAndRenderStories(
-				container,
-				currentTasks,
-				status,
-				selectedAlias,
-				this.app,
-				taskMap,
-				childrenMap,
-				taskParams
-			);
-		}
-		if (this.plugin.settings.showEpics) {
-			processAndRenderEpics(
-				container,
-				currentTasks,
-				status,
-				selectedAlias,
-				this.app,
-				taskMap,
-				childrenMap,
-				taskParams
-			);
-		}
+		// Render Tasks / Stories / Epics via the unified artifacts presenter
+		processAndRenderArtifacts(
+			container,
+			currentTasks,
+			status,
+			selectedAlias,
+			this.app,
+			taskMap,
+			childrenMap,
+			taskParams,
+			this.plugin.settings
+		);
 		if (this.plugin.settings.showInitiatives) {
 			processAndRenderInitiatives(
 				container,

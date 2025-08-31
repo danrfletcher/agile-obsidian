@@ -1,20 +1,20 @@
 import { App } from "obsidian";
-import { TaskItem, TaskParams } from "src/domain/tasks/task-item";
-import { renderTaskTree } from "../components/task-renderer";
+import { TaskItem, TaskParams } from "src/features/tasks/task-item";
+import { renderTaskTree } from "./task-renderer";
 import {
 	activeForMember,
 	isCancelled,
 	isInProgress,
 	isMarkedCompleted,
 	isSleeping,
-} from "src/domain/tasks/task-filters";
+} from "src/features/agile-dashboard-view/domain/task-filters";
 import {
 	isRecurringResponsibility,
 	isLearningInitiative,
 	isLearningEpic,
-} from "../../domain/tasks/task-types"; // Adjust path
-import { isRelevantToday } from "../../infra/system/clock";
-import { stripListItems } from "src/domain/hierarchy/hierarchy-utils";
+} from "../../domain/task-types"; // Adjust path
+import { isRelevantToday } from "../../domain/dates";
+import { stripListItems } from "src/features/agile-dashboard-view/domain/hierarchy-utils";
 
 export function processAndRenderPriorities(
 	container: HTMLElement,

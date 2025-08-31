@@ -1,15 +1,15 @@
 import { App } from "obsidian";
-import { TaskItem, TaskParams } from "src/domain/tasks/task-item";
-import { renderTaskTree } from "../components/task-renderer";
+import { TaskItem, TaskParams } from "src/features/tasks/task-item";
+import { renderTaskTree } from "./task-renderer";
 import {
 	activeForMember,
 	isCancelled,
 	isInProgress,
 	isMarkedCompleted,
 	isSleeping,
-} from "src/domain/tasks/task-filters";
-import { buildPrunedMergedTrees } from "src/domain/hierarchy/hierarchy-utils";
-import { isOKR } from "src/domain/tasks/task-types";
+} from "src/features/agile-dashboard-view/domain/task-filters";
+import { buildPrunedMergedTrees } from "src/features/agile-dashboard-view/domain/hierarchy-utils";
+import { isOKR } from "src/features/agile-dashboard-view/domain/task-types";
 
 export function processAndRenderObjectives(
 	container: HTMLElement,

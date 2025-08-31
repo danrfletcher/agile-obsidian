@@ -1,7 +1,7 @@
 import { App } from "obsidian";
-import { TaskItem } from "src/domain/tasks/task-item";
-import { snoozeTask } from "src/domain/tasks/snooze/snooze";
-import { getTeamMemberSlug } from "src/domain/tasks/task-filters"; //TO DO: fix divergent logic - snooze should not have its own getTeamMemberSlug - use slug utils
+import { TaskItem } from "src/features/tasks/task-item";
+import { snoozeTask } from "src/features/task-snooze/snooze";
+import { getTeamMemberSlug } from "../../domain/task-filters"; //TO DO: fix divergent logic - snooze should not have its own getTeamMemberSlug - use slug utils
 
 // Check if task text indicates it's assigned to the current user
 function isAssignedToUser(text: string, userSlug: string) {
