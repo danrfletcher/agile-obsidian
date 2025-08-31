@@ -9,10 +9,14 @@
  */
 
 import type { Editor } from "obsidian";
-import {
-	escapeRegExp,
-	isUncheckedTaskLine,
-} from "src/domain/slugs/slug-utils";
+import { escapeRegExp } from "src/features/org-structure/domain/slug-utils";
+
+/**
+ * Checks whether a line is an unchecked Markdown task "- [ ] ".
+ */
+export function isUncheckedTaskLine(line: string): boolean {
+	return /^\s*-\s*\[\s*\]\s+/.test(line);
+}
 
 /**
  * Determine the target line number in the editor corresponding to a click on a <mark>,
@@ -89,17 +93,17 @@ export function findTargetLineFromClick(
  * - This is broader than isUncheckedTaskLine; it matches both checked and unchecked tasks.
  */
 export function isTaskLine(line: string): boolean {
-  const expanded = line.replace(/\t/g, "    ");
-  // optional indent, list marker (- * + or 1.), space, then [ ] or [x]/[X], then at least one space or end
-  return /^\s*(?:[-*+]|\d+\.)\s+\[(?: |x|X)\](?:\s+|$)/.test(expanded);
+	const expanded = line.replace(/\t/g, "    ");
+	// optional indent, list marker (- * + or 1.), space, then [ ] or [x]/[X], then at least one space or end
+	return /^\s*(?:[-*+]|\d+\.)\s+\[(?: |x|X)\](?:\s+|$)/.test(expanded);
 }
 
 /**
  * Determine if a line is a Markdown list item (bulleted or ordered), regardless of checkbox.
  */
 export function isListLine(line: string): boolean {
-  const expanded = line.replace(/\t/g, "    ");
-  return /^\s*(?:[-*+]|\d+\.)\s+/.test(expanded);
+	const expanded = line.replace(/\t/g, "    ");
+	return /^\s*(?:[-*+]|\d+\.)\s+/.test(expanded);
 }
 
 /**
@@ -107,35 +111,38 @@ export function isListLine(line: string): boolean {
  * Tabs are expanded to 4 spaces.
  */
 export function indentWidth(line: string): number {
-  const expanded = line.replace(/\t/g, "    ");
-  const m = expanded.match(/^\s*/);
-  return m ? m[0].length : 0;
+	const expanded = line.replace(/\t/g, "    ");
+	const m = expanded.match(/^\s*/);
+	return m ? m[0].length : 0;
 }
 
 /**
  * Return all editor lines split by newline.
  */
 export function getEditorLines(editor: Editor): string[] {
-  return editor.getValue().split(/\r?\n/);
+	return editor.getValue().split(/\r?\n/);
 }
 
 /**
  * Find the current line index using the editor cursor. Fallback to string matching if reference provided.
  */
-export function findCurrentLineIndex(editor: Editor, referenceLine?: string): number {
-  const lineFromCursor = editor.getCursor().line;
-  if (Number.isInteger(lineFromCursor)) return lineFromCursor;
+export function findCurrentLineIndex(
+	editor: Editor,
+	referenceLine?: string
+): number {
+	const lineFromCursor = editor.getCursor().line;
+	if (Number.isInteger(lineFromCursor)) return lineFromCursor;
 
-  if (referenceLine) {
-    const lines = getEditorLines(editor);
-    let idx = lines.findIndex((l) => l === referenceLine);
-    if (idx !== -1) return idx;
-    const norm = referenceLine.replace(/\s+$/, "");
-    idx = lines.findIndex((l) => l.replace(/\s+$/, "") === norm);
-    return idx;
-  }
+	if (referenceLine) {
+		const lines = getEditorLines(editor);
+		let idx = lines.findIndex((l) => l === referenceLine);
+		if (idx !== -1) return idx;
+		const norm = referenceLine.replace(/\s+$/, "");
+		idx = lines.findIndex((l) => l.replace(/\s+$/, "") === norm);
+		return idx;
+	}
 
-  return -1;
+	return -1;
 }
 
 /**
@@ -143,8 +150,8 @@ export function findCurrentLineIndex(editor: Editor, referenceLine?: string): nu
  * Prefers machine-readable data-template-id. Falls back to nothing (we no longer rely on class).
  */
 export function detectTemplateIdOnLine(line: string): string | undefined {
-  const m = line.match(/data-template-id="([^"]+)"/);
-  return m ? m[1] : undefined;
+	const m = line.match(/data-template-id="([^"]+)"/);
+	return m ? m[1] : undefined;
 }
 
 /**
@@ -154,74 +161,78 @@ export function detectTemplateIdOnLine(line: string): string | undefined {
  * - Immediate parent is first.
  */
 export function getAncestorTemplateIdsAtCursor(editor: Editor): string[] {
-  const lines = getEditorLines(editor);
-  const curIdx = findCurrentLineIndex(editor);
-  if (curIdx < 0 || curIdx >= lines.length) return [];
+	const lines = getEditorLines(editor);
+	const curIdx = findCurrentLineIndex(editor);
+	if (curIdx < 0 || curIdx >= lines.length) return [];
 
-  const curLine = lines[curIdx];
-  if (!isListLine(curLine)) return [];
+	const curLine = lines[curIdx];
+	if (!isListLine(curLine)) return [];
 
-  const curIndent = indentWidth(curLine);
-  const ancestors: string[] = [];
-  let nextThreshold = Number.POSITIVE_INFINITY;
+	const curIndent = indentWidth(curLine);
+	const ancestors: string[] = [];
+	let nextThreshold = Number.POSITIVE_INFINITY;
 
-  for (let i = curIdx - 1; i >= 0; i--) {
-    const line = lines[i];
-    if (!isListLine(line)) continue;
+	for (let i = curIdx - 1; i >= 0; i--) {
+		const line = lines[i];
+		if (!isListLine(line)) continue;
 
-    const iw = indentWidth(line);
-    if (iw < Math.min(nextThreshold, curIndent)) {
-      const id = detectTemplateIdOnLine(line);
-      if (id) ancestors.push(id);
-      nextThreshold = iw;
-      if (iw === 0) break;
-    }
-  }
+		const iw = indentWidth(line);
+		if (iw < Math.min(nextThreshold, curIndent)) {
+			const id = detectTemplateIdOnLine(line);
+			if (id) ancestors.push(id);
+			nextThreshold = iw;
+			if (iw === 0) break;
+		}
+	}
 
-  return ancestors;
+	return ancestors;
 }
 
 /**
  * Provide a context-compatible function to fetch parent chain for the current ctx.
  * If ctx.editor exists, use it. Otherwise, attempt a best-effort using ctx.file text.
  */
-export function getParentChainTemplateIds(ctx: { line: string; file: unknown; editor?: Editor }): string[] {
-  const editor = ctx.editor;
-  if (editor) return getAncestorTemplateIdsAtCursor(editor);
+export function getParentChainTemplateIds(ctx: {
+	line: string;
+	file: unknown;
+	editor?: Editor;
+}): string[] {
+	const editor = ctx.editor;
+	if (editor) return getAncestorTemplateIdsAtCursor(editor);
 
-  // Fallback: scan the provided file text
-  const lines = Array.isArray(ctx.file)
-    ? (ctx.file as string[])
-    : typeof ctx.file === "string"
-    ? (ctx.file as string).split(/\r?\n/)
-    : [];
+	// Fallback: scan the provided file text
+	const lines = Array.isArray(ctx.file)
+		? (ctx.file as string[])
+		: typeof ctx.file === "string"
+		? (ctx.file as string).split(/\r?\n/)
+		: [];
 
-  if (lines.length === 0) return [];
+	if (lines.length === 0) return [];
 
-  let idx = lines.findIndex((l) => l === ctx.line);
-  if (idx === -1) {
-    const norm = ctx.line.replace(/\s+$/, "");
-    idx = lines.findIndex((l) => l.replace(/\s+$/, "") === norm);
-  }
-  if (idx === -1) return [];
+	let idx = lines.findIndex((l) => l === ctx.line);
+	if (idx === -1) {
+		const norm = ctx.line.replace(/\s+$/, "");
+		idx = lines.findIndex((l) => l.replace(/\s+$/, "") === norm);
+	}
+	if (idx === -1) return [];
 
-  const curLine = lines[idx];
-  if (!isListLine(curLine)) return [];
+	const curLine = lines[idx];
+	if (!isListLine(curLine)) return [];
 
-  const curIndent = indentWidth(curLine);
-  const ancestors: string[] = [];
-  let nextThreshold = Number.POSITIVE_INFINITY;
+	const curIndent = indentWidth(curLine);
+	const ancestors: string[] = [];
+	let nextThreshold = Number.POSITIVE_INFINITY;
 
-  for (let i = idx - 1; i >= 0; i--) {
-    const line = lines[i];
-    if (!isListLine(line)) continue;
-    const iw = indentWidth(line);
-    if (iw < Math.min(nextThreshold, curIndent)) {
-      const m = line.match(/data-template-id="([^"]+)"/);
-      if (m) ancestors.push(m[1]);
-      nextThreshold = iw;
-      if (iw === 0) break;
-    }
-  }
-  return ancestors;
+	for (let i = idx - 1; i >= 0; i--) {
+		const line = lines[i];
+		if (!isListLine(line)) continue;
+		const iw = indentWidth(line);
+		if (iw < Math.min(nextThreshold, curIndent)) {
+			const m = line.match(/data-template-id="([^"]+)"/);
+			if (m) ancestors.push(m[1]);
+			nextThreshold = iw;
+			if (iw === 0) break;
+		}
+	}
+	return ancestors;
 }
