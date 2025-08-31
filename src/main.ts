@@ -8,6 +8,7 @@ import {
 	initSettings,
 	registerSettings,
 } from "./composition/register-settings";
+import { registerAllCommands } from "./composition/register-commands";
 
 export default class AgileObsidian extends Plugin {
 	settings: AgileObsidianSettings;
@@ -23,6 +24,9 @@ export default class AgileObsidian extends Plugin {
 
 		// Register the settings feature (UI, presenters, actions) via composition
 		await registerSettings(container);
+
+		// Register commands and views for features
+		if (container) await registerAllCommands(container);
 	}
 
 	onunload() {}
