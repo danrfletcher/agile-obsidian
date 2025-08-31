@@ -15,7 +15,7 @@ import {
 	getBaseCodeFromSlug,
 	getPathIdFromSlug,
 	slugifyName,
-} from "src/features/identities/slug-utils";
+} from "src/features/org-structure/domain/slug-utils";
 import { createTeamResources } from "../app/creation";
 import { TeamInfo } from "src/features/settings/settings.types";
 

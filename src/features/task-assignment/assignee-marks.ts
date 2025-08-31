@@ -9,7 +9,7 @@
  * - Centralizes parsing and rendering rules for assignee marks so all features behave consistently.
  */
 
-import { aliasToName } from "src/domain/slugs/slug-utils";
+import { getDisplayNameFromAlias } from "../org-structure/domain/slug-utils";
 import { renderAssigneeMark } from "./mark-templates";
 
 /**
@@ -70,6 +70,6 @@ export function buildAssigneeMarkForAlias(
 	const member = (team?.members ?? []).find(
 		(m: any) => (m.alias || "").toLowerCase() === lower
 	);
-	const name = member?.name || aliasToName(alias);
+	const name = member?.name || getDisplayNameFromAlias(alias);
 	return renderAssigneeMark(alias, name, variant, { everyone: false });
 }

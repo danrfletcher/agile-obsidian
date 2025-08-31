@@ -7,7 +7,7 @@ import {
 	addTeamsToExistingOrganization,
 	createSubteams,
 } from "src/features/org-structure/domain/organizations";
-import { slugifyName } from "src/features/identities/slug-utils";
+import { slugifyName } from "src/features/org-structure/domain/slug-utils";
 import type {
 	AgileObsidianSettings,
 	TeamInfo,

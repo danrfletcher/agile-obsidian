@@ -1,8 +1,5 @@
 import { TFile, TFolder, Vault } from "obsidian";
-import {
-	aliasToName,
-	parseTeamFolderName,
-} from "src/features/identities/slug-utils";
+import { getDisplayNameFromAlias, parseTeamFolderName } from "src/features/org-structure/domain/slug-utils";
 import { getFolder } from "src/platform/obsidian/fs/fs-utils";
 import type {
 	TeamInfo as CanonicalTeamInfo,
@@ -128,7 +125,7 @@ export async function hydrateTeamsFromVault(
 				name: parsed.name,
 				slug: parsed.slug,
 				rootPath: folder.path,
-				displayName: aliasToName(parsed.name),
+				displayName: getDisplayNameFromAlias(parsed.name),
 			});
 		}
 
@@ -269,7 +266,7 @@ export async function hydrateTeamsFromVault(
 							: "member";
 						if (!info.members.has(alias)) {
 							info.members.set(alias, {
-								name: aliasToName(alias),
+								name: getDisplayNameFromAlias(alias),
 								type,
 							});
 						}

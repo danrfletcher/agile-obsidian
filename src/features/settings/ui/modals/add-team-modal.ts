@@ -1,8 +1,7 @@
 import { App, Modal, Notice, TFolder } from "obsidian";
 import {
-	generateShortCode,
 	buildTeamSlug,
-} from "src/features/identities/slug-utils";
+} from "src/features/org-structure/domain/slug-utils";
 
 export class AddTeamModal extends Modal {
 	constructor(
@@ -61,7 +60,6 @@ export class AddTeamModal extends Modal {
 		// Default to vault root regardless of configured default path
 		selectEl.value = "/";
 
-		const code = generateShortCode();
 		const aliasPreview = contentEl.createEl("div", {
 			attr: { style: "margin-top: 8px; color: var(--text-muted);" },
 		});
@@ -91,7 +89,7 @@ export class AddTeamModal extends Modal {
 				new Notice("Please enter a team name.");
 				return;
 			}
-			const slug = buildTeamSlug(teamName, code, null);
+			const slug = buildTeamSlug(teamName, null);
 			await this.onSubmit(teamName, parentPath, slug, code);
 			this.close();
 		});

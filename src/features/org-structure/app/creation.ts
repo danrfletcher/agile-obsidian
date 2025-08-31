@@ -5,8 +5,7 @@ import {
 	getBaseCodeFromSlug,
 	buildTeamSlug,
 	slugifyName,
-} from "src/features/identities/slug-utils"; //TO DO: remove divergent logic - slugify name & other slug utils exist in slug-utils & snooze-utils
-
+} from "src/features/org-structure/domain/slug-utils";
 export async function createTeamResources(
 	app: App,
 	teamName: string,
@@ -39,13 +38,17 @@ export async function createTeamResources(
 	const effectivePathId = resourcePathIdOverride ?? inferredPathId;
 	const baseNameSlug = slugifyName(teamName);
 	const canonicalPathId =
-		effectivePathId && baseNameSlug.endsWith(`-${effectivePathId}`) ? null : effectivePathId;
+		effectivePathId && baseNameSlug.endsWith(`-${effectivePathId}`)
+			? null
+			: effectivePathId;
 	const canonicalSlug = buildTeamSlug(teamName, code, canonicalPathId);
 
 	// Create the team root folder: "<Name> (<canonicalSlug>)"
 	const teamFolderName = `${teamName} (${canonicalSlug})`;
 	const normalizedParent = (parentPath || "").replace(/\/+$/g, "");
-	const teamRoot = normalizedParent ? `${normalizedParent}/${teamFolderName}` : teamFolderName;
+	const teamRoot = normalizedParent
+		? `${normalizedParent}/${teamFolderName}`
+		: teamFolderName;
 	if (!(await vault.adapter.exists(teamRoot))) {
 		await vault.createFolder(teamRoot);
 	}
@@ -56,7 +59,11 @@ export async function createTeamResources(
 		await vault.createFolder(docs);
 	}
 
-	const initDirName = buildResourceFolderName("initiatives", code, effectivePathId);
+	const initDirName = buildResourceFolderName(
+		"initiatives",
+		code,
+		effectivePathId
+	);
 	const initDir = `${teamRoot}/${initDirName}`;
 	if (!(await vault.adapter.exists(initDir))) {
 		await vault.createFolder(initDir);

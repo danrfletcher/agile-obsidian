@@ -20,7 +20,7 @@ import { App, TFile } from "obsidian";
 import { TaskIndex } from "../task-index/task-index";
 import { TaskItem } from "../tasks/task-item";
 import { normalizeTaskLine } from "../task-canonical-formatter/task-canonical-formatter";
-import { aliasToName } from "../identities/slug-utils";
+import { getDisplayNameFromAlias } from "../org-structure/domain/slug-utils";
 
 /**
  * Builds the inline HTML <mark> element used to represent an explicit assignee on a task line.
@@ -37,7 +37,7 @@ function buildAssigneeMark(alias: string): string {
 	const display =
 		(alias || "").toLowerCase() === "team"
 			? "Everyone"
-			: aliasToName(alias);
+			: getDisplayNameFromAlias(alias);
 	return `<mark class="active-${alias}" style="background: #BBFABBA6;"><strong>👋 ${display}</strong></mark>`;
 }
 
