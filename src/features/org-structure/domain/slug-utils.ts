@@ -1,27 +1,3 @@
-import { App, MarkdownView } from "obsidian";
-
-/**
- * Escape a string for safe use in RegExp sources.
- */
-export function escapeRegExp(s: string): string {
-	return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/**
- * Checks whether a line is an unchecked Markdown task "- [ ] ".
- */
-export function isUncheckedTaskLine(line: string): boolean {
-	return /^\s*-\s*\[\s*\]\s+/.test(line);
-}
-/**
- * Returns the active file path or null.
- */
-export function getActiveFilePath(app: App): string | null {
-	const view = app.workspace.getActiveViewOfType(MarkdownView);
-	const file = view?.file ?? null;
-	return file ? file.path : null;
-}
-
 /**
  * Team/org slug utilities
  *
@@ -42,7 +18,27 @@ export function getActiveFilePath(app: App): string | null {
  *   "Completed (completed[-<pathId>]-<code>).md"
  */
 
-// Basic slugify for team names
+/**
+ * Generates a random 6-character team code starting with a digit.
+ */
+function generateShortCode(): string {
+	const first = Math.floor(Math.random() * 10).toString(); // 0-9
+	const rest = Array.from({ length: 5 })
+		.map(() => Math.floor(Math.random() * 36).toString(36))
+		.join("");
+	return (first + rest).toLowerCase();
+}
+
+/**
+ * Escape a string for safe use in RegExp sources.
+ */
+export function escapeRegExp(s: string): string {
+	return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Basic slugify for team names
+ */
 export function slugifyName(input: string): string {
 	let s = (input || "").trim().toLowerCase();
 	// Replace unicode-ish hyphens with ASCII hyphen
@@ -58,32 +54,17 @@ export function slugifyName(input: string): string {
 	return s;
 }
 
-export function generateShortCode(): string {
-	const first = Math.floor(Math.random() * 10).toString(); // 0-9
-	const rest = Array.from({ length: 5 })
-		.map(() => Math.floor(Math.random() * 36).toString(36))
-		.join("");
-	return (first + rest).toLowerCase();
-}
-
 /**
  * Build a team slug from parts.
  */
 export function buildTeamSlug(
 	teamName: string,
-	code: string,
+	code: string | null,
 	pathId?: string | null
 ): string {
+	code ??= generateShortCode(); // assigns only if code is null or undefined
 	const base = slugifyName(teamName);
 	return pathId ? `${base}-${pathId}-${code}` : `${base}-${code}`;
-}
-
-/**
- * Build the root organization slug:
- *   "<org-name-slug>-<code>"
- */
-export function buildOrgSlug(orgName: string, code: string): string {
-	return buildTeamSlug(orgName, code);
 }
 
 /**
@@ -126,6 +107,7 @@ export function getBaseCodeFromSlug(slug: string): string | null {
 	const m = /-([0-9][a-z0-9]{5})$/i.exec(slug);
 	return m ? m[1].toLowerCase() : null;
 }
+
 export function getPathIdFromSlug(
 	slug: string,
 	expectedBaseNameSlug?: string
@@ -139,8 +121,6 @@ export function getPathIdFromSlug(
 			return left.slice(expectedBaseNameSlug.length + 1);
 		return null;
 	}
-	// No expectation; best-effort: drop final segment after code and return remainder after first token
-	// But without name expectation, we cannot safely separate. Return left sans first token heuristically.
 	const parts = left.split("-");
 	return parts.length > 1 ? parts.slice(1).join("-") : null;
 }
@@ -148,7 +128,7 @@ export function getPathIdFromSlug(
 /**
  * Resource slug builder and parser
  */
-export function buildResourceSlug(
+function buildResourceSlug(
 	kind: "initiatives" | "priorities" | "completed",
 	code: string,
 	pathId?: string | null
@@ -156,7 +136,7 @@ export function buildResourceSlug(
 	return pathId ? `${kind}-${pathId}-${code}` : `${kind}-${code}`;
 }
 
-export function resourceKindToTitle(
+function resourceKindToTitle(
 	kind: "initiatives" | "priorities" | "completed"
 ): string {
 	return kind === "initiatives"
@@ -187,34 +167,10 @@ export function buildResourceFolderName(
 	return `${title} (${slug})`;
 }
 
-export function parseResourceSlug(slug: string): null | {
-	kind: "initiatives" | "priorities" | "completed";
-	code: string;
-	pathId: string | null;
-} {
-	const m =
-		/^(initiatives|priorities|completed)(?:-([a-z0-9-]+))?-([0-9][a-z0-9]{5})$/i.exec(
-			slug
-		);
-	if (!m) return null;
-	return {
-		kind: m[1].toLowerCase() as any,
-		pathId: (m[2] || null) as any,
-		code: m[3].toLowerCase(),
-	};
-}
-
 export function isTeamFolderName(name: string): boolean {
 	return (
 		/^.+\s+\([a-z0-9-]+\)$/i.test(name) &&
 		/-([0-9][a-z0-9]{5})\)$/i.test(name)
-	);
-}
-
-export function isResourceFileName(basename: string): boolean {
-	// Matches "Initiatives (initiatives-...)" or "Priorities (...)" or "Completed (...)"
-	return /^(Initiatives|Priorities|Completed)\s+\(([a-z0-9-]+)\)$/i.test(
-		basename
 	);
 }
 
@@ -260,34 +216,35 @@ export function resolveTeamForPath(filePath: string, teams: any[]): any | null {
 	}
 }
 
-/**
- * Returns true if the line contains an assignment to any (non -ext/-team/-int) member of the team.
- */
-export function hasAnyTeamMemberAssignment(line: string, team: any): boolean {
-	const members: any[] = (team?.members ?? []).filter((m: any) => {
-		const a = (m.alias || "").toLowerCase();
-		return (
-			a &&
-			!a.endsWith("-ext") &&
-			!a.endsWith("-team") &&
-			!a.endsWith("-int")
-		);
-	});
-	if (members.length === 0) return false;
-	const choices = members.map((m) => escapeRegExp(m.alias)).join("|");
-	const re = new RegExp(
-		`<mark\\s+class="(?:active|inactive)-(?:${choices})"`,
-		"i"
-	);
-	return re.test(line);
-}
+export function getDisplayNameFromAlias(alias: string): string {
+	const raw = (alias || "").trim();
+	if (!raw) return "";
 
-/**
- * Convert an alias (possibly with suffixes and double-hyphen encoding) back to a display name.
- */
-export function aliasToName(alias: string): string {
-	return alias
-		.replace(/[_\-]+/g, " ")
-		.replace(/\s+/g, " ")
-		.trim();
+	// Normalize to lower for consistent processing
+	let base = raw.toLowerCase();
+
+	// Remove the 6-char code and anything after it (e.g., "-4hj8jk-ext")
+	const cutAfterCode = base.replace(/-[0-9][a-z0-9]{5}.*$/i, "");
+	if (cutAfterCode !== base) {
+		base = cutAfterCode;
+	} else {
+		// If no code present, still strip known suffixes if they exist
+		base = base.replace(/-(?:ext|int|team)$/i, "");
+	}
+
+	// Preserve original hyphens that were intentionally doubled ("--" -> literal hyphen),
+	// and convert remaining hyphens to spaces.
+	const TOKEN = "<<<H>>>";
+	base = base.replace(/--/g, TOKEN);
+	base = base.replace(/-/g, " ");
+	base = base.replace(new RegExp(TOKEN, "g"), "-");
+
+	// Collapse whitespace and Title-Case each word
+	base = base.replace(/\s+/g, " ").trim();
+	if (!base) return "";
+
+	return base
+		.split(" ")
+		.map((w) => (w ? w[0].toUpperCase() + w.slice(1) : ""))
+		.join(" ");
 }

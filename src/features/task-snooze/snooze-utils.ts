@@ -1,17 +1,6 @@
 import { App, TFile } from "obsidian";
-import { TaskItem } from "../task-item";
-
-function escapeRegex(str: string): string {
-	return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function slugifyName(raw: string): string {
-	return (raw || "")
-		.trim()
-		.toLowerCase()
-		.replace(/\s+/g, "-")
-		.replace(/[^a-z0-9-]/g, "");
-}
+import { TaskItem } from "../tasks/task-item";
+import { escapeRegExp, slugifyName } from "../org-structure/domain/slug-utils";
 
 function isDateExpired(dateStr: string): boolean {
 	// Parse YYYY-MM-DD as local date (avoid UTC parsing quirks)
@@ -53,7 +42,7 @@ export async function cleanupExpiredSnoozes(
 	}
 
 	// Build pattern to find this user's snooze tokens and capture the date
-	const slugEsc = escapeRegex(userSlug);
+	const slugEsc = escapeRegExp(userSlug);
 	const pattern = new RegExp(
 		`\\s*💤<span\\s+style="display:\\s*none">\\s*${slugEsc}\\s*<\\/span>\\s*(\\d{4}-\\d{2}-\\d{2})`,
 		"gu"

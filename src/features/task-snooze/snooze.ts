@@ -1,12 +1,5 @@
 import { App, TFile } from "obsidian";
-import { TaskItem } from "../task-item";
-
-// Slug used in "active-<slug>" and snooze spans
-export function getTeamMemberSlug(currentUserAlias: string | null | undefined): string | null {
-	const raw = currentUserAlias;
-	if (!raw || typeof raw !== "string") return null;
-	return raw.trim().toLowerCase().replace(/\s+/g, "-");
-}
+import { TaskItem } from "../tasks/task-item";
 
 // Update one exact line in a note to add/replace a snooze marker for the given user
 export async function snoozeTask(
@@ -15,47 +8,43 @@ export async function snoozeTask(
 	userSlug: string,
 	dateStr?: string
 ): Promise<void> {
-	try {
-		const file = app.vault.getAbstractFileByPath(task.link?.path) as TFile;
-		if (!file) throw new Error(`File not found: ${task.link?.path}`);
+	const file = app.vault.getAbstractFileByPath(task.link?.path) as TFile;
+	if (!file) throw new Error(`File not found: ${task.link?.path}`);
 
-		const raw = await app.vault.read(file);
-		const lines = raw.split("\n");
-		const idx = Math.max(0, (task.line ?? 1) - 1);
+	const raw = await app.vault.read(file);
+	const lines = raw.split("\n");
+	const idx = Math.max(0, (task.line ?? 1) - 1);
 
-		if (idx >= lines.length) {
-			throw new Error(`Line index out of range for ${file.path}: ${idx}`);
-		}
-
-		const line = lines[idx];
-
-		// Match "- [ ] " + rest OR "* [x] " + rest etc.
-		const m = line.match(/^(\s*[-*]\s*\[\s*.\s*\]\s*)(.*)$/);
-		if (!m) {
-			// Fallback: no standard task prefix, try text replacement once
-			const updated = replaceTextSnooze(
-				task.text ?? "",
-				raw,
-				userSlug,
-				dateStr
-			);
-			if (updated === raw) {
-				throw new Error("Could not locate task line to snooze.");
-			}
-			await app.vault.modify(file, updated);
-			return;
-		}
-
-		const prefix = m[1];
-		const rest = m[2];
-
-		const updatedRest = applySnoozeToText(rest, userSlug, dateStr);
-		lines[idx] = `${prefix}${updatedRest}`;
-
-		await app.vault.modify(file, lines.join("\n"));
-	} catch (err) {
-		throw err;
+	if (idx >= lines.length) {
+		throw new Error(`Line index out of range for ${file.path}: ${idx}`);
 	}
+
+	const line = lines[idx];
+
+	// Match "- [ ] " + rest OR "* [x] " + rest etc.
+	const m = line.match(/^(\s*[-*]\s*\[\s*.\s*\]\s*)(.*)$/);
+	if (!m) {
+		// Fallback: no standard task prefix, try text replacement once
+		const updated = replaceTextSnooze(
+			task.text ?? "",
+			raw,
+			userSlug,
+			dateStr
+		);
+		if (updated === raw) {
+			throw new Error("Could not locate task line to snooze.");
+		}
+		await app.vault.modify(file, updated);
+		return;
+	}
+
+	const prefix = m[1];
+	const rest = m[2];
+
+	const updatedRest = applySnoozeToText(rest, userSlug, dateStr);
+	lines[idx] = `${prefix}${updatedRest}`;
+
+	await app.vault.modify(file, lines.join("\n"));
 }
 
 // Replace occurrences inside an arbitrary content chunk (fallback path)
