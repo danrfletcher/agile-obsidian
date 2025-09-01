@@ -1,10 +1,10 @@
+import { createDefaultSettings, createSettingsTab } from "@settings";
+import type { AgileObsidianSettings } from "@settings";
 import type { Plugin } from "obsidian";
-import { DEFAULT_SETTINGS } from "../features/settings/infra/settings-store";
-import type { AgileObsidianSettings } from "../features/settings/settings.types";
 import type { Container } from "./container";
-import { AgileSettingTab } from "../features/settings/ui/settings.ui";
-import { registerOrgStructureSettings } from "../features/org-structure/app/org-structure-settings-orchestration";
-import { registerCustomCheckboxesSettings } from "../features/custom-checkboxes/checkboxes-settings-orchestration";
+import { registerOrgStructureSettings } from "@features/org-structure";
+import { registerCustomCheckboxesSettings } from "@features/custom-checkboxes";
+import { applyCheckboxStylesSetting } from "./register-styles";
 
 export async function initSettings(
 	plugin: Plugin & {
@@ -15,10 +15,8 @@ export async function initSettings(
 	}
 ): Promise<AgileObsidianSettings> {
 	const stored = await plugin.loadData?.();
-	const settings: AgileObsidianSettings = Object.assign(
-		{},
-		DEFAULT_SETTINGS,
-		stored ?? {}
+	const settings: AgileObsidianSettings = createDefaultSettings(
+		stored ?? null
 	);
 	plugin.settings = settings;
 	return settings;
@@ -32,23 +30,35 @@ export async function registerSettings(container: Container) {
 	};
 
 	// Feature-specific action factories
-	const orgActions = registerOrgStructureSettings(container);
-	const checkbox = registerCustomCheckboxesSettings(container);
-
-	async function saveSettings(): Promise<void> {
+	const saveSettingsLocal = async (): Promise<void> => {
 		if (typeof p.saveSettings === "function") await p.saveSettings();
 		else if (typeof p.saveData === "function") await p.saveData(settings);
-	}
+	};
 
-	// Register the tab, wiring in actions and apply callback
+	const orgActions = registerOrgStructureSettings({
+		app,
+		plugin,
+		settings,
+		saveSettings: saveSettingsLocal,
+	});
+	const checkbox = registerCustomCheckboxesSettings({
+		app,
+		plugin,
+		settings,
+		applyCheckboxStyles: async () =>
+			await applyCheckboxStylesSetting(container),
+	});
+
+	// Register the tab using the settings module factory so composition doesn't import internals
 	p.addSettingTab(
-		new AgileSettingTab(
+		createSettingsTab({
 			app,
-			p,
+			plugin: p,
 			settings,
 			orgActions,
-			() => saveSettings(),
-			async () => await checkbox.applyCheckboxStyles()
-		)
+			saveSettings: saveSettingsLocal,
+			applyCheckboxStyles: async () =>
+				await checkbox.applyCheckboxStyles(),
+		}) as any
 	);
 }

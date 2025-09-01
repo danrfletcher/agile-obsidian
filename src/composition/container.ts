@@ -1,5 +1,5 @@
 import type { Plugin, App } from "obsidian";
-import type { AgileObsidianSettings } from "src/features/settings/settings.types";
+import type { AgileObsidianSettings } from "@settings";
 
 export interface Container {
 	plugin: Plugin;
