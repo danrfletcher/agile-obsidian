@@ -1,29 +1,34 @@
 import { Plugin } from "obsidian";
 
-import { createContainer } from "./composition/container";
-import type { Container } from "./composition/container";
-import { registerStyles } from "./composition/register-styles";
-import { AgileObsidianSettings } from "./features/settings/settings.types";
+import { createContainer } from "@composition/container";
+import type { Container } from "@composition/container";
+import { registerStyles } from "@composition/register-styles";
+import { AgileObsidianSettings } from "./settings";
 import {
 	initSettings,
 	registerSettings,
-} from "./composition/register-settings";
-import { registerAllCommands } from "./composition/register-commands";
+} from "@composition/register-settings";
+import { registerAllCommands } from "@composition/register-commands";
+import { registerEvents } from "@composition/register-events";
 
 export default class AgileObsidian extends Plugin {
 	settings: AgileObsidianSettings;
 	container?: Container;
 
 	async onload() {
-		// Load settings via composition helper (feature-agnostic)
+		// Load settings via composition helper
 		await initSettings(this);
 
 		const container = createContainer(this);
 		this.container = container;
+
 		registerStyles(container);
 
-		// Register the settings feature (UI, presenters, actions) via composition
+		// Register settings via composition
 		await registerSettings(container);
+
+		// Register task/vault events (build task index + subscribe to changes)
+		await registerEvents(container);
 
 		// Register commands and views for features
 		if (container) await registerAllCommands(container);
