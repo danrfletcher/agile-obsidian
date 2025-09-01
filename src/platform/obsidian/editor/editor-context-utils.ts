@@ -8,11 +8,13 @@
  * - Enables rich task interactions (assign/change via menus) on Live Preview HTML without disrupting typing.
  */
 
+import { escapeRegExp } from "@utils";
 import type { Editor } from "obsidian";
-import { escapeRegExp } from "src/features/org-structure/domain/slug-utils";
 
 /**
  * Checks whether a line is an unchecked Markdown task "- [ ] ".
+ * @param line A single line of text.
+ * @returns true if it matches an unchecked task pattern.
  */
 export function isUncheckedTaskLine(line: string): boolean {
 	return /^\s*-\s*\[\s*\]\s+/.test(line);
@@ -60,9 +62,10 @@ export function findTargetLineFromClick(
 				}
 			}
 		}
-	} catch (err) {
-		void err;
+	} catch {
+		// swallow and fall back to signature search
 	}
+
 	// Fallback: find a unique line containing this alias class
 	try {
 		const signature = new RegExp(
@@ -76,8 +79,8 @@ export function findTargetLineFromClick(
 				matches.push(i);
 		}
 		if (matches.length === 1) return matches[0];
-	} catch (err) {
-		void err;
+	} catch {
+		// swallow and return fallback
 	}
 	return lineNo;
 }
@@ -91,6 +94,7 @@ export function findTargetLineFromClick(
  *
  * Note:
  * - This is broader than isUncheckedTaskLine; it matches both checked and unchecked tasks.
+ * @param line A single line of text.
  */
 export function isTaskLine(line: string): boolean {
 	const expanded = line.replace(/\t/g, "    ");
@@ -118,13 +122,15 @@ export function indentWidth(line: string): number {
 
 /**
  * Return all editor lines split by newline.
+ * @returns A read-only array of editor lines.
  */
-export function getEditorLines(editor: Editor): string[] {
+export function getEditorLines(editor: Editor): ReadonlyArray<string> {
 	return editor.getValue().split(/\r?\n/);
 }
 
 /**
  * Find the current line index using the editor cursor. Fallback to string matching if reference provided.
+ * @returns 0-based line index or -1 if not found.
  */
 export function findCurrentLineIndex(
 	editor: Editor,

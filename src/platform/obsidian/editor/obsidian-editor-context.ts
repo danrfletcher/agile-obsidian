@@ -1,3 +1,12 @@
+/**
+ * Utilities for gathering context around the current cursor in an Obsidian MarkdownView.
+ * Provides a snapshot with file path, current line/column, surrounding lines, and optional
+ * references to rendered wrapper elements in Live Preview (when detectable).
+ *
+ * Note:
+ * - Uses best-effort fallbacks where editor/view internals differ.
+ * - Designed for read-only context; callers should not mutate returned objects.
+ */
 import { App, MarkdownView } from "obsidian";
 
 export type CursorContext = {
@@ -26,6 +35,15 @@ function resolveContentRoot(
 	return (cmContent as HTMLElement) ?? null;
 }
 
+/**
+ * Capture a snapshot of the current cursor context from the given view/editor,
+ * including surrounding text lines and some Live Preview wrapper hints when available.
+ *
+ * @param app Obsidian App
+ * @param viewParam Optional view; if omitted, the active MarkdownView is used.
+ * @param editor Optional editor (for environments where view.editor may differ).
+ * @returns A CursorContext describing the current position and related metadata.
+ */
 export async function getCursorContext(
 	app: App,
 	viewParam?: MarkdownView,
@@ -43,14 +61,14 @@ export async function getCursorContext(
 	if (editor && typeof editor.getValue === "function") {
 		try {
 			content = editor.getValue();
-		} catch (_) {
+		} catch {
 			content = undefined;
 		}
 	}
 	if (content == null && view?.file) {
 		try {
 			content = await app.vault.read(view.file);
-		} catch (_) {
+		} catch {
 			content = undefined;
 		}
 	}
@@ -79,7 +97,7 @@ export async function getCursorContext(
 				col =
 					sel.from -
 					(editor.cm as any).state.doc.lineAt(sel.from).from;
-			} catch (_) {
+			} catch {
 				lineNum = 0;
 				col = 0;
 			}
