@@ -91,10 +91,21 @@ module.exports = [
 				},
 			],
 
-			// Restrict platform deep imports only; same-feature restrictions handled by boundaries above
+			// Restrict certain deep imports project-wide. External code must import
+			// from the public package/barrel APIs instead of reaching into internals.
 			"no-restricted-imports": [
 				"error",
-				{ patterns: ["src/platform/**", "*/platform/**"] },
+				{
+					patterns: [
+						"src/platform/**",
+						"*/platform/**",
+						// Prevent deep imports into settings internals; must import from @settings
+						"src/settings/**/domain/**",
+						"src/settings/**/infra/**",
+						"@settings/domain/**",
+						"@settings/infra/**",
+					],
+				},
 			],
 		},
 	},
