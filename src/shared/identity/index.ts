@@ -6,7 +6,6 @@
 export {
 	getDisplayNameFromAlias,
 	slugifyName,
-	escapeRegExp,
 	TEAM_CODE_RE,
 	extractCodeSuffix,
 } from "./domain/alias-slug-model";

@@ -20,15 +20,6 @@
  */
 
 /**
- * Escape a string for safe use in RegExp sources.
- * Example:
- *   escapeRegExp("a+b(c)") -> "a\\+b\\(c\\)"
- */
-export function escapeRegExp(s: string): string {
-	return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/**
  * Canonical regex for a trailing 6-character code suffix that starts with a digit.
  * Matches "-1abc9z" at the end of the string, capturing "1abc9z" in group 1.
  */
