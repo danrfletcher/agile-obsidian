@@ -1,30 +1,26 @@
 import { App } from "obsidian";
-import { TaskItem, TaskParams } from "src/features/tasks/task-item";
+import { TaskItem, TaskParams } from "@features/task-index";
 import { renderTaskTree } from "./task-renderer";
 import {
 	activeForMember,
-	isAssignedToAnyUser,
-	isAssignedToMemberOrTeam,
 	isCancelled,
 	isInProgress,
-	isMarkedCompleted,
-	isSleeping,
-} from "src/features/agile-dashboard-view/domain/task-filters";
+	isCompleted,
+	isSnoozed,
+	getAgileArtifactType,
+	isAssignedToMemberOrTeam,
+	isAssignedToAnyUser,
+} from "@features/task-filter";
 import {
 	matchesDatePattern,
 	isRelevantToday,
-} from "src/features/agile-dashboard-view/domain/dates";
+} from "@features/task-date-manager";
 import {
-	isLearningEpic,
-	isLearningInitiative,
-	isRecurringResponsibility,
-} from "../../domain/task-types";
-import {
-	buildFullSubtree,
 	buildHierarchyFromPath,
 	getPathToAncestor,
-	getTopAncestor,
-} from "../../domain/hierarchy-utils";
+	buildFullSubtree,
+	findAncestor,
+} from "@features/task-tree-builder";
 
 export function processAndRenderResponsibilities(
 	container: HTMLElement,
@@ -36,11 +32,8 @@ export function processAndRenderResponsibilities(
 	childrenMap: Map<string, TaskItem[]>,
 	taskParams: TaskParams
 ) {
-	// Responsibilities logic (extracted)
-	// Avoid unused parameter errors in strict TS configs
 	void childrenMap;
 
-	// Filter for task params
 	const { inProgress, completed, sleeping, cancelled } = taskParams;
 
 	const isAssignedToMemberIncludingInferred = (task: TaskItem) => {
@@ -48,7 +41,7 @@ export function processAndRenderResponsibilities(
 		let cur: TaskItem | undefined = task;
 		while (cur?._parentId) {
 			const parentId = cur._parentId;
-			if (!parentId) return false; // Guard
+			if (!parentId) return false;
 			cur = taskMap.get(parentId);
 			if (!cur) return false;
 			if (isAssignedToAnyUser(cur)) {
@@ -60,9 +53,9 @@ export function processAndRenderResponsibilities(
 
 	const collectRecurring = (node: TaskItem, collector: TaskItem[]) => {
 		if (
-			isRecurringResponsibility(node) &&
+			getAgileArtifactType(node) === "recurring-responsibility" &&
 			isAssignedToMemberIncludingInferred(node) &&
-			!isSleeping(node, taskMap)
+			!isSnoozed(node, taskMap)
 		) {
 			collector.push(node);
 		}
@@ -75,14 +68,17 @@ export function processAndRenderResponsibilities(
 		task: TaskItem,
 		isRoot = false
 	): TaskItem | null => {
-		if (isSleeping(task, taskMap)) return null;
+		if (isSnoozed(task, taskMap)) return null;
 
 		const allowedMarkers = ["🚀", "📦", "⚡", "⭐", "💝", "🔁", "⬇️", "🪣"];
 		const disallowedMarkers = ["❌", "🛠️", "📂", "🏆", "📝", "🎖️"];
 
 		if (disallowedMarkers.some((m) => task.text.includes(m))) return null;
-
-		if (isLearningInitiative(task) || isLearningEpic(task)) return null;
+		if (
+			getAgileArtifactType(task) === "learning-initiative" ||
+			getAgileArtifactType(task) === "learning-epic"
+		)
+			return null;
 
 		const hasAllowedMarker = allowedMarkers.some((m) =>
 			task.text.includes(m)
@@ -152,8 +148,8 @@ export function processAndRenderResponsibilities(
 			!task.text.includes("🎖️") &&
 			!task.text.includes("🏆") &&
 			!task.text.includes("📝") &&
-			!isSleeping(task, taskMap) &&
-			!isRecurringResponsibility(task)
+			!isSnoozed(task, taskMap) &&
+			getAgileArtifactType(task) !== "recurring-responsibility"
 	);
 
 	const priorityTrees = priorityRoots.map((t) => buildFullSubtree(t));
@@ -179,7 +175,7 @@ export function processAndRenderResponsibilities(
 
 	const responsibilityTreesMap = new Map<string, TaskItem>();
 	recurringWithSubtrees.forEach(({ root: rec, subtree }) => {
-		const topAncestor = getTopAncestor(rec, taskMap);
+		const topAncestor = findAncestor(rec, taskMap);
 		if (!topAncestor || !topAncestor._uniqueId) return;
 		const path = getPathToAncestor(rec, topAncestor._uniqueId, taskMap);
 		if (!path || !path.length) return;
@@ -204,7 +200,7 @@ export function processAndRenderResponsibilities(
 			responsibilityTreesMap.set(rootId, trimmedTree);
 		} else {
 			const existing = responsibilityTreesMap.get(rootId);
-			if (!existing) return; // Guard
+			if (!existing) return;
 			trimmedTree.children.forEach((newChild: TaskItem) => {
 				const match = existing.children.find(
 					(c: TaskItem) => c._uniqueId === newChild._uniqueId
@@ -226,15 +222,13 @@ export function processAndRenderResponsibilities(
 		(task) => {
 			return (
 				(inProgress && isInProgress(task, taskMap)) ||
-				(completed && isMarkedCompleted(task)) ||
-				(sleeping && isSleeping(task, taskMap)) ||
+				(completed && isCompleted(task)) ||
+				(sleeping && isSnoozed(task, taskMap)) ||
 				(cancelled && isCancelled(task))
 			);
 		}
 	);
 
-	// Render
-	// TO DO: Enable inactive responsibilities in inactive project view ⚓ ^369d2d
 	if (responsibilityTasksParamFilter.length > 0 && status) {
 		container.createEl("h2", { text: "🧹 Responsibilities" });
 		renderTaskTree(
@@ -243,7 +237,8 @@ export function processAndRenderResponsibilities(
 			app,
 			0,
 			false,
-			"responsibilities"
+			"responsibilities",
+			selectedAlias
 		);
 	}
 }

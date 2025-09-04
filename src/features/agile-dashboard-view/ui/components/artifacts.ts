@@ -1,20 +1,16 @@
 import { App } from "obsidian";
-import { TaskItem, TaskParams } from "src/features/tasks/task-item";
+import { TaskItem, TaskParams } from "@features/task-index";
 import { renderTaskTree } from "./task-renderer";
 import {
 	activeForMember,
 	isCancelled,
 	isInProgress,
-	isMarkedCompleted,
-	isSleeping,
-} from "src/features/agile-dashboard-view/domain/task-filters";
-import { buildPrunedMergedTrees } from "src/features/agile-dashboard-view/domain/hierarchy-utils";
-import type { AgileObsidianSettings } from "src/features/settings/settings.types";
-import {
-	isTask,
-	isStory,
-	isEpic,
-} from "src/features/agile-dashboard-view/domain/task-types";
+	isCompleted,
+	isSnoozed,
+	getAgileArtifactType,
+} from "@features/task-filter";
+import { buildPrunedMergedTrees } from "@features/task-tree-builder";
+import type { AgileObsidianSettings } from "@settings/index";
 
 export type ArtifactPredicate = (
 	task: TaskItem,
@@ -23,7 +19,7 @@ export type ArtifactPredicate = (
 
 export interface ArtifactOptions {
 	title: string;
-	renderType: string; // passed to renderTaskTree for styling/context
+	renderType: string; // passed to renderTaskTree
 	predicate: ArtifactPredicate;
 }
 
@@ -40,17 +36,15 @@ export function processAndRenderArtifact(
 ) {
 	const { inProgress, completed, sleeping, cancelled } = taskParams;
 
-	// Apply params filter
 	const sectionTasks = currentTasks.filter((task) => {
 		return (
 			(inProgress && isInProgress(task, taskMap)) ||
-			(completed && isMarkedCompleted(task)) ||
-			(sleeping && isSleeping(task, taskMap)) ||
+			(completed && isCompleted(task)) ||
+			(sleeping && isSnoozed(task, taskMap)) ||
 			(cancelled && isCancelled(task))
 		);
 	});
 
-	// Filter for tasks of this artifact type and active for member
 	const directlyAssigned = sectionTasks.filter(
 		(task) =>
 			activeForMember(task, status, selectedAlias) &&
@@ -67,7 +61,8 @@ export function processAndRenderArtifact(
 			app,
 			0,
 			false,
-			options.renderType
+			options.renderType,
+			selectedAlias
 		);
 	}
 }
@@ -83,7 +78,6 @@ export function processAndRenderArtifacts(
 	taskParams: TaskParams,
 	settings: AgileObsidianSettings
 ) {
-	// Render Tasks/Stories/Epics in order if their corresponding settings are enabled
 	if (settings.showTasks) {
 		processAndRenderArtifact(
 			container,
@@ -97,7 +91,7 @@ export function processAndRenderArtifacts(
 			{
 				title: "🔨 Tasks",
 				renderType: "tasks",
-				predicate: (t) => isTask(t),
+				predicate: (t) => getAgileArtifactType(t) === "task",
 			}
 		);
 	}
@@ -114,7 +108,7 @@ export function processAndRenderArtifacts(
 			{
 				title: "📝 Stories",
 				renderType: "tasks",
-				predicate: (t) => isStory(t),
+				predicate: (t) => getAgileArtifactType(t) === "story",
 			}
 		);
 	}
@@ -131,7 +125,7 @@ export function processAndRenderArtifacts(
 			{
 				title: "🏆 Epics",
 				renderType: "epics",
-				predicate: (t) => isEpic(t),
+				predicate: (t) => getAgileArtifactType(t) === "epic",
 			}
 		);
 	}

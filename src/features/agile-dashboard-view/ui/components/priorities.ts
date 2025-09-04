@@ -1,20 +1,16 @@
 import { App } from "obsidian";
-import { TaskItem, TaskParams } from "src/features/tasks/task-item";
+import { TaskItem, TaskParams } from "@features/task-index";
 import { renderTaskTree } from "./task-renderer";
 import {
 	activeForMember,
 	isCancelled,
 	isInProgress,
-	isMarkedCompleted,
-	isSleeping,
-} from "src/features/agile-dashboard-view/domain/task-filters";
-import {
-	isRecurringResponsibility,
-	isLearningInitiative,
-	isLearningEpic,
-} from "../../domain/task-types"; // Adjust path
-import { isRelevantToday } from "../../domain/dates";
-import { stripListItems } from "src/features/agile-dashboard-view/domain/hierarchy-utils";
+	isCompleted,
+	isSnoozed,
+	getAgileArtifactType,
+} from "@features/task-filter";
+import { isRelevantToday } from "@features/task-date-manager";
+import { stripListItems } from "@features/task-tree-builder";
 
 export function processAndRenderPriorities(
 	container: HTMLElement,
@@ -26,22 +22,23 @@ export function processAndRenderPriorities(
 	childrenMap: Map<string, TaskItem[]>,
 	taskParams: TaskParams
 ) {
-	// Filter for task params
 	const { inProgress, completed, sleeping, cancelled } = taskParams;
 
-	// Priorities logic (extracted)
 	const buildPriorityTree = (
 		task: TaskItem,
 		isRoot = false
 	): TaskItem | null => {
-		if (isSleeping(task, taskMap)) return null;
+		if (isSnoozed(task, taskMap)) return null;
 
 		const allowedMarkers = ["🚀", "📦", "⚡", "⭐", "💝", "⬇️", "🪣"];
 		const disallowedMarkers = ["❌", "🛠️", "📂", "🏆", "📝", "🎖️"];
 
 		if (disallowedMarkers.some((m) => task.text.includes(m))) return null;
-
-		if (isLearningInitiative(task) || isLearningEpic(task)) return null;
+		if (
+			getAgileArtifactType(task) === "learning-initiative" ||
+			getAgileArtifactType(task) === "learning-epic"
+		)
+			return null;
 
 		const hasAllowedMarker = allowedMarkers.some((m) =>
 			task.text.includes(m)
@@ -51,7 +48,7 @@ export function processAndRenderPriorities(
 		if (!isRoot && !hasAllowedMarker && !hasAllowedStatus) return null;
 
 		const children = (task.children || [])
-			.map((child: TaskItem) => buildPriorityTree(child, false)) // Typed parameter
+			.map((child: TaskItem) => buildPriorityTree(child, false))
 			.filter((c): c is TaskItem => c !== null);
 
 		if (task.task === false) {
@@ -67,11 +64,8 @@ export function processAndRenderPriorities(
 		return { ...task, children };
 	};
 
-	// Define priorityRoots (missing from original extract; replicated from ResponsibilitiesProcessor logic)
 	const priorityRoots = currentTasks.filter(
-		(
-			task: TaskItem // Typed parameter
-		) =>
+		(task: TaskItem) =>
 			task.status === "O" &&
 			!task.completed &&
 			isRelevantToday(task) &&
@@ -79,13 +73,13 @@ export function processAndRenderPriorities(
 			!task.text.includes("🎖️") &&
 			!task.text.includes("🏆") &&
 			!task.text.includes("📝") &&
-			!isSleeping(task, taskMap) &&
-			!isRecurringResponsibility(task)
+			!isSnoozed(task, taskMap) &&
+			getAgileArtifactType(task) !== "recurring-responsibility"
 	);
 
 	const rawTreesPriorities = priorityRoots
-		.map((task: TaskItem) => buildPriorityTree(task, true)) // Typed parameter
-		.filter((tree): tree is TaskItem => tree !== null); // Type guard already handles this
+		.map((task: TaskItem) => buildPriorityTree(task, true))
+		.filter((tree): tree is TaskItem => tree !== null);
 
 	const prunePriorities = (
 		node: TaskItem,
@@ -94,7 +88,7 @@ export function processAndRenderPriorities(
 		const assignedToSelected = activeForMember(node, status, selectedAlias);
 		const isInherited = inherited || assignedToSelected;
 		const children = (node.children || [])
-			.map((child: TaskItem) => prunePriorities(child, isInherited)) // Typed parameter
+			.map((child: TaskItem) => prunePriorities(child, isInherited))
 			.filter((c): c is TaskItem => c !== null);
 		if (isInherited || children.length > 0) {
 			return { ...node, children };
@@ -103,12 +97,12 @@ export function processAndRenderPriorities(
 	};
 
 	const priorityTasks = rawTreesPriorities
-		.map((tree: TaskItem) => prunePriorities(tree)) // Typed parameter
-		.filter((tree): tree is TaskItem => tree !== null) // Type guard
+		.map((tree: TaskItem) => prunePriorities(tree))
+		.filter((tree): tree is TaskItem => tree !== null)
 		.filter((tree: TaskItem) => {
 			if (!selectedAlias) return true;
 			const isSelected = activeForMember(tree, status, selectedAlias);
-			return isSelected || (tree.children?.length ?? 0) > 0; // Safe default
+			return isSelected || (tree.children?.length ?? 0) > 0;
 		});
 
 	const strippedPriorityTasks = stripListItems(priorityTasks);
@@ -116,14 +110,12 @@ export function processAndRenderPriorities(
 	const filteredPriorityTasks = strippedPriorityTasks.filter((task) => {
 		return (
 			(inProgress && isInProgress(task, taskMap)) ||
-			(completed && isMarkedCompleted(task)) ||
-			(sleeping && isSleeping(task, taskMap)) ||
+			(completed && isCompleted(task)) ||
+			(sleeping && isSnoozed(task, taskMap)) ||
 			(cancelled && isCancelled(task))
 		);
 	});
 
-	// Render
-	// TO DO: enable inactive priorities in inactive project view ⚓ ^365034
 	if (filteredPriorityTasks.length > 0 && status) {
 		container.createEl("h2", { text: "📂 Priorities" });
 		renderTaskTree(
@@ -132,7 +124,8 @@ export function processAndRenderPriorities(
 			app,
 			0,
 			false,
-			"priorities"
+			"priorities",
+			selectedAlias
 		);
 	}
 }

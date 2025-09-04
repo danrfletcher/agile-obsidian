@@ -1,12 +1,60 @@
 import { App } from "obsidian";
 import { TaskItem } from "@features/task-index";
-import { snoozeTask } from "@features/task-snooze"
-import { TaskUIPolicy } from "./ui-policy";
+import { snoozeTask } from "@features/task-snooze";
 
-/**
- * Hide a task's LI and collapse empty ancestors/sections afterward.
- * Kept as-is but slightly annotated; exported for reuse.
- */
+// Check if task text indicates it's assigned to the current user
+function isAssignedToUser(text: string, userSlug: string) {
+	if (!text || !userSlug) return false;
+	const activeRe = new RegExp(`\\bactive-${userSlug}\\b`, "i");
+	const inactiveRe = new RegExp(`\\binactive-${userSlug}\\b`, "i");
+	return activeRe.test(text) && !inactiveRe.test(text);
+}
+
+// Decide if a snooze button should be shown for a task in a given section
+function shouldShowSnoozeButton(
+	task: TaskItem,
+	sectionType: string,
+	userSlug: string,
+	liEl?: HTMLElement
+): boolean {
+	const text = task.text || "";
+
+	// 1) No buttons in Objectives or Responsibilities
+	if (sectionType === "objectives" || sectionType === "responsibilities")
+		return false;
+
+	// 2) Tasks, Stories, Epics: only on items directly assigned to the user
+	if (
+		sectionType === "tasks" ||
+		sectionType === "stories" ||
+		sectionType === "epics"
+	) {
+		return isAssignedToUser(text, userSlug);
+	}
+
+	// 3) Initiatives: buttons on tasks all the way down the tree (allow everything)
+	if (sectionType === "initiatives") return true;
+
+	// 4) Priorities: show snooze only on leaf tasks (lowest-level children)
+	if (sectionType === "priorities") {
+		const isLeaf = !task.children || task.children.length === 0;
+		return isLeaf;
+	}
+
+	// Default: hide
+	return false;
+}
+
+// Build a YYYY-MM-DD string for tomorrow (local)
+function getTomorrowISO(): string {
+	const d = new Date();
+	d.setDate(d.getDate() + 1);
+	const yyyy = d.getFullYear();
+	const mm = String(d.getMonth() + 1).padStart(2, "0");
+	const dd = String(d.getDate()).padStart(2, "0");
+	return `${yyyy}-${mm}-${dd}`;
+}
+
 export function hideTaskAndCollapseAncestors(liEl: HTMLElement): void {
 	if (!liEl) return;
 
@@ -26,7 +74,7 @@ export function hideTaskAndCollapseAncestors(liEl: HTMLElement): void {
 	// Hide the affected task
 	hide(liEl);
 
-	// Walk up and collapse single-child ancestors
+	// Walk up: if a parent LI's UL had only this one child (now hidden), hide the parent too
 	let current: HTMLElement | null = liEl;
 	while (current) {
 		const ul = current.parentElement as HTMLElement | null;
@@ -35,20 +83,25 @@ export function hideTaskAndCollapseAncestors(liEl: HTMLElement): void {
 		const parentLi = ul.parentElement as HTMLElement | null;
 		if (!parentLi || parentLi.tagName !== "LI") break;
 
+		// Count direct LI children under this UL
 		const childLis = Array.from(ul.children).filter(
 			(n) => n instanceof HTMLElement && n.tagName === "LI"
 		) as HTMLElement[];
+
+		// Visible children after hiding current
 		const visibleChildren = childLis.filter((li) => isVisible(li));
 
+		// If parent effectively had only this one child, hide it and continue upward
 		if (childLis.length === 1 || visibleChildren.length === 0) {
 			hide(parentLi);
 			current = parentLi;
 			continue;
 		}
+
 		break;
 	}
 
-	// If no visible tasks remain in the section, hide the section (including its header)
+	// After collapsing, if no visible tasks remain in the section, hide the section (including its header)
 	const findSectionRoot = (el: HTMLElement): HTMLElement | null => {
 		let cur: HTMLElement | null = el;
 		while (cur && cur.parentElement) {
@@ -78,68 +131,11 @@ export function hideTaskAndCollapseAncestors(liEl: HTMLElement): void {
 		).filter((node) => isVisible(node as HTMLElement));
 		if (visibleLis.length === 0) {
 			hide(sectionRoot);
+			// If the section root is a list directly under the content container and the header is a sibling,
+			// also hide that header so the section disappears completely.
 			maybeHideAdjacentHeader(sectionRoot);
 		}
 	}
-}
-
-// Internal: determine if task has direct assignment to provided userSlug
-function isAssignedToUser(text: string, userSlug: string) {
-	if (!text || !userSlug) return false;
-	const activeRe = new RegExp(`\\bactive-${userSlug}\\b`, "i");
-	const inactiveRe = new RegExp(`\\binactive-${userSlug}\\b`, "i");
-	return activeRe.test(text) && !inactiveRe.test(text);
-}
-
-// Convert sectionType to normalized key for policy checks
-function normalizeSection(sectionType: string): TaskUIPolicy["section"] {
-	const s = (sectionType || "").toLowerCase();
-	if (s.includes("objective")) return "objectives";
-	if (s.includes("responsibil")) return "responsibilities";
-	if (s.includes("priorit")) return "priorities";
-	if (s.includes("epic")) return "epics";
-	if (s.includes("story")) return "stories";
-	if (s.includes("initiative")) return "initiatives";
-	return "tasks";
-}
-
-// Decide if a snooze button should be shown for a task in a given section
-function shouldShowSnoozeButton(
-	task: TaskItem,
-	sectionType: string,
-	userSlug: string
-): boolean {
-	const section = normalizeSection(sectionType);
-
-	// 1) No snooze buttons in Objectives or Responsibilities
-	if (section === "objectives" || section === "responsibilities")
-		return false;
-
-	// 2) Tasks, Stories, Epics: only on items directly assigned to the user
-	if (section === "tasks" || section === "stories" || section === "epics") {
-		return isAssignedToUser(task.text || "", userSlug);
-	}
-
-	// 3) Initiatives: allow everything
-	if (section === "initiatives") return true;
-
-	// 4) Priorities: only leaf tasks
-	if (section === "priorities") {
-		const isLeaf = !task.children || task.children.length === 0;
-		return isLeaf;
-	}
-
-	return false;
-}
-
-// Build a YYYY-MM-DD string for tomorrow (local)
-function getTomorrowISO(): string {
-	const d = new Date();
-	d.setDate(d.getDate() + 1);
-	const yyyy = d.getFullYear();
-	const mm = String(d.getMonth() + 1).padStart(2, "0");
-	const dd = String(d.getDate()).padStart(2, "0");
-	return `${yyyy}-${mm}-${dd}`;
 }
 
 // Create and wire the snooze button with click (tomorrow) and long-press (custom date) behavior
@@ -282,12 +278,16 @@ function createSnoozeButton(
 }
 
 function findInlineAnchor(liEl: HTMLElement): HTMLElement {
+	// Prefer inner UL>LI if present (result of rendering a single "- [ ]" task line)
 	const innerLi = liEl.querySelector("ul > li") as HTMLElement | null;
 	const base = innerLi ?? liEl;
+
+	// Prefer inline containers inside base for appending the button at end of text
 	const inlineContainer =
 		(base.querySelector("p") as HTMLElement | null) ||
 		(base.querySelector("span") as HTMLElement | null) ||
 		(base.querySelector("label") as HTMLElement | null);
+
 	return inlineContainer ?? base;
 }
 
@@ -306,7 +306,7 @@ export function appendSnoozeButtonIfEligible(
 		return; // No user configured; skip
 	}
 
-	const eligible = shouldShowSnoozeButton(task, sectionType, userSlug);
+	const eligible = shouldShowSnoozeButton(task, sectionType, userSlug, liEl);
 	if (!eligible) {
 		return;
 	}

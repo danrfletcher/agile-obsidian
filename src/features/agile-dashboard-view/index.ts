@@ -1,0 +1,1 @@
+export { registerAgileDashboardView } from "./app/view-orchestration";

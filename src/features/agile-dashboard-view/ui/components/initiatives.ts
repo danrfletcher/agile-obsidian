@@ -1,15 +1,15 @@
 import { App } from "obsidian";
-import { TaskItem, TaskParams } from "src/features/tasks/task-item";
+import { TaskItem, TaskParams } from "@features/task-index";
 import { renderTaskTree } from "./task-renderer";
 import {
 	activeForMember,
 	isCancelled,
 	isInProgress,
-	isMarkedCompleted,
-	isSleeping,
-} from "src/features/agile-dashboard-view/domain/task-filters";
-import { isInitiative } from "src/features/agile-dashboard-view/domain/task-types";
-import { buildPrunedMergedTrees } from "src/features/agile-dashboard-view/domain/hierarchy-utils";
+	isCompleted,
+	isSnoozed,
+	getAgileArtifactType,
+} from "@features/task-filter";
+import { buildPrunedMergedTrees } from "@features/task-tree-builder";
 
 export function processAndRenderInitiatives(
 	container: HTMLElement,
@@ -21,44 +21,41 @@ export function processAndRenderInitiatives(
 	childrenMap: Map<string, TaskItem[]>,
 	taskParams: TaskParams
 ) {
-	// Filter for task params
 	const { inProgress, completed, sleeping, cancelled } = taskParams;
 	const sectionTasks = currentTasks.filter((task) => {
 		return (
 			(inProgress && isInProgress(task, taskMap)) ||
-			(completed && isMarkedCompleted(task)) ||
-			(sleeping && isSleeping(task, taskMap)) ||
+			(completed && isCompleted(task)) ||
+			(sleeping && isSnoozed(task, taskMap)) ||
 			(cancelled && isCancelled(task))
 		);
 	});
 
-	// Filter for any task directly assigned to the user and that is an Initiative
 	const directlyAssigned = sectionTasks.filter(
 		(task) =>
-			activeForMember(task, status, selectedAlias) && isInitiative(task)
+			activeForMember(task, status, selectedAlias) &&
+			getAgileArtifactType(task) === "initiative"
 	);
 
-	// Simple callback: Keep child if status !== "I"
 	const statusFilterCallback = (task: TaskItem) =>
 		(task.status !== "I" && inProgress && isInProgress(task, taskMap)) ||
-		(completed && isMarkedCompleted(task)) ||
-		(sleeping && isSleeping(task, taskMap)) ||
+		(completed && isCompleted(task)) ||
+		(sleeping && isSnoozed(task, taskMap)) ||
 		(cancelled && isCancelled(task));
 
-	// Build pruned merged trees from the filtered tasks (1 level deep, with status filter)
 	let prunedTasks = buildPrunedMergedTrees(
 		directlyAssigned,
 		taskMap,
-		undefined, // ancestorPredicate (defaults to root)
-		childrenMap, // Pass your childrenMap for lookups
+		undefined,
+		childrenMap,
 		{ depth: 1, filterCallback: statusFilterCallback }
 	);
 
-	// Post-process: Sort and limit after building prunedTasks
+	const lineOf = (t: TaskItem) =>
+		t.position?.start?.line ?? Number.MAX_SAFE_INTEGER;
+
 	prunedTasks = prunedTasks.map((initiative) => {
 		const filteredChildren: TaskItem[] = initiative.children;
-
-		// Separate into "/" and " " groups
 		const slashEpics = filteredChildren.filter(
 			(child) => child.status === "/"
 		);
@@ -66,26 +63,18 @@ export function processAndRenderInitiatives(
 			(child) => child.status === " "
 		);
 
-		// Sort each group (e.g., by position; adjust if needed)
-		slashEpics.sort(
-			(a, b) => a.position.start.line - b.position.start.line
-		);
-		spaceEpics.sort(
-			(a, b) => a.position.start.line - b.position.start.line
-		);
+		slashEpics.sort((a, b) => lineOf(a) - lineOf(b));
+		spaceEpics.sort((a, b) => lineOf(a) - lineOf(b));
 
-		// If there are "/" epics (or any other displayed children), show only them; else, show the first " " as fallback
 		let limitedChildren = slashEpics;
 		if (limitedChildren.length === 0 && spaceEpics.length > 0) {
 			limitedChildren = spaceEpics.slice(0, 1);
 		}
-
 		return { ...initiative, children: limitedChildren };
 	});
 
-	// Render if there are tasks
 	if (prunedTasks.length > 0) {
 		container.createEl("h2", { text: "🎖️ Initiatives" });
-		renderTaskTree(prunedTasks, container, app, 0, false, "initiatives");
+		renderTaskTree(prunedTasks, container, app, 0, false, "initiatives", selectedAlias);
 	}
 }

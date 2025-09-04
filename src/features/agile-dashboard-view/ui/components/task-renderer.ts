@@ -1,48 +1,48 @@
 import { App, Component, MarkdownRenderer, TFile } from "obsidian";
-import { TaskItem } from "src/features/tasks/task-item";
+import { TaskItem } from "@features/task-index";
 import {
 	appendSnoozeButtonIfEligible,
 	hideTaskAndCollapseAncestors,
 } from "./task-buttons";
-import { updateAssigneeAndPropagate } from "src/features/task-assignment/assignment-utils";
 
-// Helpers to control checkbox interactivity per section and hierarchy level
 function isLeaf(task: TaskItem): boolean {
 	return !task.children || task.children.length === 0;
 }
-
+function normalizeSection(sectionType: string) {
+	const s = (sectionType || "").toLowerCase();
+	if (s.includes("initiative")) return "initiatives";
+	if (s.includes("objective")) return "objectives";
+	if (s.includes("task")) return "tasks";
+	if (s.includes("story")) return "stories";
+	if (s.includes("epic")) return "epics";
+	if (s.includes("priorit")) return "priorities";
+	if (s.includes("responsibil")) return "responsibilities";
+	return "tasks";
+}
 function shouldEnableCheckbox(
 	sectionType: string,
 	depth: number,
 	task: TaskItem,
 	isRoot: boolean
 ): boolean {
-	const s = (sectionType || "").toLowerCase();
+	const section = normalizeSection(sectionType);
 	const leaf = isLeaf(task);
 
-	// Initiatives: allow all levels
-	if (s.includes("initiative")) return true;
-
-	// Objectives: allow only the real top-level OKR (root of section) or lowest-level linked items.
-	if (s.includes("objective")) return (isRoot && depth === 0) || leaf;
-
-	// Tasks, Stories, Epics, Priorities, Responsibilities: only lowest-level (leaf) tasks
+	if (section === "initiatives") return true;
+	if (section === "objectives") return (isRoot && depth === 0) || leaf;
 	if (
-		s.includes("task") ||
-		s.includes("story") ||
-		s.includes("epic") ||
-		s.includes("priorit") ||
-		s.includes("responsibil")
+		section === "tasks" ||
+		section === "stories" ||
+		section === "epics" ||
+		section === "priorities" ||
+		section === "responsibilities"
 	) {
 		return leaf;
 	}
-
-	// Default: allow
 	return true;
 }
 
 let assignmentEventListenerAttached = false;
-
 function ensureAssignmentEventListener(app: App) {
 	if (assignmentEventListenerAttached) return;
 	assignmentEventListenerAttached = true;
@@ -52,7 +52,8 @@ function ensureAssignmentEventListener(app: App) {
 		async (ev: Event) => {
 			try {
 				const ce = ev as CustomEvent<any>;
-				const detail = (ce && (ce as any).detail) || {};
+				const detail =
+					ce && typeof ce.detail === "object" ? ce.detail : {};
 				const uid = detail?.uid;
 				const newAlias = detail?.newAlias;
 				if (
@@ -71,7 +72,7 @@ function ensureAssignmentEventListener(app: App) {
 							)
 						);
 					}
-					await updateAssigneeAndPropagate(app, uid, newAlias);
+					// await updateAssigneeAndPropagate(app, uid, newAlias); TO DO: add new reassignment/assignment cascade
 					if (filePath) {
 						window.dispatchEvent(
 							new CustomEvent("agile:assignment-changed", {
@@ -80,7 +81,12 @@ function ensureAssignmentEventListener(app: App) {
 						);
 					}
 				}
-			} catch {}
+			} catch (err) {
+				console.error(
+					"[agile] Failed handling 'agile:request-assign-propagate' event",
+					err
+				);
+			}
 		}
 	);
 }
@@ -94,12 +100,10 @@ function annotateAssigneeMarks(
 	marks.forEach((m) => {
 		const el = m as HTMLElement;
 		const cls = (el.getAttribute("class") || "").toLowerCase();
-		// Mark must have an active/inactive-<alias> class
 		if (
 			!/(^|\s)(?:active|inactive)-[a-z0-9-]+(\s|$)/i.test(" " + cls + " ")
 		)
 			return;
-		// And contain a 👋 strong (assignee, not delegate)
 		const strong = el.querySelector("strong");
 		if (!strong || !/^\s*👋/u.test(strong.textContent || "")) return;
 		el.setAttribute("data-task-uid", uid);
@@ -107,27 +111,23 @@ function annotateAssigneeMarks(
 	});
 }
 
-// Shared tree renderer (used by all sections)
 export function renderTaskTree(
 	tasks: TaskItem[],
 	container: HTMLElement,
 	app: App,
 	depth: number,
 	isRoot: boolean,
-	sectionType: string // Kept for potential future use, but sections can override
+	sectionType: string,
+	selectedAlias: string | null
 ) {
 	ensureAssignmentEventListener(app);
-
-	// Skip if no tasks
 	if (tasks.length === 0) return;
 
-	// Create container UL for this level; rely on Obsidian's task-list styles
 	const taskList = container.createEl("ul", {
 		cls: "agile-dashboard contains-task-list",
 	});
 
 	tasks.forEach((task) => {
-		// Skip truly blank tasks
 		if (
 			!task.text?.trim() &&
 			!task.visual?.trim() &&
@@ -135,7 +135,6 @@ export function renderTaskTree(
 		)
 			return;
 
-		// Create a temporary div to hold the rendered markdown (we'll extract the LI Obsidian generates)
 		const tempEl = document.createElement("div");
 		const renderComponent = new Component();
 		MarkdownRenderer.renderMarkdown(
@@ -146,21 +145,25 @@ export function renderTaskTree(
 		);
 		renderComponent.load();
 
-		// Prefer the LI generated by MarkdownRenderer to preserve Obsidian classes/attributes
 		const firstEl = tempEl.firstElementChild as HTMLElement | null;
 		let taskItemEl: HTMLElement;
 
-		if (
-			firstEl?.tagName.toLowerCase() === "ul" &&
-			firstEl.children.length === 1 &&
-			(
-				firstEl.firstElementChild as HTMLElement | null
-			)?.tagName.toLowerCase() === "li"
-		) {
-			taskItemEl = firstEl.firstElementChild as HTMLElement;
-			taskList.appendChild(taskItemEl);
+		if (firstEl?.tagName.toLowerCase() === "ul") {
+			if (
+				firstEl.children.length === 1 &&
+				(
+					firstEl.firstElementChild as HTMLElement | null
+				)?.tagName.toLowerCase() === "li"
+			) {
+				taskItemEl = firstEl.firstElementChild as HTMLElement;
+				taskList.appendChild(taskItemEl);
+			} else {
+				taskItemEl = taskList.createEl("li", { cls: "task-list-item" });
+				while (tempEl.firstChild) {
+					taskItemEl.appendChild(tempEl.firstChild);
+				}
+			}
 		} else {
-			// Fallback: create our own LI and mark it as a task-list-item for CSS compatibility
 			taskItemEl = taskList.createEl("li", { cls: "task-list-item" });
 			while (tempEl.firstChild) {
 				taskItemEl.appendChild(tempEl.firstChild);
@@ -171,7 +174,6 @@ export function renderTaskTree(
 			taskItemEl.addClass("annotated-task");
 		}
 
-		// Tag LI and assignee marks with identifiers so external handlers can target the correct task/line
 		if (task._uniqueId) {
 			taskItemEl.setAttribute("data-task-uid", task._uniqueId);
 		}
@@ -181,14 +183,31 @@ export function renderTaskTree(
 		}
 		try {
 			annotateAssigneeMarks(taskItemEl, task._uniqueId || "", filePath);
-		} catch (e) {}
+		} catch (e) {
+			console.error("[agile] annotateAssigneeMarks failed", {
+				error: e,
+				taskUid: task._uniqueId,
+				filePath,
+			});
+		}
 
-		// Attach snooze button if eligible for this section
 		try {
-			appendSnoozeButtonIfEligible(task, taskItemEl, sectionType, app);
-		} catch (e) {}
+			appendSnoozeButtonIfEligible(
+				task,
+				taskItemEl,
+				sectionType,
+				app,
+				selectedAlias
+			);
+		} catch (e) {
+			console.error("[agile] appendSnoozeButtonIfEligible failed", {
+				error: e,
+				taskUid: task._uniqueId,
+				sectionType,
+				selectedAlias,
+			});
+		}
 
-		// Wire up checkbox click and long-press to update status
 		const checkbox = taskItemEl.querySelector(
 			'input[type="checkbox"]'
 		) as HTMLInputElement | null;
@@ -200,7 +219,6 @@ export function renderTaskTree(
 				isRoot
 			);
 			if (!interactive) {
-				// Disable interaction (including label toggles) while preserving visual state
 				checkbox.disabled = true;
 				checkbox.tabIndex = -1;
 				checkbox.setAttribute("aria-disabled", "true");
@@ -213,13 +231,8 @@ export function renderTaskTree(
 				let initialChecked = checkbox.checked;
 				let isUpdating = false;
 
-				const performUpdate = async (
-					cancel: boolean,
-					source: string
-				) => {
-					if (isUpdating) {
-						return;
-					}
+				const performUpdate = async (cancel: boolean) => {
+					if (isUpdating) return;
 					isUpdating = true;
 					try {
 						const result = await handleStatusChange(
@@ -229,7 +242,6 @@ export function renderTaskTree(
 							cancel
 						);
 						if (result === "/") {
-							// Re-render just this task's inline content so the status icon updates
 							rerenderTaskInline(
 								task,
 								taskItemEl,
@@ -237,20 +249,24 @@ export function renderTaskTree(
 								sectionType,
 								result,
 								isRoot,
-								depth
+								depth,
+								selectedAlias
 							);
 						} else if (result === "x") {
-							// Reflect checked UI for completed tasks (will be hidden shortly if applicable)
 							checkbox.checked = true;
 							initialChecked = true;
 						}
 					} catch (e) {
+						console.error("[agile] performUpdate failed", {
+							error: e,
+							cancel,
+							taskUid: task._uniqueId,
+						});
 					} finally {
 						isUpdating = false;
 					}
 				};
 
-				// Prevent native toggle; we control the state via note updates and optimistic UI.
 				checkbox.addEventListener("change", (ev) => {
 					ev.preventDefault();
 					// @ts-ignore
@@ -258,12 +274,11 @@ export function renderTaskTree(
 					checkbox.checked = initialChecked;
 				});
 
-				// Keyboard accessibility: Space/Enter toggles like click
 				checkbox.addEventListener("keydown", async (ev) => {
 					const key = (ev as KeyboardEvent).key;
 					if (key === " " || key === "Enter") {
 						ev.preventDefault();
-						await performUpdate(false, "keydown");
+						await performUpdate(false);
 					}
 				});
 
@@ -274,13 +289,12 @@ export function renderTaskTree(
 					}
 				};
 
-				const onPressStart = (ev: Event) => {
+				const onPressStart = () => {
 					longPressed = false;
 					clearTimer();
 					pressTimer = window.setTimeout(async () => {
 						longPressed = true;
-						// Long press => cancel
-						await performUpdate(true, "longpress");
+						await performUpdate(true);
 					}, LONG_PRESS_MS);
 				};
 
@@ -301,33 +315,28 @@ export function renderTaskTree(
 					ev.preventDefault();
 					ev.stopPropagation();
 					if (longPressed) {
-						// Already handled by long-press
 						longPressed = false;
 						return;
 					}
-					await performUpdate(false, "click");
+					await performUpdate(false);
 				});
 			}
 		}
 
-		// Recurse for children: Create a new ul directly inside this li
 		if (task.children && task.children.length > 0) {
 			renderTaskTree(
 				task.children,
-				taskItemEl, // Recurse into this li
+				taskItemEl,
 				app,
 				depth + 1,
 				false,
-				sectionType
+				sectionType,
+				selectedAlias
 			);
 		}
 	});
 }
 
-/**
- * Re-render only the inline content (checkbox + line text) for a task's <li> to refresh status icon,
- * preserving any nested child <ul>, then reattach snooze button and re-wire interactions.
- */
 function rerenderTaskInline(
 	task: TaskItem,
 	liEl: HTMLElement,
@@ -335,18 +344,16 @@ function rerenderTaskInline(
 	sectionType: string,
 	newStatus: string,
 	isRoot: boolean,
-	depth: number
+	depth: number,
+	selectedAlias: string | null
 ): void {
 	try {
-		// Preserve existing child lists (subtasks)
 		const childLists = Array.from(
 			liEl.querySelectorAll(":scope > ul")
 		) as HTMLElement[];
 
-		// Build updated markdown line for this task
 		let lineMd = (task.visual || task.text || "").trim();
 
-		// Update or inject the task status marker
 		if (/^\s*[-*]\s*\[\s*.\s*\]/.test(lineMd)) {
 			lineMd = lineMd.replace(
 				/^(\s*[-*]\s*\[\s*)(.)(\s*\])/,
@@ -356,17 +363,14 @@ function rerenderTaskInline(
 			lineMd = `- [${newStatus}] ${lineMd}`;
 		}
 
-		// Remove any completion/cancel markers for non-terminal statuses like "/"
 		if (newStatus === "/") {
 			lineMd = lineMd
 				.replace(/\s*(✅|❌)\s+\d{4}-\d{2}-\d{2}\b/g, "")
 				.trimEnd();
 		}
 
-		// Clear current inline content
 		liEl.innerHTML = "";
 
-		// Render updated line using Obsidian's renderer
 		const tempEl = document.createElement("div");
 		const renderComponent = new Component();
 		MarkdownRenderer.renderMarkdown(
@@ -377,7 +381,6 @@ function rerenderTaskInline(
 		);
 		renderComponent.load();
 
-		// Extract the generated LI contents (UL > LI) and sync attributes so CSS status icons stay correct
 		const firstEl = tempEl.firstElementChild as HTMLElement | null;
 		if (
 			firstEl?.tagName.toLowerCase() === "ul" &&
@@ -387,11 +390,8 @@ function rerenderTaskInline(
 			)?.tagName.toLowerCase() === "li"
 		) {
 			const sourceLi = firstEl.firstElementChild as HTMLElement;
-
-			// Preserve custom class if present
 			const hadAnnotated = liEl.classList.contains("annotated-task");
 
-			// Sync key attributes/classes from sourceLi onto our existing LI
 			const dataTask = sourceLi.getAttribute("data-task");
 			if (dataTask !== null) liEl.setAttribute("data-task", dataTask);
 			else liEl.removeAttribute("data-task");
@@ -405,27 +405,22 @@ function rerenderTaskInline(
 				liEl.setAttribute("aria-checked", ariaChecked);
 			else liEl.removeAttribute("aria-checked");
 
-			// Replace class list with the freshly rendered one
 			liEl.className = sourceLi.className;
 			if (hadAnnotated) liEl.classList.add("annotated-task");
 
-			// Move over the newly rendered inline content
 			while (sourceLi.firstChild) {
 				liEl.appendChild(sourceLi.firstChild);
 			}
 		} else {
-			// Fallback: move all rendered nodes and best-effort attribute updates
 			while (tempEl.firstChild) {
 				liEl.appendChild(tempEl.firstChild);
 			}
-			// Ensure attributes reflect the new status so CSS can render correctly
 			liEl.classList.add("task-list-item");
 			if (newStatus === "x") liEl.classList.add("is-checked");
 			else liEl.classList.remove("is-checked");
 			liEl.setAttribute("data-task", newStatus);
 		}
 
-		// Ensure checkbox element carries the correct data-task for CSS snippets
 		const inputEl = liEl.querySelector(
 			'input[type="checkbox"]'
 		) as HTMLInputElement | null;
@@ -433,15 +428,28 @@ function rerenderTaskInline(
 			inputEl.setAttribute("data-task", newStatus);
 		}
 
-		// Re-attach preserved child lists (subtasks)
 		childLists.forEach((ul) => liEl.appendChild(ul));
 
-		// Re-attach snooze button if eligible
 		try {
-			appendSnoozeButtonIfEligible(task, liEl, sectionType, app);
-		} catch (e) {}
+			appendSnoozeButtonIfEligible(
+				task,
+				liEl,
+				sectionType,
+				app,
+				selectedAlias
+			);
+		} catch (e) {
+			console.error(
+				"[agile] appendSnoozeButtonIfEligible (rerender) failed",
+				{
+					error: e,
+					taskUid: task._uniqueId,
+					sectionType,
+					selectedAlias,
+				}
+			);
+		}
 
-		// Re-wire checkbox interactions for the newly rendered checkbox
 		const checkbox = liEl.querySelector(
 			'input[type="checkbox"]'
 		) as HTMLInputElement | null;
@@ -460,19 +468,13 @@ function rerenderTaskInline(
 				(checkbox as HTMLElement).style.pointerEvents = "none";
 			} else {
 				let pressTimer: number | null = null;
-				let longPressed = false;
 				const LONG_PRESS_MS = 500;
 
 				let initialChecked = checkbox.checked;
 				let isUpdating = false;
 
-				const performUpdate = async (
-					cancel: boolean,
-					source: string
-				) => {
-					if (isUpdating) {
-						return;
-					}
+				const performUpdate = async (cancel: boolean) => {
+					if (isUpdating) return;
 					isUpdating = true;
 					try {
 						const result = await handleStatusChange(
@@ -489,19 +491,27 @@ function rerenderTaskInline(
 								sectionType,
 								result,
 								isRoot,
-								depth
+								depth,
+								selectedAlias
 							);
 						} else if (result === "x") {
 							checkbox.checked = true;
 							initialChecked = true;
 						}
 					} catch (e) {
+						console.error(
+							"[agile] performUpdate (rerender) failed",
+							{
+								error: e,
+								cancel,
+								taskUid: task._uniqueId,
+							}
+						);
 					} finally {
 						isUpdating = false;
 					}
 				};
 
-				// Prevent native toggle; we control the state via note updates and optimistic UI.
 				checkbox.addEventListener("change", (ev) => {
 					ev.preventDefault();
 					// @ts-ignore
@@ -509,12 +519,11 @@ function rerenderTaskInline(
 					checkbox.checked = initialChecked;
 				});
 
-				// Keyboard accessibility: Space/Enter toggles like click
 				checkbox.addEventListener("keydown", async (ev) => {
 					const key = (ev as KeyboardEvent).key;
 					if (key === " " || key === "Enter") {
 						ev.preventDefault();
-						await performUpdate(false, "keydown");
+						await performUpdate(false);
 					}
 				});
 
@@ -525,12 +534,10 @@ function rerenderTaskInline(
 					}
 				};
 
-				const onPressStart = (ev: Event) => {
-					longPressed = false;
+				const onPressStart = () => {
 					clearTimer();
 					pressTimer = window.setTimeout(async () => {
-						longPressed = true;
-						await performUpdate(true, "longpress");
+						await performUpdate(true);
 					}, LONG_PRESS_MS);
 				};
 
@@ -550,18 +557,23 @@ function rerenderTaskInline(
 				checkbox.addEventListener("click", async (ev) => {
 					ev.preventDefault();
 					ev.stopPropagation();
-					if (longPressed) {
-						longPressed = false;
-						return;
-					}
-					await performUpdate(false, "click");
+					await performUpdate(false);
 				});
 			}
 		}
-	} catch (e) {}
+	} catch (e) {
+		console.error("[agile] rerenderTaskInline failed", {
+			error: e,
+			taskUid: task._uniqueId,
+			newStatus,
+			sectionType,
+			isRoot,
+			depth,
+			selectedAlias,
+		});
+	}
 }
 
-// Shared status change handler (used by sections that need checkboxes/interactivity)
 export const handleStatusChange = async (
 	task: TaskItem,
 	liEl: HTMLElement,
@@ -575,7 +587,6 @@ export const handleStatusChange = async (
 		const file = app.vault.getAbstractFileByPath(filePath) as TFile;
 		if (!file) throw new Error(`File not found: ${filePath}`);
 
-		// Let the dashboard know we're doing an optimistic file change so it can suppress full refresh
 		window.dispatchEvent(
 			new CustomEvent("agile:prepare-optimistic-file-change", {
 				detail: { filePath },
@@ -585,7 +596,6 @@ export const handleStatusChange = async (
 		const content = await app.vault.read(file);
 		const lines = content.split(/\r?\n/);
 
-		// Determine current status and correct line index for this task
 		let effectiveStatus = (task.status ?? " ").trim() || " ";
 		let targetLineIndex = -1;
 
@@ -594,7 +604,6 @@ export const handleStatusChange = async (
 			return m ? m[1] : null;
 		};
 
-		// Normalizer to compare task text with file line text, ignoring completion/cancel markers and extra spaces
 		const normalize = (s: string) =>
 			(s || "")
 				.replace(/\s*(✅|❌)\s+\d{4}-\d{2}-\d{2}\b/g, "")
@@ -610,7 +619,6 @@ export const handleStatusChange = async (
 			(task.text || task.visual || "").trim()
 		);
 
-		// 1) Try to use the reported line index (and neighbors) but validate by text
 		const baseIdx = typeof task.line === "number" ? task.line : -1;
 		const candidates = [baseIdx, baseIdx - 1, baseIdx + 1].filter(
 			(i) => i >= 0 && i < lines.length
@@ -631,7 +639,6 @@ export const handleStatusChange = async (
 			}
 		}
 
-		// 2) If still not found, scan the file for an exact normalized match, then a startsWith match
 		if (targetLineIndex === -1 && targetTextNorm) {
 			for (let i = 0; i < lines.length; i++) {
 				const rest = getLineRestNormalized(lines[i]);
@@ -671,7 +678,6 @@ export const handleStatusChange = async (
 			const bracketSuffix = m[3];
 			let rest = m[4] ?? "";
 
-			// Remove any existing completion/cancel markers to avoid duplicates
 			rest = rest
 				.replace(/\s*(✅|❌)\s+\d{4}-\d{2}-\d{2}\b/g, "")
 				.trimEnd();
@@ -703,19 +709,15 @@ export const handleStatusChange = async (
 			return false;
 		};
 
-		// 1) Try by known line index
 		if (targetLineIndex !== -1) {
 			tryReplaceAtIndex(targetLineIndex);
 		}
 
-		// 2) If not replaced, search for the best-matching task line by normalized text
 		if (newContent == null) {
 			const targetText = normalize(
 				(task.text || task.visual || "").trim()
 			);
-
 			if (targetText) {
-				// First pass: exact normalized match
 				for (let i = 0; i < lines.length; i++) {
 					const m = lines[i].match(/^\s*[-*]\s*\[\s*.\s*\]\s*(.*)$/);
 					if (!m) continue;
@@ -724,8 +726,6 @@ export const handleStatusChange = async (
 						if (tryReplaceAtIndex(i)) break;
 					}
 				}
-
-				// Second pass: startsWith normalized match
 				if (newContent == null) {
 					for (let i = 0; i < lines.length; i++) {
 						const m = lines[i].match(
@@ -741,7 +741,6 @@ export const handleStatusChange = async (
 			}
 		}
 
-		// 3) As a last resort, if we still didn't modify, try a loose regex replace:
 		if (newContent == null) {
 			const escaped = (task.text || "")
 				.trim()
@@ -753,7 +752,7 @@ export const handleStatusChange = async (
 				);
 				newContent = content.replace(re, (match) => updateLine(match));
 				if (newContent === content) {
-					newContent = null; // no-op; ensure we fail below
+					newContent = null;
 				}
 			}
 		}
@@ -763,19 +762,26 @@ export const handleStatusChange = async (
 		}
 
 		await app.vault.modify(file, newContent);
-
-		// Update in-memory task to keep subsequent toggles working without reload
 		(task as any).status = newStatus;
 
-		// Optimistic UI: if task completed or cancelled, hide node and collapse ancestors/section if needed
 		if (newStatus === "x" || newStatus === "-") {
 			try {
 				hideTaskAndCollapseAncestors(liEl);
-			} catch (e) {}
+			} catch (e) {
+				console.error("[agile] hideTaskAndCollapseAncestors failed", {
+					error: e,
+					taskUid: task._uniqueId,
+				});
+			}
 		}
 
 		return newStatus;
-	} catch (error) {
+	} catch (err) {
+		console.error("[agile] handleStatusChange failed", {
+			error: err,
+			taskUid: task?._uniqueId,
+			isCancel,
+		});
 		return null;
 	}
 };
