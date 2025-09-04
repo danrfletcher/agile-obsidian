@@ -2,7 +2,7 @@
  * Public app-level contracts (ports) for the Settings feature.
  * These describe dependencies that the Settings UI uses from the org-structure feature.
  */
-import type { TeamInfo } from "../domain/settings.types";
+import type { TeamInfo } from "@features/org-structure";
 
 /**
  * Actions related to teams/orgs that the Settings UI invokes.

@@ -4,7 +4,7 @@
  */
 import { DEFAULT_SETTINGS } from "../infra/settings-store";
 import { AgileSettingTab } from "../ui/views/settings-view";
-import type { AgileObsidianSettings } from "../domain/settings.types";
+import type { AgileObsidianSettings } from "../domain/settings-types";
 import type { App, Plugin } from "obsidian";
 import type { SettingsOrgActions } from "./contracts";
 

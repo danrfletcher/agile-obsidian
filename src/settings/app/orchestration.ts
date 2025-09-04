@@ -4,7 +4,7 @@
  * Composition should call these factories.
  */
 import type { App, Plugin } from "obsidian";
-import type { AgileObsidianSettings } from "../domain/settings.types";
+import type { AgileObsidianSettings } from "../domain/settings-types";
 import { createSettingsTab } from "./factories";
 import type { SettingsOrgActions } from "./contracts";
 

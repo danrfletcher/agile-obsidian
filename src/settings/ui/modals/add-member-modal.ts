@@ -3,7 +3,7 @@
  * Side-effects: Manipulates DOM, calls onSubmit to persist changes upstream.
  */
 import { App, Modal, Notice } from "obsidian";
-import type { MemberInfo } from "@settings";
+import type { MemberInfo } from "@features/org-structure";
 
 export class AddMemberModal extends Modal {
 	private onSubmit: (
