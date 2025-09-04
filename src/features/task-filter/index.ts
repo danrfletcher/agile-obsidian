@@ -8,4 +8,3 @@
 export { getAgileArtifactType } from "./domain/agile-artifact-types";
 export * from "./domain/task-filters";
 export type { AgileArtifactType } from "./domain/types";
-
