@@ -2,7 +2,8 @@
  * Domain-level selectors for settings data.
  * Pure functions without side-effects.
  */
-import type { AgileObsidianSettings, TeamInfo } from "./settings.types";
+import { TeamInfo } from "@features/org-structure";
+import type { AgileObsidianSettings } from "./settings-types";
 
 /**
  * Returns the current user's alias or null if unset.
