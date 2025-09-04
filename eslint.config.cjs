@@ -1,6 +1,3 @@
-// Flat ESLint config for ESLint v9+ (array form)
-// Base config applies to all TypeScript files; subsequent entries act as glob-based overrides.
-
 module.exports = [
 	// Base config for all TypeScript files
 	{
@@ -41,10 +38,15 @@ module.exports = [
 					},
 					// Allow any file inside a feature to import that feature's internals
 					{ from: "src/features/*/**", allow: ["src/features/*/**"] },
-					// Allow a feature's index barrel to reach into that feature's internals
+					// Allow platform index barrel to reach into that feature's internals
 					{
-						from: "src/features/*/index.*",
-						allow: ["src/features/*/**"],
+						from: "src/platform/*/index.*",
+						allow: ["src/platform/*/**"],
+					},
+					// Allow settings index barrel to reach into that feature's internals
+					{
+						from: "src/settings/*/index.*",
+						allow: ["src/settings/*/**"],
 					},
 					{
 						from: "src/**/domain/**",
@@ -91,15 +93,13 @@ module.exports = [
 				},
 			],
 
-			// Restrict certain deep imports project-wide. External code must import
-			// from the public package/barrel APIs instead of reaching into internals.
+			// Restrict certain deep imports project-wide. Must import from the public package/barrel API
 			"no-restricted-imports": [
 				"error",
 				{
 					patterns: [
 						"src/platform/**",
 						"*/platform/**",
-						// Prevent deep imports into settings internals; must import from @settings
 						"src/settings/**/domain/**",
 						"src/settings/**/infra/**",
 						"@settings/domain/**",
@@ -114,22 +114,26 @@ module.exports = [
 	{
 		files: ["src/features/**"],
 		rules: {
-			// Turn off the internal-modules rule inside feature folders so files can import siblings
 			"import/no-internal-modules": "off",
 		},
 	},
-
-	// Allow internal relative imports for the settings package (it's at src/settings)
+	// Allow internal relative imports for the settings package
 	{
 		files: ["src/settings/**"],
 		rules: {
 			"import/no-internal-modules": "off",
 		},
 	},
-
 	// Disable import/no-internal-modules for shared packages so barrels can re-export internals
 	{
 		files: ["src/shared/**"],
+		rules: {
+			"import/no-internal-modules": "off",
+		},
+	},
+	// Disable import/no-internal-modules for platform packages so barrels can re-export internals
+	{
+		files: ["src/platform/**"],
 		rules: {
 			"import/no-internal-modules": "off",
 		},
