@@ -1,21 +1,4 @@
-export type MemberType =
-	| "member"
-	| "external"
-	| "team"
-	| "internal-team-member";
-
-export interface MemberInfo {
-	alias: string;
-	name: string;
-	type?: MemberType;
-}
-
-export interface TeamInfo {
-	name: string;
-	rootPath: string;
-	members: MemberInfo[];
-	slug?: string;
-}
+import { TeamInfo } from "@features/org-structure";
 
 export interface AgileObsidianSettings {
 	showObjectives: boolean;
