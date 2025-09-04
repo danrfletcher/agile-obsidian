@@ -1,38 +1,20 @@
-export function escapeHtml(s: string): string {
-	return s.replace(
-		/[&<>"']/g,
-		(c) =>
-			({
-				"&": "&amp;",
-				"<": "&lt;",
-				">": "&gt;",
-				'"': "&quot;",
-				"'": "&#39;",
-			}[c as "&" | "<" | ">" | '"' | "'"])
-	);
-}
+import { escapeHtml } from "../domain/template-utils";
 
 /**
- * markChip renders a <mark> with:
- * - data-template-id (stable key used by the engine)
- * - data-order-tag (classification only; no numeric order is used)
- * - optional data-kind and any extra attributes
- * - optional inline style for bg/color
- * If href is provided, the <mark> is wrapped by an <a class="internal-link">.
+ * markChip renders a <mark> with optional style/attrs.
+ * Note: data-order-tag is NOT placed on the mark; it belongs on the wrapper.
  */
 export function markChip(opts: {
 	id: string;
 	kind?: string;
-	orderTag?: string; // e.g., "artifact-item-type", "metadata-tag", "assignee", "parent-link"
-	text: string; // inner text/html
+	text: string;
 	bg?: string;
 	color?: string;
 	bold?: boolean;
 	href?: string;
 	extraAttrs?: Record<string, string | number | boolean | undefined>;
 }): string {
-	const { id, kind, orderTag, text, bg, color, bold, href, extraAttrs } =
-		opts;
+	const { kind, text, bg, color, bold, href, extraAttrs } = opts;
 
 	const styleParts: string[] = [];
 	if (bg) styleParts.push(`background: ${escapeHtml(bg)};`);
@@ -42,8 +24,6 @@ export function markChip(opts: {
 		: "";
 
 	const attrs: string[] = [
-		`data-template-id="${escapeHtml(id)}"`,
-		orderTag ? `data-order-tag="${escapeHtml(orderTag)}"` : "",
 		kind ? `data-kind="${escapeHtml(kind)}"` : "",
 	].filter(Boolean) as string[];
 
@@ -71,28 +51,49 @@ export function listLine(inner: string, indent = 0): string {
 	return `${spaces}- ${inner}`;
 }
 
+// Helper to convert camelCase/PascalCase/space/underscore to kebab-case
+function toKebabCase(input: string): string {
+  return input
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2") // camelCase -> camel-Case
+    .replace(/[_\s]+/g, "-")                // spaces/underscores -> -
+    .toLowerCase();
+}
+
 /**
- * Provide a stable wrapper around an entire template instance (both its mark and any tail text).
- * wrapper carries:
- * - data-template-wrapper: a random instance id (GUID-lite)
- * - data-template-key: the preset id like "agile.userStory"
- * - data-template-mark-id: the mark's data-template-id value (e.g., "agile-user-story")
- *
- * Consumers can event-delegate clicks to this wrapper to open param modals for edits.
+ * Wraps a template instance.
+ * Update: Accepts an optional `props` object. Each key/value is emitted as
+ * data-{kebab-cased-key}="{escaped value}" on the wrapper span.
  */
 export function wrapTemplate(
-	templateKey: string, // e.g., "agile.userStory"
-	markId: string, // e.g., "agile-user-story" (the mark's data-template-id)
-	innerHtml: string // the full template inner HTML (mark + any text)
+  templateKey: string,
+  innerHtml: string,
+  props?: Record<string, unknown>
 ): string {
-	const instanceId = makeInstanceId();
-	return `<span data-template-wrapper="${instanceId}" data-template-key="${escapeHtml(
-		templateKey
-	)}" data-template-mark-id="${escapeHtml(markId)}">${innerHtml}</span>`;
+  const instanceId = makeInstanceId();
+
+  const dataAttrs =
+    props && typeof props === "object"
+      ? Object.entries(props)
+          .filter(([_, v]) => v != null) 
+          .map(([k, v]) => {
+            const kebabKey = toKebabCase(k);
+            const value =
+              typeof v === "string"
+                ? v
+                : typeof v === "number" || typeof v === "boolean"
+                ? String(v)
+                : JSON.stringify(v);
+            return ` data-${kebabKey}="${escapeHtml(value)}"`;
+          })
+          .join("")
+      : "";
+
+  return `<span data-template-wrapper="${instanceId}" data-template-key="${escapeHtml(
+    templateKey
+  )}"${dataAttrs}>${innerHtml}</span>`;
 }
 
 export function makeInstanceId(): string {
-	// simple GUID-lite
 	return (
 		"tpl-" +
 		Math.random().toString(36).slice(2, 9) +
