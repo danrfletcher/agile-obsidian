@@ -4,12 +4,19 @@
  * Side-effects: Manipulates DOM, triggers actions ports, and requests save/refresh.
  */
 import { App, Notice } from "obsidian";
-import type { AgileObsidianSettings, MemberInfo, TeamInfo } from "@settings";
+import type { AgileObsidianSettings } from "@settings";
 import { AddMemberModal } from "../modals/add-member-modal";
 import { CreateOrganizationModal } from "../modals/create-organization-modal";
 import { CreateSubteamsModal } from "../modals/create-subteams-modal";
-import { getDisplayNameFromAlias, TEAM_CODE_RE } from "@shared/identity";
+import { getDisplayNameFromAlias } from "@shared/identity";
 import type { SettingsOrgActions } from "../../app/contracts";
+import type { MemberInfo, TeamInfo } from "@features/org-structure";
+
+// New helpers imported from org-structure API
+import {
+	computeOrgStructureView,
+	classifyMember,
+} from "@features/org-structure";
 
 export type TeamsActions = SettingsOrgActions;
 
@@ -22,15 +29,16 @@ export class TeamsPresenter {
 
 	/**
 	 * Mount the presenter UI and wire interactions.
-	 * - Populates orphan teams and organizations views.
+	 * - Populates orphan teams and organizations views (via org-structure API helpers).
 	 * - Wires creation/modification modals and refresh logic.
 	 */
 	mount(
 		container: HTMLElement,
-		identityContainer: HTMLElement,
+		_identityContainer: HTMLElement,
 		onRefreshUI: () => void
 	) {
-		const { orgs, orphanTeams, children } = this.computeOrgStructure();
+		const teams = (this.settings.teams ?? []) as TeamInfo[];
+		const { orgs, orphanTeams, children } = computeOrgStructureView(teams);
 
 		// Teams header
 		container.createEl("h4", { text: "Teams" });
@@ -74,6 +82,7 @@ export class TeamsPresenter {
 					style: "margin:6px 0 8px 16px; display:none; border-left:2px solid var(--background-modifier-border); padding-left:10px;",
 				},
 			});
+
 			const renderMembers = () =>
 				this.renderTeamMembers(membersContainer, t);
 			renderMembers();
@@ -296,150 +305,6 @@ export class TeamsPresenter {
 	}
 
 	/**
-	 * Compute organizations, orphan teams, and direct-children map based on slug lineage and folder structure.
-	 * Invariants:
-	 * - Slugs end with a 6-char code: TEAM_CODE_RE.
-	 * - A child slug extends the parent's base with a hyphen and shares the same code.
-	 * - Direct subteams live under "<parent.rootPath>/Teams/<Subfolder>" without deeper nesting for direct display.
-	 */
-	private computeOrgStructure() {
-		const teams = (this.settings.teams ?? []) as TeamInfo[];
-
-		// Helper: determine if childSlug is a descendant of parentSlug, sharing the same 6-char code.
-		const isChildSlugOf = (
-			parentSlug?: string,
-			childSlug?: string
-		): boolean => {
-			if (!parentSlug || !childSlug) return false;
-			const pm = parentSlug.match(TEAM_CODE_RE);
-			const cm = childSlug.match(TEAM_CODE_RE);
-			if (!pm || !cm) return false;
-			if (pm[1].toLowerCase() !== cm[1].toLowerCase()) return false; // must share code
-			const pBase = parentSlug
-				.slice(0, parentSlug.length - 1 - pm[1].length)
-				.toLowerCase();
-			const cBase = childSlug
-				.slice(0, childSlug.length - 1 - cm[1].length)
-				.toLowerCase();
-			if (!cBase.startsWith(pBase + "-")) return false; // child extends base
-			if (cBase === pBase) return false; // must differ
-			return true;
-		};
-
-		// Build children map strictly under Teams/ and with valid slug lineage
-		const children = new Map<string, TeamInfo[]>();
-		for (const parent of teams) {
-			const parentSlug = parent.slug?.toLowerCase();
-			if (!parentSlug) continue;
-			const parentRoot = parent.rootPath.replace(/\/+$/g, "");
-			const teamsFolderPrefix = parentRoot + "/Teams/";
-
-			for (const child of teams) {
-				if (child === parent) continue;
-				const childSlug = child.slug?.toLowerCase();
-				if (!childSlug) continue;
-				if (!isChildSlugOf(parentSlug, childSlug)) continue;
-
-				const childRoot = child.rootPath.replace(/\/+$/g, "");
-				if (!childRoot.startsWith(teamsFolderPrefix)) continue;
-				const remainder = childRoot.slice(teamsFolderPrefix.length);
-				// Only include direct subteams (single folder immediately under the parent's Teams/ folder)
-				if (remainder.length === 0 || remainder.includes("/")) continue;
-
-				if (!children.has(parent.rootPath))
-					children.set(parent.rootPath, []);
-				children.get(parent.rootPath)!.push(child);
-			}
-		}
-
-		// Derive orgs and orphan teams
-		const orgs: TeamInfo[] = [];
-		const orphanTeams: TeamInfo[] = [];
-
-		const isChildPath = new Set<string>();
-		for (const arr of children.values()) {
-			for (const c of arr) isChildPath.add(c.rootPath);
-		}
-
-		for (const t of teams) {
-			const isParent = (children.get(t.rootPath)?.length ?? 0) > 0;
-			const isChild = isChildPath.has(t.rootPath);
-			// Only top-level parents (not children) are organizations.
-			if (isParent && !isChild) {
-				orgs.push(t);
-			}
-			// Only teams that are neither parents nor children are orphans.
-			else if (!isParent && !isChild) {
-				orphanTeams.push(t);
-			}
-		}
-
-		orgs.sort((a, b) => a.name.localeCompare(b.name));
-		orphanTeams.sort((a, b) => a.name.localeCompare(b.name));
-		for (const arr of children.values()) {
-			arr.sort((a, b) => a.name.localeCompare(b.name));
-		}
-
-		return { orgs, orphanTeams, children };
-	}
-
-	/**
-	 * Classify a member by alias conventions and optional explicit type.
-	 * Returns a stable kind, display label, and rank for sorting.
-	 * Rank ordering: member(0) < internal-team-member(1) < team(2) < external(3)
-	 */
-	private classifyMember(m: MemberInfo): {
-		kind: "member" | "internal-team-member" | "team" | "external";
-		label: string;
-		rank: number;
-	} {
-		const alias = (m.alias || "").toLowerCase();
-		const isExternal = alias.endsWith("-ext");
-		const isTeam = alias.endsWith("-team");
-		const isInternalMember = alias.endsWith("-int");
-		const hasCode = /-[0-9][a-z0-9]{5}$/i.test(alias);
-
-		let kind: "member" | "internal-team-member" | "team" | "external";
-		if (hasCode && !isExternal && !isTeam && !isInternalMember) {
-			kind = "member";
-		} else if (isInternalMember) {
-			kind = "internal-team-member";
-		} else if (isTeam) {
-			kind = "team";
-		} else if (isExternal) {
-			kind = "external";
-		} else {
-			kind =
-				(m.type as any) === "external" ||
-				(m.type as any) === "team" ||
-				(m.type as any) === "internal-team-member" ||
-				(m.type as any) === "member"
-					? (m.type as any)
-					: "member";
-		}
-
-		const label =
-			kind === "external"
-				? "External Delegate"
-				: kind === "team"
-				? "Internal Team"
-				: kind === "internal-team-member"
-				? "Internal Team Member"
-				: "Team Member";
-
-		const rank =
-			kind === "member"
-				? 0
-				: kind === "internal-team-member"
-				? 1
-				: kind === "team"
-				? 2
-				: 3;
-
-		return { kind, label, rank };
-	}
-
-	/**
 	 * Render a team's members in a collapsible section.
 	 * Sorted by classifyMember rank and then by display name.
 	 */
@@ -451,8 +316,8 @@ export class TeamsPresenter {
 			return;
 		}
 		const sorted = raw.slice().sort((a, b) => {
-			const ra = this.classifyMember(a).rank;
-			const rb = this.classifyMember(b).rank;
+			const ra = classifyMember(a).rank;
+			const rb = classifyMember(b).rank;
 			if (ra !== rb) return ra - rb;
 			const an = getDisplayNameFromAlias(a.alias);
 			const bn = getDisplayNameFromAlias(b.alias);
@@ -465,7 +330,7 @@ export class TeamsPresenter {
 					style: "display:flex; gap:8px; align-items:center; margin:3px 0;",
 				},
 			});
-			const { label: typeLabel } = this.classifyMember(m);
+			const { label: typeLabel } = classifyMember(m);
 
 			line.createEl("span", {
 				text: getDisplayNameFromAlias(m.alias),
@@ -493,8 +358,8 @@ export class TeamsPresenter {
 	 */
 	private renderOrgMembers(container: HTMLElement, org: TeamInfo) {
 		const members = (org.members ?? []).slice().sort((a, b) => {
-			const ra = this.classifyMember(a).rank;
-			const rb = this.classifyMember(b).rank;
+			const ra = classifyMember(a).rank;
+			const rb = classifyMember(b).rank;
 			if (ra !== rb) return ra - rb;
 			const an = getDisplayNameFromAlias(a.alias);
 			const bn = getDisplayNameFromAlias(b.alias);
@@ -516,7 +381,7 @@ export class TeamsPresenter {
 				line.createEl("span", {
 					text: getDisplayNameFromAlias(m.alias),
 				});
-				const { label: typeLabel } = this.classifyMember(m);
+				const { label: typeLabel } = classifyMember(m);
 				line.createEl("span", {
 					text: `(${typeLabel})`,
 					attr: { style: "color: var(--text-muted);" },
@@ -608,8 +473,8 @@ export class TeamsPresenter {
 					const members = (node.members ?? [])
 						.slice()
 						.sort((a, b) => {
-							const ra = this.classifyMember(a).rank;
-							const rb = this.classifyMember(b).rank;
+							const ra = classifyMember(a).rank;
+							const rb = classifyMember(b).rank;
 							if (ra !== rb) return ra - rb;
 							const an = getDisplayNameFromAlias(a.alias);
 							const bn = getDisplayNameFromAlias(b.alias);
@@ -633,7 +498,7 @@ export class TeamsPresenter {
 							line.createEl("span", {
 								text: getDisplayNameFromAlias(m.alias),
 							});
-							const { label: typeLabel } = this.classifyMember(m);
+							const { label: typeLabel } = classifyMember(m);
 							line.createEl("span", {
 								text: `(${typeLabel})`,
 								attr: { style: "color: var(--text-muted);" },
@@ -901,15 +766,8 @@ export class TeamsPresenter {
 		const uniq = new Map<string, MemberInfo>();
 		for (const tt of this.settings.teams ?? []) {
 			for (const m of tt.members ?? []) {
-				const lower = (m.alias ?? "").toLowerCase();
-				const inferredType =
-					m.type ??
-					(lower.endsWith("-ext")
-						? "external"
-						: lower.endsWith("-team")
-						? "team"
-						: "member");
-				if (inferredType !== "member") continue;
+				const kind = classifyMember(m).kind;
+				if (kind !== "member") continue;
 				if (!uniq.has(m.alias)) {
 					uniq.set(m.alias, {
 						alias: m.alias,
