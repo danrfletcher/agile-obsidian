@@ -1,10 +1,16 @@
-import type { Container } from "src/composition/container";
-import { applyCheckboxStylesSetting } from "src/composition/register-styles";
+import type { App, Plugin } from "obsidian";
+import type { AgileObsidianSettings } from "src/settings";
 
-export function registerCustomCheckboxesSettings(container: Container) {
+export function registerCustomCheckboxesSettings(ports: {
+	app: App;
+	plugin: Plugin;
+	settings: AgileObsidianSettings;
+	applyCheckboxStyles?: () => Promise<void> | void;
+}) {
 	return {
 		applyCheckboxStyles: async (): Promise<void> => {
-			applyCheckboxStylesSetting(container);
+			if (typeof ports.applyCheckboxStyles === "function")
+				await ports.applyCheckboxStyles();
 		},
 	};
 }
