@@ -1,6 +1,7 @@
 import { App, TFile } from "obsidian";
-import { TaskItem } from "../tasks/task-item";
-import { escapeRegExp, slugifyName } from "../org-structure/domain/slug-utils";
+import { TaskItem } from "@features/tasks";
+import { slugifyName } from "@shared/identity";
+import { escapeRegExp } from "@utils";
 
 function isDateExpired(dateStr: string): boolean {
 	// Parse YYYY-MM-DD as local date (avoid UTC parsing quirks)

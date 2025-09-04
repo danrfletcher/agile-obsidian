@@ -1,5 +1,6 @@
 import { App, TFile } from "obsidian";
-import { TaskItem } from "../tasks/task-item";
+import { TaskItem } from "@features/tasks";
+import { escapeRegExp } from "@utils";
 
 // Update one exact line in a note to add/replace a snooze marker for the given user
 export async function snoozeTask(
@@ -106,8 +107,4 @@ function applySnoozeToText(
 	out += userSnooze;
 
 	return out;
-}
-
-function escapeRegExp(s: string) {
-	return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
