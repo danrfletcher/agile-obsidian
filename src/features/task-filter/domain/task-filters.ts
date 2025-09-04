@@ -1,11 +1,7 @@
 import { TaskItem } from "@features/tasks";
-import {
-	Tokens,
-	DateRe,
-	parseYyyyMmDd,
-	todayAtMidnight,
-} from "./types";
+import { Tokens } from "./types";
 import { escapeRegExp } from "@utils";
+import { DateRe, parseYyyyMmDd, todayAtMidnight } from "@features/task-date-manager";
 
 /**
  * Checks if a task is completed by detecting a ✅ YYYY-MM-DD marker in the text.
@@ -193,13 +189,10 @@ export const isAssignedToMemberOrTeam = (
 };
 
 /**
- * Extracts the target date from a 🎯 YYYY-MM-DD marker, or returns false if absent.
- * Returns the raw string "YYYY-MM-DD" if present.
+ * Returns true if task text is empty
  */
-export const hasTargetDate = (task: TaskItem): string | false => {
-	const txt = task?.text ?? "";
-	const m = txt.match(
-		new RegExp(`${escapeRegExp("🎯")}\\s*(${DateRe.source})`)
-	);
-	return m ? m[1] : false;
+export const isBlankTask = (task: TaskItem): boolean => {
+	const txt = task?.text;
+	if (typeof txt !== "string") return true;
+	return txt.trim().length === 0;
 };
