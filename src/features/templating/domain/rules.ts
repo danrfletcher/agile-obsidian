@@ -2,7 +2,23 @@ import type { AllowedOn, Rule, RuleObject, TemplateContext } from "./types";
 import {
 	isTaskLine as taskLineFromCtx,
 	isListLine as listLineFromCtx,
-} from "src/app/editor/editor-context-utils";
+} from "@platform/obsidian";
+
+/**
+ * Error thrown when rules are not satisfied for a given context.
+ */
+export class RulesViolationError extends Error {
+	code = "NOT_ALLOWED_HERE";
+	messages: string[];
+	ancestors: string[];
+
+	constructor(messages: string[], ancestors: string[] = []) {
+		super("Rule evaluation failed");
+		this.name = "RulesViolationError";
+		this.messages = messages;
+		this.ancestors = ancestors;
+	}
+}
 
 export function normalizeRules(rule?: Rule): RuleObject[] {
 	if (!rule) return [];
@@ -39,7 +55,7 @@ export function validateParent(
 }
 
 /**
- Core rule evaluator (unchanged). Throws with details on failure.
+ Core rule evaluator. Throws RulesViolationError with details on failure.
 */
 export function evaluateRules(
 	ctx: TemplateContext,
@@ -72,11 +88,7 @@ export function evaluateRules(
 		}
 	}
 
-	throw {
-		code: "NOT_ALLOWED_HERE",
-		messages,
-		ancestors,
-	};
+	throw new RulesViolationError(messages, ancestors);
 }
 
 /**

@@ -1,75 +1,22 @@
 /**
- * Templating orchestrators
- *
- * This module contains the high-level orchestration logic for the plugin's
- * templating feature. It exposes functions that implement user-facing
- * templating workflows (editing parameters of an existing rendered template
- * and auto-inserting a parameterized template when creating a new task line).
- *
- * Responsibilities:
- * - Coordinate between UI (modal) factories and domain services (templating
- *   service) to gather parameters, render templates, and perform insertions.
- * - Encapsulate decision logic (when to prompt, which template to use) while
- *   delegating rendering and DOM/editor mutations to services or the caller.
- * - Surface user-visible errors via Obsidian Notice and avoid leaking platform
- *   specifics (CodeMirror) beyond the adapter/event-manager layers.
- *
- * Usage:
- * - Called by the Event Manager (templating-event-manager) on click or Enter
- *   events. Keep these functions small and testable; they should be unit
- *   tested by mocking the UI modal functions and templating services.
- *
- * Design notes:
- * - This file should remain orchestration-only: UI creation lives in
- *   src/ui/modals/* and template rendering/inference lives in
- *   src/app/services/templating-service.ts. The Event Manager handles DOM
- *   wiring and lifecycle registration via plugin.registerDomEvent/registerEvent.
+ * Templating orchestrators (wiring-agnostic).
  */
 
-import type { App, MarkdownView } from "obsidian";
-import type { TemplateDefinition } from "src/domain/templating/types";
+import type { App } from "obsidian";
+import type { TemplateDefinition } from "../domain/types";
 import {
 	insertTemplateAtCursor,
 	renderTemplateOnly,
-	inferParamsForWrapper,
-	getTemplateWrapperOnLine,
-} from "../services/templating-service";
-import { presetTemplates } from "../../domain/templating/presets";
-import { getCursorContext } from "../editor/obsidian-editor-context";
-import { showSchemaModal } from "../../ui/modals/template-schema-modal";
-import { showJsonModal } from "../../ui/modals/template-json-modal";
-import { Notice } from "obsidian";
-import { isBlankTask } from "src/domain/tasks/task-filters";
+	prefillTemplateParams,
+	replaceTemplateWrapperOnCurrentLine,
+} from "./templating-service";
+import { presetTemplates } from "../domain/presets";
+import { getCursorContext } from "@platform/obsidian/";
+import { showSchemaModal } from "../ui/template-schema-modal";
+import { showJsonModal } from "../ui/template-json-modal";
+import { MarkdownView, Notice } from "obsidian";
+import type { TaskIndexPort } from "./templating-ports";
 
-/**
- * Handle a user click on a rendered template wrapper element.
- *
- * This orchestrator implements the "edit template parameters" feature:
- * it reads the clicked element's `data-template-key`, looks up the
- * corresponding template definition, infers any existing parameter
- * values from the wrapper DOM, prompts the user for updated parameters
- * (either with a structured schema form or a free-form JSON editor),
- * then re-renders the template HTML and replaces the wrapper in-place.
- *
- * Responsibilities & constraints:
- * - Delegates rendering to `templating-service.renderTemplateOnly`.
- * - Delegates parameter collection to `showSchemaModal` or `showJsonModal`.
- * - Performs DOM replacement via `el.outerHTML = newHtml` (single-element
- *   replacement).
- * - Reports user-facing failures via `new Notice(...)`.
- *
- * @param {import('obsidian').App} app - The Obsidian application instance (used by UI modals).
- * @param {HTMLElement} el - The element that was clicked (expected to contain
- *  `data-template-wrapper` and `data-template-key` attributes).
- * @returns {Promise<void>} Resolves when processing completes. Errors are
- * handled locally and surfaced to the user; callers do not need to catch.
- *
- * @example
- * // Invoked by the event manager when a user clicks a wrapper:
- * await processClick(app, clickedWrapperEl);
- *
- * @see {@link inferParamsForWrapper}, {@link renderTemplateOnly}, {@link showSchemaModal}, {@link showJsonModal}
- */
 export async function processClick(app: App, el: HTMLElement): Promise<void> {
 	try {
 		const templateKey = el.getAttribute("data-template-key") ?? "";
@@ -82,7 +29,8 @@ export async function processClick(app: App, el: HTMLElement): Promise<void> {
 		const def = groupMap[group]?.[key] as TemplateDefinition | undefined;
 		if (!def || !def.hasParams) return;
 
-		const prefill = inferParamsForWrapper(templateKey, el) ?? {};
+		// Prefill strictly from explicit markers (plus template-specific override)
+		const prefill = prefillTemplateParams(templateKey, el) ?? {};
 		let params: Record<string, unknown> | undefined;
 		if (def.paramsSchema && def.paramsSchema.fields?.length) {
 			const schema = {
@@ -102,11 +50,47 @@ export async function processClick(app: App, el: HTMLElement): Promise<void> {
 				| Record<string, unknown>
 				| undefined;
 		}
-
 		if (!params) return;
+
 		try {
-			const newHtml = renderTemplateOnly(templateKey, params);
-			el.outerHTML = newHtml;
+			const view =
+				app.workspace.getActiveViewOfType(MarkdownView) ?? null;
+			const editor: any = (view as any)?.editor;
+			if (!view || !editor) {
+				// Fallback: DOM-only update
+				const fresh = renderTemplateOnly(templateKey, params);
+				// Preserve original instance id if present
+				const instanceId =
+					el.getAttribute("data-template-wrapper") ?? "";
+				const freshWithSameId = instanceId
+					? fresh.replace(
+							/data-template-wrapper="[^"]*"/,
+							`data-template-wrapper="${instanceId}"`
+					  )
+					: fresh;
+
+				el.outerHTML = freshWithSameId;
+				return;
+			}
+
+			// Render new HTML and preserve the original instance id
+			const instanceId = el.getAttribute("data-template-wrapper") ?? "";
+			let newHtml = renderTemplateOnly(templateKey, params);
+			if (instanceId) {
+				newHtml = newHtml.replace(
+					/data-template-wrapper="[^"]*"/,
+					`data-template-wrapper="${instanceId}"`
+				);
+			}
+
+			await replaceTemplateWrapperOnCurrentLine(
+				app,
+				view,
+				editor,
+				templateKey,
+				newHtml,
+				instanceId // <-- pass exact wrapper instance id
+			);
 		} catch (e) {
 			new Notice(
 				`Failed to update template: ${String(
@@ -121,56 +105,93 @@ export async function processClick(app: App, el: HTMLElement): Promise<void> {
 	}
 }
 
-/**
- * Handle Enter key events in the editor that may trigger template insertion.
- *
- * This orchestrator implements the "press Enter to create a parameterized
- * template instance" behavior. When the user presses Enter to create a new
- * list/task line directly beneath a template wrapper with an artifact-type
- * order tag, and the new line is a blank task (see `isBlankTask`), this
- * function will prompt the user for any required template parameters and
- * insert the rendered template at the cursor position.
- *
- * Responsibilities & constraints:
- * - Uses `getCursorContext` to determine file path and cursor/line context.
- * - Uses `getTemplateWrapperOnLine` to identify the wrapper on the previous line.
- * - Only proceeds for wrappers with `orderTag === 'artifact-item-type'`.
- * - Only supports schema-driven parameter prompting in the current flow; JSON
- *   modal is not used here by default.
- * - Delegates insertion to `insertTemplateAtCursor` and reports errors via `Notice`.
- *
- * @param {import('obsidian').App} app - The Obsidian App instance (used by modals).
- * @param {import('obsidian').MarkdownView} view - The active MarkdownView where Enter occurred.
- * @returns {Promise<void>} Resolves when insert flow finishes or is aborted.
- *
- * @example
- * // Called by TemplatingEventManager after observing Enter key on the editor:
- * await processEnter(app, mdView);
- *
- * @see {@link getCursorContext}, {@link getTemplateWrapperOnLine}, {@link insertTemplateAtCursor}
- */
 export async function processEnter(
 	app: App,
-	view: MarkdownView
+	view: MarkdownView,
+	_ports: { taskIndex: TaskIndexPort }
 ): Promise<void> {
 	try {
 		const editor = view.editor;
-		const fullCtx = await getCursorContext(app, view, editor);
-		const prevLine = fullCtx.lineNumber - 1;
-		if (prevLine < 0) return;
 
-		const wrapperInfo = getTemplateWrapperOnLine(view, prevLine);
-		if (!wrapperInfo || !wrapperInfo.templateKey) return;
-		if (wrapperInfo.orderTag !== "artifact-item-type") return;
-		if (!isBlankTask(fullCtx.lineText)) return;
+		// Capture a fresh context after Enter.
+		const ctx = await getCursorContext(app, view, editor);
 
+		// Helper: detect if cursor was at end-of-line (ignoring trailing spaces) when Enter occurred.
+		// We infer this by reading the current line text and ensuring nothing non-space exists after column.
+		const lineText = ctx.lineText ?? editor.getLine(ctx.lineNumber) ?? "";
+		const afterCursor = lineText.slice(ctx.column ?? 0);
+		const cursorAtLogicalEOL = /^\s*$/.test(afterCursor);
+		if (!cursorAtLogicalEOL) {
+			return;
+		}
+
+		// We need to confirm the ENTER happened from an artifact-bearing line.
+		// When Enter moves to next line, the previous line is ctx.lineNumber - 1.
+		// Some timing jitter can happen, so we check:
+		//   1) previous line
+		//   2) current line (in case event fired slightly earlier/later)
+		const filePath = ctx.filePath;
+		const curLineNo = ctx.lineNumber;
+		const prevLineNo = curLineNo - 1;
+
+		const safeGetLine = (n: number) => {
+			if (n < 0) return "";
+			try {
+				return editor.getLine(n) ?? "";
+			} catch {
+				return "";
+			}
+		};
+
+		const prevLine = safeGetLine(prevLineNo);
+		const curLine = safeGetLine(curLineNo);
+
+		const findWrapperInRawLine = (s: string) => {
+			const trimmed = (s ?? "").trim();
+			if (!trimmed) return null;
+
+			// Matches a wrapper like:
+			// <span ... data-template-key="group.key" ... data-order-tag="..." ...>...</span>
+			const wrapperRe =
+				/<span\b[^>]*\bdata-template-key\s*=\s*"([^"]+)"[^>]*\bdata-order-tag\s*=\s*"([^"]+)"[^>]*>.*?<\/span>/i;
+
+			const wrapperReNoOrder =
+				/<span\b[^>]*\bdata-template-key\s*=\s*"([^"]+)"[^>]*>.*?<\/span>/i;
+
+			let m = trimmed.match(wrapperRe);
+			if (m) {
+				return { templateKey: m[1] ?? null, orderTag: m[2] ?? null };
+			}
+			m = trimmed.match(wrapperReNoOrder);
+			if (m) {
+				return { templateKey: m[1] ?? null, orderTag: null };
+			}
+			return null;
+		};
+
+		// Prefer wrapper on previous line (the one we split), but accept current line if that’s where the wrapper is.
+		let wrapperInfo =
+			findWrapperInRawLine(prevLine) ?? findWrapperInRawLine(curLine);
+
+		if (!wrapperInfo?.templateKey) {
+			return;
+		}
+
+		// Only trigger for agile artifact chain
+		if (wrapperInfo.orderTag !== "artifact-item-type") {
+			return;
+		}
+
+		// Resolve the template definition to ensure it supports params with a schema
 		const [g, k] = (wrapperInfo.templateKey ?? "").split(".");
 		const groupMap = presetTemplates as unknown as Record<
 			string,
 			Record<string, TemplateDefinition>
 		>;
 		const def = groupMap[g]?.[k] as TemplateDefinition | undefined;
-		if (!def || !def.hasParams) return;
+		if (!def || !def.hasParams) {
+			return;
+		}
 
 		const schema = def.paramsSchema
 			? {
@@ -179,21 +200,33 @@ export async function processEnter(
 						def.paramsSchema.fields?.map((f) => ({ ...f })) ?? [],
 			  }
 			: undefined;
-		if (!schema) return;
+		if (!schema) {
+			return;
+		}
+
+		// Open the modal immediately (no waiting for TaskIndex or blank-task detection)
 		const params = await showSchemaModal(
 			app,
 			wrapperInfo.templateKey,
 			schema,
 			false
 		);
-		if (!params) return;
+		if (!params) {
+			return;
+		}
+
+		// Insert at the current cursor. We don’t enforce that the new line is a blank task.
 		insertTemplateAtCursor(
 			wrapperInfo.templateKey,
-			editor,
-			fullCtx.filePath,
+			editor as any,
+			filePath,
 			params as Record<string, unknown> | undefined
 		);
 	} catch (err) {
+		console.error(
+			"[templating] processEnter: error",
+			(err as Error)?.message ?? err
+		);
 		new Notice(
 			`Template insert failed: ${String((err as Error)?.message ?? err)}`
 		);

@@ -1,56 +1,108 @@
-// templateApi.ts
 import type {
 	TemplateContext,
 	TemplateInsertErrorDetails,
 	TemplateDefinition,
 	Rule,
 	RuleObject,
-} from "src/domain/templating/types";
-import { TemplateInsertError } from "src/domain/templating/types";
-import { presetTemplates } from "src/domain/templating/presets";
-import { evaluateRules } from "src/domain/templating/rules";
-import { getParentChainTemplateIds } from "src/app/editor/editor-context-utils";
-import type { Editor, MarkdownView } from "obsidian";
-import { getLineKind } from "src/platform/obsidian/fs/fs-utils";
+	AllowedOn,
+	ParamsSchema,
+} from "../domain/types";
+import { TemplateInsertError } from "../domain/types";
+import { presetTemplates } from "../domain/presets";
+import { evaluateRules, normalizeRules } from "../domain/rules";
+import { getArtifactParentChainTemplateIds } from "../domain/task-template-parent-chain";
+import { getLineKind } from "@platform/obsidian";
+import { extractParamsFromWrapperEl } from "../domain/template-parameter-helpers";
+import { escapeRegExp } from "@utils";
 
-type AllowedOn = "task" | "list" | "any";
+export type WrapperInfo = {
+	templateKey: string | null;
+	orderTag: string | null;
+};
 
-function normalizeAllowedOn(tpl: TemplateDefinition): AllowedOn[] {
-	// If rules missing, allow anywhere
-	const r = tpl.rules as any;
-	const allowed = r?.allowedOn;
-	if (!allowed) return ["any"];
-	if (Array.isArray(allowed)) return allowed as AllowedOn[];
-	// If provided as scalar object
-	const arr = allowed as unknown as AllowedOn[] | AllowedOn;
-	return Array.isArray(arr) ? arr : [arr];
+/**
+ * Minimal Editor shape used within templating. Avoids importing Obsidian Editor directly.
+ */
+type MinimalEditor = {
+	getCursor(): { line: number; ch: number };
+	getLine(line: number): string;
+	replaceRange(
+		text: string,
+		from: { line: number; ch: number },
+		to?: { line: number; ch: number }
+	): void;
+	getValue(): string;
+	setCursor?(pos: { line: number; ch: number }): void;
+};
+
+/**
+ * Resolve the UI modal title for a params schema.
+ */
+export function resolveModalTitleFromSchema(
+	schema: ParamsSchema | undefined,
+	mode?: boolean | string
+): string | undefined {
+	if (!schema) return undefined;
+
+	if (mode !== undefined) {
+		const key = typeof mode === "string" ? mode : mode ? "edit" : "create";
+		type TitleKey = keyof NonNullable<ParamsSchema["titles"]>; // "create" | "edit"
+		const candidate = schema.titles?.[key as TitleKey];
+		return candidate ?? schema.title;
+	}
+	return schema.title;
 }
 
-export function findTemplateById(id: string) {
+/**
+ * Find a template definition by its id, e.g. "agile.userStory".
+ */
+function findTemplateById(id: string) {
 	const [group, key] = id.split(".");
 	const groupObj = (presetTemplates as Record<string, any>)[group];
 	if (!groupObj) return undefined;
 	return groupObj[key];
 }
 
-// Helper: coerce Rule (union) to a single RuleObject for error reporting
 function coerceRuleObject(rule: Rule | undefined): RuleObject | undefined {
 	if (!rule) return undefined;
 	return Array.isArray(rule) ? rule[0] : rule;
 }
 
-// Append a trailing space if rendered ends with a closing angle bracket
-// Avoid double spaces if the existing line already ends with a space.
+/**
+ * Ensure inline template renderings have a trailing space when needed.
+ */
 function withTrailingSpace(
 	rendered: string,
 	existingLineEndHasSpace: boolean
 ): string {
-	// Use a character class to avoid the eslint no-useless-escape warning
 	const endsWithAngle = />\s*$/.test(rendered);
 	if (!endsWithAngle) return rendered;
 	return existingLineEndHasSpace ? rendered : `${rendered} `;
 }
 
+/**
+ * Normalize template's allowed-on rules to a concrete list.
+ */
+function normalizeAllowedOnRules(tpl: TemplateDefinition): AllowedOn[] {
+	const variants = normalizeRules(tpl.rules);
+	if (variants.length === 0) return ["any"];
+
+	let hasAny = false;
+	const set = new Set<AllowedOn>();
+	for (const v of variants) {
+		const allowed = v.allowedOn;
+		if (!allowed || allowed.includes("any")) {
+			hasAny = true;
+			break;
+		}
+		for (const a of allowed) set.add(a);
+	}
+	return hasAny ? ["any"] : Array.from(set);
+}
+
+/**
+ * Render a template with rules enforcement.
+ */
 export function insertTemplate<TParams = unknown>(
 	templateId: string,
 	ctx: TemplateContext,
@@ -62,23 +114,19 @@ export function insertTemplate<TParams = unknown>(
 	if (!tpl || typeof tpl !== "object" || typeof tpl.render !== "function") {
 		throw new TemplateInsertError(
 			`Unknown or invalid template: ${templateId}`,
-			{
-				code: "UNKNOWN_TEMPLATE",
-			}
+			{ code: "UNKNOWN_TEMPLATE" }
 		);
 	}
 
-	// Evaluate rules at business-logic level (structure/parents/etc.)
 	const rules = tpl.rules;
 	try {
-		evaluateRules(ctx, rules, getParentChainTemplateIds);
+		evaluateRules(ctx, rules, getArtifactParentChainTemplateIds);
 	} catch (e: any) {
 		const details: TemplateInsertErrorDetails = {
 			code: "NOT_ALLOWED_HERE",
 			messages: e?.messages ?? [],
 			foundAncestors: e?.ancestors,
 		};
-		// For error shaping, look at a single rule object
 		const r0 = coerceRuleObject(rules);
 		if (Array.isArray(r0?.parent)) {
 			details.requiredParents = r0!.parent!;
@@ -93,15 +141,12 @@ export function insertTemplate<TParams = unknown>(
 	}
 
 	try {
-		// Merge per-template defaults (if any) with provided params
 		const finalParams = tpl.defaults
 			? ({
 					...tpl.defaults,
 					...(params as Record<string, unknown> | undefined),
 			  } as TParams)
 			: params;
-
-		// Render inline content; no task/list prefix here
 		return tpl.render(finalParams);
 	} catch (err: any) {
 		throw new TemplateInsertError(
@@ -112,13 +157,11 @@ export function insertTemplate<TParams = unknown>(
 }
 
 /**
- Insertion at cursor with rule-aware wrapping:
- - Templates render inline only
- - We wrap the current line only if necessary and permitted
-*/
+ * Insert a template at cursor, coercing the line to allowed type.
+ */
 export function insertTemplateAtCursor<TParams = unknown>(
 	templateId: string,
-	editor: Editor,
+	editor: MinimalEditor,
 	filePath: string,
 	params?: TParams
 ) {
@@ -130,75 +173,53 @@ export function insertTemplateAtCursor<TParams = unknown>(
 		line: lineText,
 		file: editor.getValue(),
 		path: filePath,
-		editor,
+		editor: editor as any,
 	};
 
 	const tpl = findTemplateById(templateId) as TemplateDefinition | undefined;
 	if (!tpl || typeof tpl !== "object" || typeof tpl.render !== "function") {
 		throw new TemplateInsertError(
 			`Unknown or invalid template: ${templateId}`,
-			{
-				code: "UNKNOWN_TEMPLATE",
-			}
+			{ code: "UNKNOWN_TEMPLATE" }
 		);
 	}
 
-	// Run business rule evaluation first (parent/top-level, etc.)
 	const renderedRaw = insertTemplate(templateId, ctx, params);
-	const allowed = normalizeAllowedOn(tpl);
-
-	// Compute trailing-space variant once; we’ll pass line-ending awareness per usage
+	const allowed = normalizeAllowedOnRules(tpl);
 	const lineEndsWithSpace = /\s$/.test(lineText);
 
-	// Helper to replace the entire current line
 	const replaceLine = (text: string) => {
 		const from = { line: cursor.line, ch: 0 };
 		const to = { line: cursor.line, ch: lineText.length };
 		editor.replaceRange(text, from, to);
 	};
 
-	// Append inline to an existing line
 	const appendInline = () => {
 		const from = { line: cursor.line, ch: 0 };
 		const to = { line: cursor.line, ch: lineText.length };
-
-		// If current line is empty, we don't need a joining space before rendered,
-		// but we still may want a trailing space after the rendered content.
 		if (lineText.length === 0) {
 			const rendered = withTrailingSpace(renderedRaw, false);
 			editor.replaceRange(rendered, from, to);
 			return;
 		}
-
-		// Non-empty line: add a single space separator before rendered,
-		// and then consider trailing space after rendered (avoid double).
 		const joiner = lineEndsWithSpace ? "" : " ";
 		const rendered = withTrailingSpace(renderedRaw, false);
 		const next = `${lineText}${joiner}${rendered}`;
 		editor.replaceRange(next, from, to);
 	};
 
-	// Decide based on allowed and current lineKind
 	const allowTask = allowed.includes("task");
 	const allowList = allowed.includes("list");
-	const allowAny = allowedOnIncludesAny(allowed);
+	const allowAny = allowed.includes("any");
 
-	if (allowAny) {
-		// Anywhere: do not auto-create task/list; just inline
-		return appendInline();
-	}
+	if (allowAny) return appendInline();
 
-	// Task-only or List-only logic
 	if (allowTask && !allowList) {
-		if (lineKind === "task") {
-			return appendInline();
-		}
+		if (lineKind === "task") return appendInline();
 		if (lineKind === "empty") {
-			// Convert the line into a task line
 			const rendered = withTrailingSpace(renderedRaw, false);
 			return replaceLine(`- [ ] ${rendered}`);
 		}
-		// Currently non-task content. Per your requirement: block insertion.
 		throw new TemplateInsertError(
 			"Template allowed only on task lines; current line is not a task.",
 			{ code: "NOT_ALLOWED_HERE", messages: ["Requires a task line"] }
@@ -206,32 +227,23 @@ export function insertTemplateAtCursor<TParams = unknown>(
 	}
 
 	if (allowList && !allowTask) {
-		if (lineKind === "list") {
-			return appendInline();
-		}
+		if (lineKind === "list") return appendInline();
 		if (lineKind === "empty") {
-			// Convert to a list line
 			const rendered = withTrailingSpace(renderedRaw, false);
 			return replaceLine(`- ${rendered}`);
 		}
-		// Non-list content => block
 		throw new TemplateInsertError(
 			"Template allowed only on list lines; current line is not a list.",
 			{ code: "NOT_ALLOWED_HERE", messages: ["Requires a list line"] }
 		);
 	}
 
-	// Either task or list
 	if (allowTask && allowList) {
-		if (lineKind === "task" || lineKind === "list") {
-			return appendInline();
-		}
+		if (lineKind === "task" || lineKind === "list") return appendInline();
 		if (lineKind === "empty") {
-			// Default to list if truly either
 			const rendered = withTrailingSpace(renderedRaw, false);
 			return replaceLine(`- ${rendered}`);
 		}
-		// Plain text line: block to avoid surprising structure changes
 		throw new TemplateInsertError(
 			"Template requires a task or list line.",
 			{
@@ -241,46 +253,12 @@ export function insertTemplateAtCursor<TParams = unknown>(
 		);
 	}
 
-	// Fallback (shouldn't hit)
 	return appendInline();
 }
 
-function allowedOnIncludesAny(allowed: AllowedOn[]): boolean {
-	return allowed.includes("any");
-}
-
 /**
- Probe: is a template allowed at current cursor context?
- - Builds a TemplateContext from editor + filePath
- - Uses evaluateRules, ensuring future rule additions automatically apply
-*/
-export function isTemplateAllowedAtCursor(
-	templateId: string,
-	editor: Editor,
-	filePath: string
-): boolean {
-	const cursor = editor.getCursor();
-	const lineText = editor.getLine(cursor.line);
-
-	const ctx: TemplateContext = {
-		line: lineText,
-		file: editor.getValue(),
-		path: filePath,
-		editor,
-	};
-	const tpl = findTemplateById(templateId) as TemplateDefinition | undefined;
-	if (!tpl || typeof tpl !== "object" || typeof tpl.render !== "function") {
-		return false;
-	}
-	try {
-		evaluateRules(ctx, tpl.rules, getParentChainTemplateIds);
-		return true;
-	} catch {
-		return false;
-	}
-}
-
-// Render a template without rule checks (pure render), merging defaults.
+ * Render without touching the editor. Rules aren’t evaluated here.
+ */
 export function renderTemplateOnly<TParams = unknown>(
 	templateId: string,
 	params?: TParams
@@ -291,9 +269,7 @@ export function renderTemplateOnly<TParams = unknown>(
 	if (!tpl || typeof tpl !== "object" || typeof tpl.render !== "function") {
 		throw new TemplateInsertError(
 			`Unknown or invalid template: ${templateId}`,
-			{
-				code: "UNKNOWN_TEMPLATE",
-			}
+			{ code: "UNKNOWN_TEMPLATE" }
 		);
 	}
 	const finalParams = tpl.defaults
@@ -305,125 +281,144 @@ export function renderTemplateOnly<TParams = unknown>(
 	return tpl.render(finalParams);
 }
 
-// Best-effort params extraction from DOM wrapper, with template-specific override if provided
-export function inferParamsForWrapper(
-	templateId: string,
-	wrapperEl: HTMLElement
+/**
+ * Prefill strictly from explicit variable markers.
+ * If a template supplies parseParamsFromDom, it must also return marker-only values.
+ */
+export function prefillTemplateParams(
+  templateId: string,
+  wrapperEl: HTMLElement
 ): Record<string, unknown> | undefined {
-	const def = findTemplateById(templateId) as TemplateDefinition | undefined;
-	if (!def) return undefined;
-	if (typeof def.parseParamsFromDom === "function") {
-		try {
-			return def.parseParamsFromDom(wrapperEl);
-		} catch {
-			// fallthrough to generic
-		}
-	}
-	// Generic: use paramsSchema to try to fill fields from the mark's strong contents and following text.
-	// This is heuristic and meant as a fallback.
-	const schema = def.paramsSchema;
-	if (!schema) return undefined;
+  const def = findTemplateById(templateId) as TemplateDefinition | undefined;
+  if (!def) return undefined;
 
-	const out: Record<string, unknown> = {};
-	const markId = wrapperEl.getAttribute("data-template-mark-id") ?? "";
-	const mark = markId
-		? (wrapperEl.querySelector(
-				`mark[data-template-id="${markId}"]`
-		  ) as HTMLElement | null)
-		: null;
-	const markStrong = mark?.querySelector("strong");
-	const rawStrong = markStrong?.textContent?.trim() ?? "";
+  // Template-specific override (must be marker-only)
+  if (typeof def.parseParamsFromDom === "function") {
+    try {
+      const parsed = def.parseParamsFromDom(wrapperEl) as Record<string, unknown> | undefined;
+      if (parsed && Object.keys(parsed).length > 0) return parsed;
+    } catch {
+      // fall through
+    }
+  }
 
-	// Try basic fields commonly used: title and details
-	for (const field of schema.fields) {
-		const n = field.name;
-		if (n.toLowerCase() === "title") {
-			// strip emojis and trailing colon
-			out[n] = rawStrong
-				.replace(/^[^\w]*\s*/, "")
-				.replace(/:$/, "")
-				.trim();
-			continue;
-		}
-		if (n.toLowerCase() === "details") {
-			// Take tail text: wrapper textContent minus mark textContent
-			const wrapperText = (wrapperEl.textContent ?? "").trim();
-			const markText = (mark?.textContent ?? "").trim();
-			let tail = wrapperText;
-			if (markText && wrapperText.startsWith(markText)) {
-				tail = wrapperText.slice(markText.length).trim();
-			}
-			// If starts with a colon or dash or extra space, normalize
-			tail = tail.replace(/^[\s:–-]+/, "").trim();
-			out[n] = tail;
-			continue;
-		}
-		// default empty if we cannot infer
-		out[n] = "";
-	}
+  // Generic: explicit var markers only
+  const explicit = extractParamsFromWrapperEl(wrapperEl);
+  if (Object.keys(explicit).length > 0) return explicit;
 
-	return out;
+  // No markers found. Enforce “wrapped vars only”.
+  console.warn(
+    "[templating] No [data-tpl-var] markers found for parameterized template:",
+    templateId,
+    wrapperEl
+  );
+  return {};
 }
 
 /**
- * Resolve modal title from a paramsSchema object. If isEdit is true, prefer paramsSchema.titles.edit, else paramsSchema.titles.create.
- * Fallbacks: titles.create/edit -> paramsSchema.title -> empty string
+ * Replace the first template wrapper on the current editor line with newHtml.
+ * Uses instanceId if provided for precise matching; otherwise falls back to templateKey.
  */
-export function resolveModalTitleFromSchema(
-	paramsSchema:
-		| { title?: string; titles?: { create?: string; edit?: string } }
-		| undefined,
-	isEdit = false
-): string {
-	if (!paramsSchema) return "";
-	const titles = paramsSchema.titles;
-	if (titles) {
-		if (isEdit)
-			return titles.edit ?? titles.create ?? paramsSchema.title ?? "";
-		return titles.create ?? paramsSchema.title ?? "";
-	}
-	return paramsSchema.title ?? "";
+export async function replaceTemplateWrapperOnCurrentLine(
+  app: any,
+  view: any,
+  editor: MinimalEditor,
+  templateKey: string,
+  newHtml: string,
+  wrapperInstanceId?: string
+): Promise<void> {
+  try {
+    const cur = editor.getCursor();
+    const lineNo = cur.line;
+    const lineText = editor.getLine(lineNo);
+
+    // Prefer matching by data-template-wrapper (unique per instance)
+    const openTagRe = new RegExp(
+      wrapperInstanceId
+        ? `<span\\b[^>]*\\bdata-template-wrapper\\s*=\\s*"${escapeRegExp(wrapperInstanceId)}"[^>]*>`
+        : `<span\\b[^>]*\\bdata-template-key\\s*=\\s*"${escapeRegExp(templateKey)}"[^>]*>`,
+      "i"
+    );
+
+    const openMatch = openTagRe.exec(lineText);
+    if (!openMatch) {
+      console.debug(
+        "[templating] replaceTemplateWrapperOnCurrentLine: wrapper not found on line",
+        { lineNo, templateKey, wrapperInstanceId, lineText }
+      );
+      return;
+    }
+
+    const startIdx = openMatch.index;
+
+    // Find the end index of the matching </span> for this wrapper via deterministic counting
+    const endIdx = findMatchingSpanEndIndexDeterministic(lineText, startIdx);
+    if (endIdx === -1) {
+      console.warn(
+        "[templating] replaceTemplateWrapperOnCurrentLine: could not find matching </span> for wrapper",
+        { lineNo, templateKey, wrapperInstanceId }
+      );
+      return;
+    }
+
+    const updated = lineText.slice(0, startIdx) + newHtml + lineText.slice(endIdx);
+
+    const from = { line: lineNo, ch: 0 };
+    const to = { line: lineNo, ch: lineText.length };
+    editor.replaceRange(updated, from, to);
+
+    // Place caret at end of line to avoid caret jumping inside HTML
+    if (typeof editor.setCursor === "function") {
+      editor.setCursor({ line: lineNo, ch: updated.length });
+    }
+  } catch (e) {
+    console.error("[templating] replaceTemplateWrapperOnCurrentLine error", e);
+  }
 }
 
-export function getTemplateWrapperOnLine(
-	view: MarkdownView | undefined,
-	lineNumber: number
-): {
-	wrapperEl?: HTMLElement | null;
-	templateKey?: string | null;
-	markId?: string | null;
-	orderTag?: string | null;
-} {
-	if (!view) return {};
-	const cmHolder = view as unknown as {
-		editor?: { cm?: { contentDOM?: HTMLElement } };
-	};
-	const cmContent = cmHolder.editor?.cm?.contentDOM;
-	const contentRoot = (cmContent ??
-		view.containerEl.querySelector(".cm-content")) as HTMLElement | null;
-	if (!contentRoot) return {};
-	const wrappers = Array.from(
-		contentRoot.querySelectorAll("[data-template-wrapper]")
-	) as HTMLElement[];
-	let lineText = "";
-	if (view && typeof view.editor?.getLine === "function") {
-		lineText = view.editor.getLine(lineNumber)?.trim() ?? "";
-	}
-	for (const w of wrappers) {
-		const wrapperId = w.getAttribute("data-template-wrapper");
-		if (wrapperId && lineText.includes(wrapperId)) {
-			return {
-				wrapperEl: w,
-				templateKey: w.getAttribute("data-template-key"),
-				markId: w.getAttribute("data-template-mark-id"),
-				orderTag:
-					(
-						w.querySelector(
-							"mark[data-template-id]"
-						) as HTMLElement | null
-					)?.getAttribute("data-order-tag") ?? null,
-			};
-		}
-	}
-	return {};
+/**
+ * Deterministic scanner: starting at the given '<span ...>' opening tag, walk the line
+ * and count '<span' vs '</span>' to find the matching closing position.
+ * This avoids regex corner cases with nested spans.
+ */
+function findMatchingSpanEndIndexDeterministic(s: string, startIdx: number): number {
+  // Sanity: the startIdx must point at an opening '<span'
+  if (s.slice(startIdx, startIdx + 5).toLowerCase() !== "<span") {
+    // find the next opening from startIdx just in case
+    const firstOpen = s.toLowerCase().indexOf("<span", startIdx);
+    if (firstOpen === -1) return -1;
+    startIdx = firstOpen;
+  }
+
+  // Move to end of the opening tag
+  const firstGt = s.indexOf(">", startIdx);
+  if (firstGt === -1) return -1;
+
+  let depth = 1;
+  let i = firstGt + 1;
+
+  while (i < s.length) {
+    const nextOpen = s.toLowerCase().indexOf("<span", i);
+    const nextClose = s.toLowerCase().indexOf("</span>", i);
+
+    // No more closing tag: unbalanced
+    if (nextClose === -1) return -1;
+
+    // If next opening comes before next closing, it's a nested span
+    if (nextOpen !== -1 && nextOpen < nextClose) {
+      depth += 1;
+      const gt = s.indexOf(">", nextOpen);
+      if (gt === -1) return -1;
+      i = gt + 1;
+      continue;
+    }
+
+    // Otherwise we encountered a closing
+    depth -= 1;
+    const closeEnd = nextClose + "</span>".length;
+    if (depth === 0) return closeEnd;
+    i = closeEnd;
+  }
+
+  return -1;
 }

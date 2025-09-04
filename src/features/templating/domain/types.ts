@@ -5,7 +5,7 @@ export type AllowedOn = "task" | "list" | "any";
 export interface RuleObject {
 	allowedOn?: AllowedOn[]; // Where it can be rendered
 	topLevel?: boolean; // Must be at top-level (no parents)
-	parent?: string[]; // Allowed parent template ids
+	parent?: string[]; // Allowed parent template ids (template IDs)
 }
 
 export type Rule = RuleObject | RuleObject[];
@@ -17,7 +17,7 @@ export type Rule = RuleObject | RuleObject[];
 */
 export type ParamInputType = "text" | "textarea";
 
-// Add optional titles (create/edit) to params schema to support different modal titles
+// Optional modal titles to distinguish create/edit flows
 export type ParamsSchemaTitles = {
 	create?: string;
 	edit?: string;
@@ -34,23 +34,24 @@ export type ParamsSchemaField = {
 	options?: Array<{ label: string; value: string }>;
 };
 
-// Extend ParamsSchema to optionally include titles. 'fields' is required to simplify downstream code.
+// Params schema used to render input modals; fields are required for clarity downstream
 export type ParamsSchema = {
 	title?: string;
 	description?: string;
 	fields: ParamsSchemaField[];
-	// optional object with create/edit variants
-	titles?: ParamsSchemaTitles;
+	titles?: ParamsSchemaTitles; // optional create/edit titles
 };
 
-// Update TemplateDefinition to use ParamsSchema and include optional defaults and hidden flag used elsewhere
+// Template definition for a renderable template
 export interface TemplateDefinition<TParams = unknown> {
 	id: string;
 	label?: string;
 	hasParams?: boolean;
 	paramsSchema?: ParamsSchema;
 	defaults?: Partial<TParams>;
-	rules?: Record<string, unknown>;
+	rules?: Rule; // typed rules instead of unknown Record
+	// New: each template can declare its orderTag at the definition level
+	orderTag?: string;
 	render?: (params?: TParams) => string;
 	parseParamsFromDom?: (
 		el: HTMLElement
