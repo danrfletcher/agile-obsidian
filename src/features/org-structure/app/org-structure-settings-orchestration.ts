@@ -1,19 +1,15 @@
-import type { Container } from "src/composition/container";
-import type { TeamsActions } from "src/features/settings/ui/presenters/teams-presenter";
-import { hydrateTeamsFromVault } from "src/features/org-structure/domain/team-detection";
-import { createTeamResources } from "src/features/org-structure/app/creation";
+import type { App, Plugin } from "obsidian";
+import type { TeamsActions } from "@settings/ui/presenters/teams-presenter";
+import { hydrateTeamsFromVault } from "src/features/org-structure/domain/org-detection";
+import { createTeamResources } from "src/features/org-structure/domain/org-management";
 import {
 	createOrganizationFromTeam,
 	addTeamsToExistingOrganization,
 	createSubteams,
-} from "src/features/org-structure/domain/organizations";
-import { slugifyName } from "src/features/org-structure/domain/slug-utils";
-import type {
-	AgileObsidianSettings,
-	TeamInfo,
-	MemberInfo,
-} from "src/features/settings/settings.types";
-import type { Plugin } from "obsidian";
+} from "src/features/org-structure/domain/org-management";
+import type { AgileObsidianSettings } from "src/settings";
+import { slugifyName } from "@shared/identity";
+import { MemberInfo, TeamInfo } from "../domain/org-types";
 
 type MutableSettingsForHydration = {
 	teamsFolder: string;
@@ -21,10 +17,13 @@ type MutableSettingsForHydration = {
 	[k: string]: unknown;
 };
 
-export function registerOrgStructureSettings(
-	container: Container
-): TeamsActions {
-	const { app, plugin, settings } = container;
+export function registerOrgStructureSettings(ports: {
+	app: App;
+	plugin: Plugin;
+	settings: AgileObsidianSettings;
+	saveSettings: () => Promise<void>;
+}): TeamsActions {
+	const { app, plugin, settings } = ports;
 	const p = plugin as Plugin & {
 		saveSettings?: () => Promise<void>;
 		saveData?: (data: AgileObsidianSettings) => Promise<void>;
