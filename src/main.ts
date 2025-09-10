@@ -1,15 +1,10 @@
 import { Plugin } from "obsidian";
-
-import { createContainer } from "@composition/container";
-import type { Container } from "@composition/container";
+import { createContainer, type Container } from "@composition/container";
 import { registerStyles } from "@composition/register-styles";
-import { AgileObsidianSettings } from "./settings";
-import {
-	initSettings,
-	registerSettings,
-} from "@composition/register-settings";
+import { initSettings, registerSettings } from "@composition/register-settings";
 import { registerAllCommands } from "@composition/register-commands";
 import { registerEvents } from "@composition/register-events";
+import { AgileObsidianSettings } from "@settings";
 
 export default class AgileObsidian extends Plugin {
 	settings: AgileObsidianSettings;
