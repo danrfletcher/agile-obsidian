@@ -1,433 +1,406 @@
+import type { App, Plugin } from "obsidian";
+import { MarkdownView, Notice, Menu } from "obsidian";
+import { renderTemplateOnly } from "@features/templating/app/templating-service";
+import type {
+	OrgStructurePort,
+	MemberInfo,
+	MembersBuckets,
+} from "@features/org-structure";
+import { classifyMember } from "@features/org-structure";
+import {
+	findAssignmentWrappersOnLine,
+	removeWrappersOfTypeOnLine,
+	replaceWrapperInstanceOnLine,
+} from "../app/assignment-inline-utils";
+
+type AssignType = "assignee" | "delegate";
+
+function toTitleCase(s: string) {
+	return s.replace(
+		/\S+/g,
+		(w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+	);
+}
+
+function getActiveView(app: App): MarkdownView | null {
+	return app.workspace.getActiveViewOfType(MarkdownView) ?? null;
+}
+
+function findLineIndexByInstanceId(editor: any, instanceId: string): number {
+	try {
+		const raw = editor.getValue() ?? "";
+		const lines = raw.split(/\r?\n/);
+		const needle = `data-template-wrapper="${instanceId}"`;
+		for (let i = 0; i < lines.length; i++) {
+			if (lines[i].includes(needle)) return i;
+		}
+	} catch {
+		// ignore
+	}
+	return -1;
+}
+
 /**
- * Context menu for assignment/delegation marks.
- *
- * In-app context:
- * - Handles single-clicks on inline <mark> blocks to show a menu with actions for assignees and delegates.
- *
- * Plugin value:
- * - Provides a consistent, cursor-preserving UI for editing task metadata beyond plain Markdown.
+ * Map org-structure member kind to templating "Members.assignee" memberType.
  */
+function mapMemberKindToAssigneeType(
+	kind: "member" | "internal-team-member" | "team" | "external"
+): "teamMember" | "delegateTeam" | "delegateTeamMember" | "delegateExternal" {
+	switch (kind) {
+		case "member":
+			return "teamMember";
+		case "team":
+			return "delegateTeam";
+		case "internal-team-member":
+			return "delegateTeamMember";
+		case "external":
+			return "delegateExternal";
+	}
+}
 
-import { App, MarkdownView, Menu } from "obsidian";
-import { renderDelegateMark } from "../mark-templates";
+function buildAssignmentTargets(
+	members: MemberInfo[],
+	_buckets: MembersBuckets
+) {
+	const out: Array<{
+		memberName: string;
+		memberSlug: string;
+		memberLabel: string;
+		memberType:
+			| "teamMember"
+			| "delegateTeam"
+			| "delegateTeamMember"
+			| "delegateExternal";
+	}> = [];
 
-type Ctx = {
-	resolveTeamForPath: (filePath: string, teams: any[]) => any;
-	isUncheckedTaskLine: (line: string) => boolean;
-	normalizeTaskLine: (line: string, opts?: any) => string;
-	findTargetLineFromClick: (
-		editor: any,
-		evt: MouseEvent,
-		alias: string
-	) => number;
-	getExplicitAssigneeAliasFromText: (line: string) => string | null;
-	applyAssigneeChangeWithCascade: (
-		filePath: string,
-		editor: any,
-		lineNo: number,
-		oldAlias: string | null,
-		newAlias: string | null,
-		variant: "active" | "inactive",
-		team: any
-	) => Promise<void>;
-};
+	for (const m of members) {
+		const c = classifyMember(m);
+		out.push({
+			memberName: m.name?.trim() ?? m.alias?.trim() ?? "",
+			memberSlug: (m.alias ?? "").trim(),
+			memberLabel: c.label,
+			memberType: mapMemberKindToAssigneeType(c.kind),
+		});
+	}
+
+	return out;
+}
+
+function placeCursorEndOfLine(editor: any, lineNo: number, lineText: string) {
+	try {
+		editor.setCursor?.({ line: lineNo, ch: lineText.length });
+	} catch {
+		// ignore
+	}
+}
+
+function updateEditorLine(editor: any, lineNo: number, newText: string) {
+	const before = editor.getLine(lineNo) ?? "";
+	editor.replaceRange(
+		newText,
+		{ line: lineNo, ch: 0 },
+		{ line: lineNo, ch: before.length }
+	);
+	placeCursorEndOfLine(editor, lineNo, newText);
+}
 
 /**
- * Register global click handlers to show the mark context menu. Returns an unregister function.
- *
- * In-app use:
- * - Wired up by the plugin on load; cleans up automatically on unload via the returned disposer.
- *
- * Plugin value:
- * - Consolidates DOM event plumbing for mark interactions outside of main plugin class.
- *
- * @param app Obsidian app instance.
- * @param getSettings Lazy accessor for settings (to avoid stale references).
- * @param ctx Helper functions and cascade operation bound with dependencies.
- * @returns Disposer to remove the event listeners.
+ * Inserts menu items for all options appropriate to the clicked wrapper.
  */
-export function registerMarkClickHandlers(
+function buildMenuForAssignment(
+	menu: Menu,
+	params: {
+		assignType: AssignType;
+		currentSlug: string;
+		currentState: "active" | "inactive";
+		instanceId: string;
+		filePath: string;
+		app: App;
+		ports: { orgStructure: OrgStructurePort };
+	}
+) {
+	const {
+		assignType,
+		currentSlug,
+		currentState,
+		instanceId,
+		filePath,
+		app,
+		ports,
+	} = params;
+	const view = getActiveView(app);
+	const editor: any = (view as any)?.editor;
+	if (!view || !editor) return;
+
+	const { members, buckets, team } =
+		ports.orgStructure.getTeamMembersForFile(filePath);
+	const targets = buildAssignmentTargets(members, buckets);
+
+	const isAssignee = assignType === "assignee";
+	const isDelegate = assignType === "delegate";
+
+	// Remove item
+	menu.addItem((i) => {
+		i.setTitle(isAssignee ? "Remove Assignee" : "Remove Delegate");
+		i.onClick(() => {
+			const lineNo = findLineIndexByInstanceId(editor, instanceId);
+			if (lineNo < 0) return;
+			const before = editor.getLine(lineNo) ?? "";
+			// Remove this wrapper instance; keep others (including the other assign type)
+			const wrappers = findAssignmentWrappersOnLine(before);
+			const target = wrappers.find((w) => w.instanceId === instanceId);
+			if (!target) return;
+			let updated =
+				before.slice(0, target.start) + before.slice(target.end);
+			// Normalize spaces
+			updated = updated.replace(/ {2,}/g, " ").replace(/\s+$/, " ");
+			updateEditorLine(editor, lineNo, updated);
+		});
+	});
+
+	// Convenience helpers
+	const addAssignItem = (
+		title: string,
+		memberName: string,
+		memberSlug: string,
+		memberType:
+			| "teamMember"
+			| "delegateTeam"
+			| "delegateTeamMember"
+			| "delegateExternal"
+			| "special",
+		nextState: "active" | "inactive"
+	) => {
+		menu.addItem((i) => {
+			i.setTitle(title);
+			i.onClick(() => {
+				const lineNo = findLineIndexByInstanceId(editor, instanceId);
+				if (lineNo < 0) return;
+
+				// Render the new wrapper HTML (reuse the same instance id for seamless replacement)
+				let newHtml = renderTemplateOnly("members.assignee", {
+					memberName,
+					memberSlug,
+					memberType,
+					assignmentState: nextState,
+				});
+
+				// Preserve original instanceId
+				newHtml = newHtml.replace(
+					/data-template-wrapper="[^"]*"/,
+					`data-template-wrapper="${instanceId}"`
+				);
+
+				const before = editor.getLine(lineNo) ?? "";
+				// Replace the clicked wrapper with the new one
+				let updated = replaceWrapperInstanceOnLine(
+					before,
+					instanceId,
+					newHtml
+				);
+
+				// Remove any other wrappers of the same assignType on the same line
+				updated = removeWrappersOfTypeOnLine(
+					updated,
+					assignType,
+					instanceId
+				);
+
+				// Ensure trailing spacing
+				updated = updated.replace(/\s+$/, " ");
+
+				updateEditorLine(editor, lineNo, updated);
+			});
+		});
+	};
+
+	const stateOpposite = currentState === "active" ? "inactive" : "active";
+
+	if (isAssignee) {
+		// Everyone option (only if file belongs to a team)
+		if (team) {
+			if (currentSlug === "everyone") {
+				// Only offer opposite state
+				addAssignItem(
+					`Everyone (${toTitleCase(stateOpposite)})`,
+					"Everyone",
+					"everyone",
+					"special",
+					stateOpposite
+				);
+			} else {
+				addAssignItem(
+					`Everyone (Active)`,
+					"Everyone",
+					"everyone",
+					"special",
+					"active"
+				);
+				addAssignItem(
+					`Everyone (Inactive)`,
+					"Everyone",
+					"everyone",
+					"special",
+					"inactive"
+				);
+			}
+		}
+
+		// Team members only (exclude delegates)
+		for (const t of targets) {
+			if (t.memberType !== "teamMember") continue;
+			const display = toTitleCase(t.memberName || t.memberSlug || "");
+			if (t.memberSlug.toLowerCase() === currentSlug.toLowerCase()) {
+				addAssignItem(
+					`${display} (${toTitleCase(stateOpposite)})`,
+					display,
+					t.memberSlug,
+					t.memberType,
+					stateOpposite
+				);
+			} else {
+				addAssignItem(
+					`${display} (Active)`,
+					display,
+					t.memberSlug,
+					t.memberType,
+					"active"
+				);
+				addAssignItem(
+					`${display} (Inactive)`,
+					display,
+					t.memberSlug,
+					t.memberType,
+					"inactive"
+				);
+			}
+		}
+	}
+
+	if (isDelegate) {
+		// Delegates: internal teams, internal team members, external delegates
+		const delegateTargets = targets.filter(
+			(t) =>
+				t.memberType === "delegateTeam" ||
+				t.memberType === "delegateTeamMember" ||
+				t.memberType === "delegateExternal"
+		);
+
+		for (const t of delegateTargets) {
+			const display = toTitleCase(t.memberName || t.memberSlug || "");
+			const labelWithType = `${display} (${t.memberLabel})`;
+			if (t.memberSlug.toLowerCase() === currentSlug.toLowerCase()) {
+				addAssignItem(
+					`${labelWithType} (${toTitleCase(stateOpposite)})`,
+					display,
+					t.memberSlug,
+					t.memberType,
+					stateOpposite
+				);
+			} else {
+				addAssignItem(
+					`${labelWithType} (Active)`,
+					display,
+					t.memberSlug,
+					t.memberType,
+					"active"
+				);
+				addAssignItem(
+					`${labelWithType} (Inactive)`,
+					display,
+					t.memberSlug,
+					t.memberType,
+					"inactive"
+				);
+			}
+		}
+	}
+}
+
+/**
+ * Wire DOM handlers to manage clicks on members.assignee wrappers (assignee / delegate marks).
+ * This should be registered similarly to your templating DOM handlers.
+ */
+export function wireTaskAssignmentDomHandlers(
 	app: App,
-	getSettings: () => any,
-	ctx: Ctx
-): () => void {
-	// Title Case helper for display names
-	const toTitleCase = (s: string) =>
-		s.replace(
-			/\S+/g,
-			(w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
-		);
-
-	// After we mutate the line, keep exactly one space after </mark> and put cursor there
-	const setCursorAfterLastMark = (editor: any, lineNo: number) => {
-		let line = editor.getLine(lineNo);
-
-		// Ensure exactly one space after a trailing </mark>
-		if (/<\/mark>\s*$/i.test(line)) {
-			line = line.replace(/\s*$/, " ");
-			editor.replaceRange(
-				line,
-				{ line: lineNo, ch: 0 },
-				{ line: lineNo, ch: editor.getLine(lineNo).length }
-			);
-		}
-
-		const lastClose = line.lastIndexOf("</mark>");
-		if (lastClose >= 0) {
-			// Cursor after </mark> and after a single trailing space
-			const ch = lastClose + "</mark>".length + 1; // the one trailing space
-			editor.setCursor({ line: lineNo, ch });
-		} else {
-			// Fallback: end of line
-			editor.setCursor({ line: lineNo, ch: line.length });
-		}
+	view: MarkdownView,
+	plugin: Plugin,
+	ports: { orgStructure: OrgStructurePort }
+) {
+	// Resolve content root
+	const cmHolder = view as unknown as {
+		editor?: { cm?: { contentDOM?: HTMLElement } };
 	};
+	const cmContent = cmHolder.editor?.cm?.contentDOM;
+	const contentRoot = (cmContent ??
+		view.containerEl.querySelector(".cm-content")) as HTMLElement | null;
+	const targetEl: HTMLElement = contentRoot ?? view.containerEl;
 
-	// Allow reassignment on any task status except done "x" and cancelled "-"
-	const isReassignableTaskLine = (line: string): boolean => {
-		const m = /^\s*[-*]\s*\[\s*([^\]]?)\s*\]\s+/i.exec(line);
-		if (!m) return false;
-		const status = (m[1] ?? "").trim().toLowerCase();
-		return status !== "x" && status !== "-";
-	};
+	const onClick = (evt: MouseEvent) => {
+		const el = (evt.target as HTMLElement | null)?.closest(
+			'span[data-template-key="members.assignee"]'
+		) as HTMLElement | null;
+		if (!el) return;
 
-	const mousedown = async (evt: MouseEvent) => {
-		const target = evt.target as HTMLElement | null;
-		if (!target) return;
-		const markEl = target.closest("mark") as HTMLElement | null;
-		if (!markEl) return;
+		// We handle this click; prevent downstream handlers
+		evt.preventDefault();
+		evt.stopPropagation();
+		// @ts-ignore
+		(evt as any).stopImmediatePropagation?.();
 
-		// Only handle our assignment/delegation marks (active|inactive-<alias>)
-		const cls = markEl.getAttribute("class") || "";
-		if (!/\b(?:active|inactive)-[a-z0-9-]+\b/i.test(cls)) return;
+		try {
+			const templateKey = el.getAttribute("data-template-key") ?? "";
+			if (templateKey !== "members.assignee") return;
 
-		// Single-click
-		if (evt.detail < 2) {
-			evt.preventDefault();
-			evt.stopPropagation();
-			// @ts-ignore
-			(evt as any).stopImmediatePropagation?.();
+			// Extract current props from the wrapper
+			const instanceId = el.getAttribute("data-template-wrapper") ?? "";
+			if (!instanceId) return;
 
-			const view = app.workspace.getActiveViewOfType(MarkdownView);
-			if (!view) return;
-			const editor = (view as any).editor;
-			const filePath = (view as any)?.file?.path ?? null;
-			if (!filePath) return;
-
-			const variant = (/\bactive-/i.test(cls) ? "active" : "inactive") as
-				| "active"
-				| "inactive";
-			const alias = (
-				/\b(?:active|inactive)-([a-z0-9-]+)\b/i.exec(cls)?.[1] || ""
+			const assignTypeAttr = (
+				el.getAttribute("data-assign-type") || ""
 			).toLowerCase();
+			const assignType: AssignType =
+				assignTypeAttr === "delegate" ? "delegate" : "assignee";
 
-			const team = ctx.resolveTeamForPath(
-				filePath,
-				(getSettings() as any)?.teams ?? []
-			);
-			if (!team) return;
+			const currentState = (
+				(
+					el.getAttribute("data-assignment-state") || ""
+				).toLowerCase() === "inactive"
+					? "inactive"
+					: "active"
+			) as "active" | "inactive";
 
-			// Determine the actual line
-			const savedCursor = editor.getCursor();
-			const lineNo = ctx.findTargetLineFromClick(editor, evt, alias);
-			const currentLine = editor.getLine(lineNo);
-			if (!isReassignableTaskLine(currentLine)) return;
+			const currentSlug = (
+				el.getAttribute("data-member-slug") || ""
+			).trim();
 
-			// Determine assignee vs delegate mark
-			const text = (markEl.textContent || "").trim();
-			const isAssignee = alias === "team" || text.includes("👋");
-			const isDelegate = !isAssignee;
+			const viewNow = getActiveView(app);
+			if (!viewNow) return;
+			const editor: any = (viewNow as any).editor;
+			const filePath = viewNow.file?.path ?? "";
+			if (!editor || !filePath) return;
 
+			// Build and show menu at click position (FIX: use Menu import, not window.obsidian)
 			const menu = new Menu();
-
-			if (isAssignee) {
-				// Remove Assignee
-				menu.addItem((i) => {
-					i.setTitle("Remove Assignee");
-					i.onClick(() => {
-						const before = editor.getLine(lineNo);
-						if (!isReassignableTaskLine(before)) {
-							setCursorAfterLastMark(editor, lineNo);
-							return;
-						}
-						const oldAlias =
-							ctx.getExplicitAssigneeAliasFromText(before);
-						ctx.applyAssigneeChangeWithCascade(
-							filePath,
-							editor,
-							lineNo,
-							oldAlias,
-							null,
-							"active",
-							team
-						).finally(() => setCursorAfterLastMark(editor, lineNo));
-					});
-				});
-
-				// Everyone options
-				const addEveryone = (v: "active" | "inactive") => {
-					menu.addItem((i) => {
-						i.setTitle(`Everyone (${v})`);
-						i.onClick(() => {
-							const before = editor.getLine(lineNo);
-							if (!isReassignableTaskLine(before)) {
-								setCursorAfterLastMark(editor, lineNo);
-								return;
-							}
-							const oldAlias =
-								ctx.getExplicitAssigneeAliasFromText(before);
-							ctx.applyAssigneeChangeWithCascade(
-								filePath,
-								editor,
-								lineNo,
-								oldAlias,
-								"team",
-								v,
-								team
-							).finally(() =>
-								setCursorAfterLastMark(editor, lineNo)
-							);
-						});
-					});
-				};
-
-				if (alias === "team") {
-					addEveryone(variant === "active" ? "inactive" : "active");
-				} else {
-					addEveryone("active");
-					addEveryone("inactive");
-				}
-
-				// Team members (non -ext/-team/-int)
-				const members: any[] = (team.members ?? []).filter((m: any) => {
-					const a = (m.alias || "").toLowerCase();
-					return (
-						a &&
-						!a.endsWith("-ext") &&
-						!a.endsWith("-team") &&
-						!a.endsWith("-int")
-					);
-				});
-
-				const addMember = (mem: any, v: "active" | "inactive") => {
-					const displayName = toTitleCase(
-						mem.name || mem.alias || ""
-					);
-					menu.addItem((i) => {
-						i.setTitle(`${displayName} (${v})`);
-						i.onClick(() => {
-							const before = editor.getLine(lineNo);
-							if (!isReassignableTaskLine(before)) {
-								setCursorAfterLastMark(editor, lineNo);
-								return;
-							}
-							const oldAlias =
-								ctx.getExplicitAssigneeAliasFromText(before);
-							const memAlias = (mem.alias || "").toLowerCase();
-							ctx.applyAssigneeChangeWithCascade(
-								filePath,
-								editor,
-								lineNo,
-								oldAlias,
-								memAlias,
-								v,
-								team
-							).finally(() =>
-								setCursorAfterLastMark(editor, lineNo)
-							);
-						});
-					});
-				};
-
-				for (const mem of members) {
-					if ((mem.alias || "").toLowerCase() === alias) {
-						addMember(
-							mem,
-							variant === "active" ? "inactive" : "active"
-						);
-					} else {
-						addMember(mem, "active");
-						addMember(mem, "inactive");
-					}
-				}
-			} else if (isDelegate) {
-				// Disallow if assigned to Everyone
-				if (/\bclass="(?:active|inactive)-team"\b/i.test(currentLine)) {
-					return;
-				}
-
-				// Remove Delegation
-				menu.addItem((i) => {
-					i.setTitle("Remove Delegation");
-					i.onClick(() => {
-						const before = editor.getLine(lineNo);
-						if (!isReassignableTaskLine(before)) {
-							setCursorAfterLastMark(editor, lineNo);
-							return;
-						}
-						let updated = ctx.normalizeTaskLine(before, {
-							newDelegateMark: null,
-						});
-						if (/<\/mark>\s*$/.test(updated))
-							updated = updated.replace(/\s*$/, " ");
-						editor.replaceRange(
-							updated,
-							{ line: lineNo, ch: 0 },
-							{ line: lineNo, ch: before.length }
-						);
-						setCursorAfterLastMark(editor, lineNo);
-					});
-				});
-
-				const dVariant = "active" as const; // Delegates can only be active
-
-				// Internal Teams (-team but not bare 'team')
-				const internalTeams: any[] = (team.members ?? []).filter(
-					(m: any) => {
-						const a = (m.alias || "").toLowerCase();
-						return a.endsWith("-team") && a !== "team";
-					}
-				);
-				for (const t of internalTeams) {
-					const displayName = toTitleCase(t.name || t.alias || "");
-					menu.addItem((i) => {
-						i.setTitle(displayName);
-						i.onClick(() => {
-							const before = editor.getLine(lineNo);
-							if (!isReassignableTaskLine(before)) {
-								setCursorAfterLastMark(editor, lineNo);
-								return;
-							}
-							let updated = ctx.normalizeTaskLine(before, {
-								newDelegateMark: renderDelegateMark(
-									t.alias,
-									displayName,
-									dVariant,
-									"team"
-								),
-							});
-							if (/<\/mark>\s*$/.test(updated))
-								updated = updated.replace(/\s*$/, " ");
-							editor.replaceRange(
-								updated,
-								{ line: lineNo, ch: 0 },
-								{ line: lineNo, ch: before.length }
-							);
-							setCursorAfterLastMark(editor, lineNo);
-						});
-					});
-				}
-
-				// Internal Members (-int)
-				const internalMembers: any[] = (team.members ?? []).filter(
-					(m: any) => (m.alias || "").toLowerCase().endsWith("-int")
-				);
-				for (const im of internalMembers) {
-					const displayName = toTitleCase(im.name || im.alias || "");
-					menu.addItem((i) => {
-						i.setTitle(displayName);
-						i.onClick(() => {
-							const before = editor.getLine(lineNo);
-							if (!isReassignableTaskLine(before)) {
-								setCursorAfterLastMark(editor, lineNo);
-								return;
-							}
-							let updated = ctx.normalizeTaskLine(before, {
-								newDelegateMark: renderDelegateMark(
-									im.alias,
-									displayName,
-									dVariant,
-									"internal"
-								),
-							});
-							if (/<\/mark>\s*$/.test(updated))
-								updated = updated.replace(/\s*$/, " ");
-							editor.replaceRange(
-								updated,
-								{ line: lineNo, ch: 0 },
-								{ line: lineNo, ch: before.length }
-							);
-							setCursorAfterLastMark(editor, lineNo);
-						});
-					});
-				}
-
-				// External Delegates (-ext)
-				const externals: any[] = (team.members ?? []).filter((m: any) =>
-					(m.alias || "").toLowerCase().endsWith("-ext")
-				);
-				for (const ex of externals) {
-					const displayName = toTitleCase(ex.name || ex.alias || "");
-					menu.addItem((i) => {
-						i.setTitle(displayName);
-						i.onClick(() => {
-							const before = editor.getLine(lineNo);
-							if (!isReassignableTaskLine(before)) {
-								setCursorAfterLastMark(editor, lineNo);
-								return;
-							}
-							let updated = ctx.normalizeTaskLine(before, {
-								newDelegateMark: renderDelegateMark(
-									ex.alias,
-									displayName,
-									dVariant,
-									"external"
-								),
-							});
-							if (/<\/mark>\s*$/.test(updated))
-								updated = updated.replace(/\s*$/, " ");
-							editor.replaceRange(
-								updated,
-								{ line: lineNo, ch: 0 },
-								{ line: lineNo, ch: before.length }
-							);
-							setCursorAfterLastMark(editor, lineNo);
-						});
-					});
-				}
-			}
-
-			if ((menu as any).items?.length > 0) {
-				menu.showAtPosition({ x: evt.clientX, y: evt.clientY });
-			}
+			buildMenuForAssignment(menu, {
+				assignType,
+				currentSlug,
+				currentState,
+				instanceId,
+				filePath,
+				app,
+				ports,
+			});
+			// Show the menu
+			menu.showAtPosition({ x: evt.clientX, y: evt.clientY });
+		} catch (err) {
+			new Notice(
+				`Assignment menu failed: ${String(
+					(err as Error)?.message ?? err
+				)}`
+			);
 		}
 	};
 
-	const click = (evt: MouseEvent) => {
-		const target = evt.target as HTMLElement | null;
-		if (!target) return;
-		const markEl = target.closest("mark") as HTMLElement | null;
-		if (!markEl) return;
-
-		// Only handle our assignment/delegation marks
-		const cls = markEl.getAttribute("class") || "";
-		if (!/\b(?:active|inactive)-[a-z0-9-]+\b/i.test(cls)) return;
-
-		if (evt.detail < 2) {
-			evt.preventDefault();
-			evt.stopPropagation();
-			// @ts-ignore
-			(evt as any).stopImmediatePropagation?.();
-		}
-	};
-
-	document.addEventListener("mousedown", mousedown as EventListener, {
-		capture: true,
-	});
-	document.addEventListener("click", click as EventListener, {
-		capture: true,
-	});
-
-	return () => {
-		document.removeEventListener(
-			"mousedown",
-			mousedown as EventListener,
-			{ capture: true } as any
-		);
-		document.removeEventListener(
-			"click",
-			click as EventListener,
-			{ capture: true } as any
-		);
-	};
+	plugin.registerDomEvent(targetEl, "click", onClick, { capture: true });
 }

@@ -8,6 +8,9 @@ import type {
 } from "@features/org-structure";
 import { classifyMember } from "@features/org-structure";
 import { getCursorContext } from "@platform/obsidian";
+import {
+	removeWrappersOfTypeOnLine,
+} from "./assignment-inline-utils";
 
 /**
  * Map org-structure member kind to templating "Members.assignee" memberType.
@@ -64,10 +67,8 @@ async function isAssigneeAllowedHere(app: App): Promise<boolean> {
  */
 function buildAssignmentTargets(
 	members: MemberInfo[],
-	buckets: MembersBuckets
+	_buckets: MembersBuckets
 ) {
-	// Use the sorted list from orgStructureService.getTeamMembersForPath, which already sorts:
-	// - by kind rank, then by display name. We keep that order.
 	const out: Array<{
 		memberName: string;
 		memberSlug: string;
@@ -114,6 +115,33 @@ function makeCommandName(
 	memberLabel: string
 ): string {
 	return `Assign as ${state} to ${memberName} (${memberLabel})`;
+}
+
+/**
+ * Remove all assignment wrappers of the specified assignType ("assignee" or "delegate")
+ * from the current editor line before inserting a new one.
+ */
+function clearExistingOfTypeOnCurrentLine(
+	editor: any,
+	assignType: "assignee" | "delegate"
+) {
+	try {
+		const cur = editor.getCursor();
+		const lineNo = cur?.line ?? 0;
+		const lineText = editor.getLine(lineNo) ?? "";
+		const updated = removeWrappersOfTypeOnLine(lineText, assignType, null);
+		if (updated !== lineText) {
+			editor.replaceRange(
+				updated,
+				{ line: lineNo, ch: 0 },
+				{ line: lineNo, ch: lineText.length }
+			);
+			// place cursor at end
+			editor.setCursor?.({ line: lineNo, ch: updated.length });
+		}
+	} catch {
+		// ignore
+	}
 }
 
 /**
@@ -209,13 +237,9 @@ export async function registerTaskAssignmentDynamicCommands(
 
 						if (checking) {
 							// Synchronous fallback: we try best-effort sync check. If view/editor missing, hide.
-							// If we can't perform async, we default to false to prevent showing in palette incorrectly.
-							// However, we can safely block here by returning false and let next recompute handle it.
-							// To keep UX smooth, we’ll return false if no active view/editor.
 							const vnow = getActiveMarkdownView(app);
 							if (!vnow || !(vnow as any).editor) return false;
 
-							// We can't await here; do a quick sync approximation:
 							try {
 								const editor: any = (vnow as any).editor;
 								const lineNo = editor.getCursor().line ?? 0;
@@ -258,6 +282,18 @@ export async function registerTaskAssignmentDynamicCommands(
 							}
 
 							try {
+								// Enforce uniqueness: remove any existing of the same assignType on this line
+								const assignType: "assignee" | "delegate" =
+									t.memberType === "teamMember" ||
+									// treat "special" (Everyone) as assignee
+									(t as any).memberType === "special"
+										? "assignee"
+										: "delegate";
+								clearExistingOfTypeOnCurrentLine(
+									editor,
+									assignType
+								);
+
 								insertTemplateAtCursor(
 									ASSIGNEE_TEMPLATE_ID,
 									editor as any,
@@ -338,6 +374,12 @@ export async function registerTaskAssignmentDynamicCommands(
 							return;
 						}
 						try {
+							// Enforce uniqueness: 'Everyone' is an assignee
+							clearExistingOfTypeOnCurrentLine(
+								editor,
+								"assignee"
+							);
+
 							insertTemplateAtCursor(
 								ASSIGNEE_TEMPLATE_ID,
 								editor as any,

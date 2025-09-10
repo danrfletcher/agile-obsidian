@@ -12,6 +12,10 @@ import {
 	createOrgStructureService,
 	type OrgStructurePort,
 } from "@features/org-structure";
+import {
+	wireTaskAssignmentDomHandlers,
+	registerTaskAssignmentDynamicCommands,
+} from "@features/task-assignment";
 
 /**
  * Registers Obsidian vault and view events
@@ -85,9 +89,24 @@ export async function registerEvents(container: Container) {
 	const tryWireView = (view: MarkdownView | null) => {
 		if (!view) return;
 		try {
+			// Always wire templating handler
 			wireTemplatingDomHandlers(app, view, plugin, templatingPorts);
 		} catch (e) {
 			console.warn("Templating wiring failed:", e);
+		}
+
+		// Wire task-assignment click handler once orgStructure port exists
+		try {
+			const orgPorts = (container as any).orgStructurePorts as
+				| { orgStructure: OrgStructurePort }
+				| undefined;
+			if (orgPorts?.orgStructure) {
+				wireTaskAssignmentDomHandlers(app, view, plugin, {
+					orgStructure: orgPorts.orgStructure,
+				});
+			}
+		} catch (e) {
+			console.warn("Task-assignment wiring failed:", e);
 		}
 	};
 
@@ -138,4 +157,19 @@ export async function registerEvents(container: Container) {
 	};
 	(container as any).orgStructureService = orgStructureService;
 	(container as any).orgStructurePorts = { orgStructure: orgStructurePort };
+
+	// Register dynamic assignment commands (once)
+	try {
+		await registerTaskAssignmentDynamicCommands(
+			app,
+			plugin,
+			plugin.manifest.id,
+			{ orgStructure: orgStructurePort }
+		);
+	} catch (e) {
+		console.warn("Failed to register assignment dynamic commands:", e);
+	}
+
+	// Re-wire active view now that org ports exist, so the click menu is live immediately
+	tryWireView(app.workspace.getActiveViewOfType(MarkdownView) ?? null);
 }
