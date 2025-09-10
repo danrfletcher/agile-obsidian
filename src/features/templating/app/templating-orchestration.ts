@@ -27,6 +27,11 @@ export async function processClick(app: App, el: HTMLElement): Promise<void> {
 			Record<string, TemplateDefinition>
 		>;
 		const def = groupMap[group]?.[key] as TemplateDefinition | undefined;
+
+		// If this template is excluded from dynamic commands (like members.assignee),
+		// do not open parameter modals on click. Let other feature handlers manage it.
+		if (def?.hiddenFromDynamicCommands) return;
+
 		if (!def || !def.hasParams) return;
 
 		// Prefill strictly from explicit markers (plus template-specific override)
@@ -190,6 +195,9 @@ export async function processEnter(
 		>;
 		const def = groupMap[g]?.[k] as TemplateDefinition | undefined;
 		if (!def || !def.hasParams) {
+			return;
+		}
+		if (def.hiddenFromDynamicCommands) {
 			return;
 		}
 

@@ -595,7 +595,7 @@ export const Members: Record<string, TemplateDefinition<any>> = {
 		orderTag: "assignee",
 		id: "members.assignee",
 		label: "Members - Assignee",
-		hiddenFromDynamicCommands: true, // Block from dynamic builder
+		hiddenFromDynamicCommands: true,
 		hasParams: true,
 		rules: { allowedOn: ["task"] },
 		render(params: {
@@ -614,41 +614,56 @@ export const Members: Record<string, TemplateDefinition<any>> = {
 			const memberSlug = params.memberSlug.trim();
 			const { assignmentState } = params;
 
-			const assigneeMarkProps = { emoji: "", color: "" };
-			let { emoji, color } = assigneeMarkProps;
+			// Emoji per memberType (unchanged)
+			let emoji = "";
 			switch (memberType) {
 				case "teamMember":
 					emoji = emojis.teamMember;
-					color = colors.assignee;
 					break;
 				case "delegateTeam":
 					emoji = emojis.delegateTeam;
-					color = colors.delegate;
 					break;
 				case "delegateTeamMember":
 					emoji = emojis.delegateTeamMember;
-					color = colors.delegate;
 					break;
 				case "delegateExternal":
 					emoji = emojis.delegateExternal;
-					color = colors.delegate;
 					break;
 				case "special":
 					emoji = emojis.everyone;
-					color = colors.specialTeamMark;
 					break;
 				default:
 			}
+
+			// Assign type: assignee for team members and "special" (Everyone), delegate for the rest
+			const assignType =
+				memberType === "teamMember" || memberType === "special"
+					? "assignee"
+					: "delegate";
+
+			// Background color depends on active/inactive
+			const isInactive = assignmentState === "inactive";
+			let bg = colors.obsidianTagGrey; // default for inactive
+			if (!isInactive) {
+				if (assignType === "assignee") {
+					bg = colors.assignee;
+				} else {
+					bg = colors.delegate;
+				}
+			}
+
 			const inner = chip({
 				id: "assignee",
 				text: `<strong>${emoji} ${memberName}</strong>`,
-				bg: color,
+				bg,
 				color: "#000000",
 			});
 			return wrapTemplate("members.assignee", inner, {
 				orderTag: this.orderTag,
 				assignmentState,
-				memberSlug
+				memberSlug,
+				memberType,
+				assignType,
 			});
 		},
 	},

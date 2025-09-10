@@ -3,6 +3,7 @@ import type { App, MarkdownView, Plugin } from "obsidian";
 import { Notice } from "obsidian";
 import type { TaskIndexPort } from "./templating-ports";
 import { processClick, processEnter } from "./templating-orchestration";
+import { presetTemplates } from "../domain/presets";
 
 export function wireTemplatingDomHandlers(
 	app: App,
@@ -31,6 +32,23 @@ export function wireTemplatingDomHandlers(
 		}
 		if (!el) return;
 
+		// Determine which template key we clicked
+		const templateKey = el.getAttribute("data-template-key") ?? "";
+		if (templateKey) {
+			const [group, key] = templateKey.split(".");
+			const groupMap = presetTemplates as unknown as Record<
+				string,
+				Record<string, any>
+			>;
+			const def = groupMap[group]?.[key];
+			if (def && def.hiddenFromDynamicCommands) {
+				// Do NOT intercept this click. Let other feature handlers (e.g., task-assignment) handle it. 
+				// We intentionally do not preventDefault/stopPropagation here.
+				return;
+			}
+		}
+
+		// Otherwise, this is a normal templating click we manage
 		evt.preventDefault();
 		evt.stopPropagation();
 
