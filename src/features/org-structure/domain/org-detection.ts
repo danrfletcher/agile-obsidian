@@ -73,7 +73,6 @@ export async function hydrateTeamsFromVault(
 	vault: Vault,
 	settings: MutableSettings
 ): Promise<number> {
-	const TAG = "[hydrateTeamsFromVault]";
 	try {
 		// 1) Collect all folders we can see by walking file parents upward
 		const allFolders = new Set<TFolder>();
@@ -101,10 +100,6 @@ export async function hydrateTeamsFromVault(
 
 			// De-dupe by slug
 			if (seenSlugs.has(parsed.slug)) {
-				console.warn(
-					`${TAG} duplicate slug detected for different paths:`,
-					{ slug: parsed.slug, path: folder.path }
-				);
 				continue;
 			}
 
@@ -128,44 +123,6 @@ export async function hydrateTeamsFromVault(
 		}
 
 		slugTeams.sort((a, b) => a.displayName.localeCompare(b.displayName));
-		// Sanity duplicate checks
-		{
-			const pathCounts = new Map<string, number>();
-			const nameCounts = new Map<string, number>();
-			const slugCounts = new Map<string, number>();
-			for (const t of slugTeams) {
-				pathCounts.set(
-					t.rootPath,
-					(pathCounts.get(t.rootPath) ?? 0) + 1
-				);
-				nameCounts.set(t.name, (nameCounts.get(t.name) ?? 0) + 1);
-				slugCounts.set(t.slug, (slugCounts.get(t.slug) ?? 0) + 1);
-			}
-			const dupPaths = Array.from(pathCounts.entries()).filter(
-				([, c]) => c > 1
-			);
-			const dupNames = Array.from(nameCounts.entries()).filter(
-				([, c]) => c > 1
-			);
-			const dupSlugs = Array.from(slugCounts.entries()).filter(
-				([, c]) => c > 1
-			);
-			if (dupPaths.length)
-				console.warn(
-					`${TAG} duplicate rootPaths among slugTeams:`,
-					dupPaths
-				);
-			if (dupNames.length)
-				console.warn(
-					`${TAG} duplicate names among slugTeams:`,
-					dupNames
-				);
-			if (dupSlugs.length)
-				console.warn(
-					`${TAG} duplicate slugs among slugTeams (should not happen):`,
-					dupSlugs
-				);
-		}
 
 		// 3) Build parent-child relationships via Teams/ and slug lineage
 		type Node = DetectedFolderTeam & { children: string[] }; // child rootPath[]
@@ -185,39 +142,19 @@ export async function hydrateTeamsFromVault(
 				if (!(child instanceof TFolder)) continue;
 				const parsed = parseTeamFolderName(child.name);
 				if (!parsed) {
-					console.warn(
-						`${TAG} Teams/ child folder name not parsable as team:`,
-						child.path
-					);
 					continue;
 				}
 				const ok = isChildSlugOf(t.slug, parsed.slug);
 				if (!ok) {
-					console.warn(
-						`${TAG} child slug not matching parent (ignored):`,
-						{
-							parent: t.slug,
-							child: parsed.slug,
-							childPath: child.path,
-						}
-					);
 					continue;
 				}
 				if (!byPath.has(child.path)) {
-					console.warn(
-						`${TAG} child team folder parsed but not present in slugTeams set (skipped):`,
-						child.path
-					);
 					continue;
 				}
 				const node = byPath.get(t.rootPath)!;
 				node.children.push(child.path);
 			}
 		}
-
-		const parentsWithChildren = Array.from(byPath.values()).filter(
-			(n) => n.children.length > 0
-		);
 
 		// 4) Build detected map keyed by slug (unique ID)
 		const detectedBySlug = new Map<
@@ -240,7 +177,7 @@ export async function hydrateTeamsFromVault(
 
 		// 5) Extract members by scanning md files under each team root
 		const allFiles = vault.getAllLoadedFiles();
-		for (const [slug, info] of detectedBySlug.entries()) {
+		for (const [, info] of detectedBySlug.entries()) {
 			const root = info.rootPath.replace(/\/+$/g, "");
 			for (const af of allFiles) {
 				if (
@@ -297,25 +234,12 @@ export async function hydrateTeamsFromVault(
 		}
 
 		// Carry forward rootPath overrides only for slugs we actually detected this run
-		let updatedRootPaths = 0;
-		let droppedExisting = 0;
 		for (const t of existing) {
 			if (!t.slug) {
-				// Old or invalid entry without slug gets dropped in slug-only mode
-				console.warn(
-					`${TAG} dropping existing team without slug (slug-only mode):`,
-					{ name: t.name, rootPath: t.rootPath }
-				);
-				droppedExisting++;
 				continue;
 			}
 			const key = t.slug;
 			if (!merged.has(key)) {
-				console.warn(
-					`${TAG} dropping existing team not found in detection:`,
-					{ name: t.name, slug: key, rootPath: t.rootPath }
-				);
-				droppedExisting++;
 				continue;
 			}
 			// If user customized rootPath previously, honor it
@@ -328,17 +252,6 @@ export async function hydrateTeamsFromVault(
 					: null;
 				if (parsed && parsed.slug.toLowerCase() === key.toLowerCase()) {
 					entry.rootPath = t.rootPath;
-					updatedRootPaths++;
-				} else {
-					console.warn(
-						`${TAG} ignoring rootPath override that does not match slug; keeping detected path`,
-						{
-							name: t.name,
-							slug: key,
-							existingRootPath: t.rootPath,
-							detectedRootPath: entry.rootPath,
-						}
-					);
 				}
 			}
 		}
@@ -389,40 +302,10 @@ export async function hydrateTeamsFromVault(
 			})
 			.sort((a, b) => a.name.localeCompare(b.name));
 
-		// Name collisions are allowed across different slugs; warn for visibility only
-		{
-			const nameCounts = new Map<string, number>();
-			for (const t of canonical)
-				nameCounts.set(t.name, (nameCounts.get(t.name) ?? 0) + 1);
-			const dup = Array.from(nameCounts.entries()).filter(
-				([, c]) => c > 1
-			);
-			if (dup.length) {
-				console.warn(
-					`${TAG} duplicate display names in canonical list (different slugs):`,
-					dup
-				);
-				for (const [n] of dup) {
-					console.warn(
-						`${TAG} entries for "${n}":`,
-						canonical
-							.filter((t) => t.name === n)
-							.map((t) => ({
-								slug: t.slug,
-								rootPath: t.rootPath,
-							}))
-					);
-				}
-			}
-		}
-
 		settings.teams = canonical;
 
-		console.timeEnd(`${TAG} total`);
 		return canonical.length;
-	} catch (err) {
-		console.error(`${TAG} error:`, err);
-		console.timeEnd(`${TAG} total`);
+	} catch {
 		return Array.isArray(settings.teams) ? settings.teams.length : 0;
 	}
 }
