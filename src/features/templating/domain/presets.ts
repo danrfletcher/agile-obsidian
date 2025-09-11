@@ -474,7 +474,7 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
  */
 export const CRM: Record<string, TemplateDefinition<any>> = {
 	abandoned: {
-		orderTag: "metadata-tag",
+		orderTag: "crm-payment",
 		id: "crm.abandoned",
 		label: "CRM - Abandoned",
 		rules: { allowedOn: ["list"] },
@@ -490,7 +490,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 	awaitingDeposit: {
-		orderTag: "metadata-tag",
+		orderTag: "crm-payment",
 		id: "crm.awaitingDeposit",
 		label: "CRM - Awaiting Deposit",
 		rules: { allowedOn: ["list"] },
@@ -506,7 +506,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 	commission: {
-		orderTag: "metadata-tag",
+		orderTag: "crm-commission",
 		id: "crm.commission",
 		label: "CRM - Commission",
 		rules: { allowedOn: ["list"] },
@@ -522,7 +522,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 	depositPaid: {
-		orderTag: "metadata-tag",
+		orderTag: "crm-payment",
 		id: "crm.depositPaid",
 		label: "CRM - Deposit Paid",
 		rules: { allowedOn: ["list"] },
@@ -538,7 +538,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 	paidInFull: {
-		orderTag: "metadata-tag",
+		orderTag: "crm-payment",
 		id: "crm.paidInFull",
 		label: "CRM - Paid in Full",
 		rules: { allowedOn: ["list"] },
@@ -554,7 +554,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 	partiallyPaid: {
-		orderTag: "metadata-tag",
+		orderTag: "crm-payment",
 		id: "crm.partiallyPaid",
 		label: "CRM - Partially Paid",
 		rules: { allowedOn: ["list"] },
@@ -570,7 +570,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 	paymentPlan: {
-		orderTag: "metadata-tag",
+		orderTag: "crm-payment",
 		id: "crm.paymentPlan",
 		label: "CRM - Payment Plan",
 		rules: { allowedOn: ["list"] },
@@ -592,7 +592,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
  */
 export const Members: Record<string, TemplateDefinition<any>> = {
 	assignee: {
-		orderTag: "assignee",
+		orderTag: "assignment",
 		id: "members.assignee",
 		label: "Members - Assignee",
 		hiddenFromDynamicCommands: true,
@@ -674,7 +674,7 @@ export const Members: Record<string, TemplateDefinition<any>> = {
  */
 export const Prioritization: Record<string, TemplateDefinition<any>> = {
 	kanoDissatisfier: {
-		orderTag: "artifact-item-type",
+		orderTag: "priority",
 		id: "prio.kano.dissatisfier",
 		label: "Kano - Dissatisfier",
 		rules: { allowedOn: ["list"] },
@@ -690,7 +690,6 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 	kanoIndifferent: {
-		orderTag: "artifact-item-type",
 		id: "prio.kano.indifferent",
 		label: "Kano - Indifferent",
 		rules: { allowedOn: ["list"] },
@@ -706,7 +705,6 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 	kanoBasic: {
-		orderTag: "artifact-item-type",
 		id: "prio.kano.basic",
 		label: "Kano - Basic",
 		rules: { allowedOn: ["list"] },
@@ -722,7 +720,6 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 	kanoPerformantHeader: {
-		orderTag: "artifact-item-type",
 		id: "prio.kano.performantHeader",
 		label: "Kano - Performant - Header",
 		rules: { allowedOn: ["list"] },
@@ -738,7 +735,6 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 	kanoDelighter: {
-		orderTag: "artifact-item-type",
 		id: "prio.kano.delighter",
 		label: "Kano - Delighter",
 		rules: { allowedOn: ["list"] },
@@ -754,7 +750,6 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 	moscowCould: {
-		orderTag: "artifact-item-type",
 		id: "prio.moscow.could",
 		label: "MoSCoW - Could Have",
 		rules: { allowedOn: ["list"] },
@@ -770,7 +765,6 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 	moscowMust: {
-		orderTag: "artifact-item-type",
 		id: "prio.moscow.must",
 		label: "MoSCoW - Must Have",
 		rules: { allowedOn: ["list"] },
@@ -786,7 +780,6 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 	moscowShould: {
-		orderTag: "artifact-item-type",
 		id: "prio.moscow.should",
 		label: "MoSCoW - Should Have",
 		rules: { allowedOn: ["list"] },
@@ -802,7 +795,6 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 	moscowWont: {
-		orderTag: "artifact-item-type",
 		id: "prio.moscow.wont",
 		label: "MoSCoW - Won’t Have",
 		rules: { allowedOn: ["list"] },
@@ -820,7 +812,6 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 
 	// NALAp (convert to chips so they are clickable and discoverable)
 	nalapAdhoc: {
-		orderTag: "metadata-tag",
 		id: "prio.nalap.adhoc",
 		label: "NALAp - Adhoc",
 		rules: { allowedOn: ["list"] },
@@ -836,7 +827,6 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 	nalapAlways: {
-		orderTag: "metadata-tag",
 		id: "prio.nalap.always",
 		label: "NALAp - Always",
 		rules: { allowedOn: ["list"] },
@@ -852,7 +842,6 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 	nalapDone: {
-		orderTag: "metadata-tag",
 		id: "prio.nalap.done",
 		label: "NALAp - Done",
 		rules: { allowedOn: ["list"] },
@@ -868,7 +857,6 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 	nalapDropped: {
-		orderTag: "metadata-tag",
 		id: "prio.nalap.dropped",
 		label: "NALAp - Dropped",
 		rules: { allowedOn: ["list"] },
@@ -884,7 +872,6 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 	nalapLater: {
-		orderTag: "metadata-tag",
 		id: "prio.nalap.later",
 		label: "NALAp - Later",
 		rules: { allowedOn: ["list"] },
@@ -900,7 +887,6 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 	nalapNow: {
-		orderTag: "metadata-tag",
 		id: "prio.nalap.now",
 		label: "NALAp - Now",
 		rules: { allowedOn: ["list"] },
@@ -923,7 +909,7 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 export const Workflows: Record<string, TemplateDefinition<any>> = {
 	// Metadata
 	pr: {
-		orderTag: "metadata-tag",
+		orderTag: "metadata",
 		id: "workflows.metadata.pr",
 		label: "Workflow - PR",
 		rules: { allowedOn: ["task"] },
@@ -942,7 +928,7 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 	branch: {
-		orderTag: "metadata-tag",
+		orderTag: "metadata",
 		id: "workflows.metadata.branch",
 		label: "Workflow - Branch",
 		rules: { allowedOn: ["task"] },
@@ -961,7 +947,7 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 	linkToArtifact: {
-		orderTag: "metadata-tag",
+		orderTag: "metadata",
 		id: "workflows.metadata.linkToArtifact",
 		label: "Workflow - Link to Artifact",
 		rules: { allowedOn: ["task"] },
@@ -984,7 +970,7 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 
 	// States
 	blocked: {
-		orderTag: "metadata-tag",
+		orderTag: "state",
 		id: "workflows.states.blocked",
 		label: "Workflow - State: Blocked",
 		rules: { allowedOn: ["task"] },
@@ -1003,7 +989,7 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 	pending: {
-		orderTag: "metadata-tag",
+		orderTag: "state",
 		id: "workflows.states.pending",
 		label: "Workflow - State: Pending",
 		rules: { allowedOn: ["task"] },
@@ -1020,7 +1006,7 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 	waiting: {
-		orderTag: "metadata-tag",
+		orderTag: "state",
 		id: "workflows.states.waiting",
 		label: "Workflow - State: Waiting",
 		rules: { allowedOn: ["task"] },
@@ -1037,7 +1023,7 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 	review: {
-		orderTag: "metadata-tag",
+		orderTag: "state",
 		id: "workflows.states.review",
 		label: "Workflow - State: Awaiting Review",
 		hasParams: true,
@@ -1076,7 +1062,7 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
  */
 export const ObsidianExtensions: Record<string, TemplateDefinition<any>> = {
 	internalInlineLink: {
-		orderTag: "metadata-tag",
+		orderTag: "internal-link",
 		id: "obsidian.internalInlineLink",
 		label: "Obsidian - Internal Inline Link",
 		hasParams: true,
@@ -1119,7 +1105,7 @@ export const ObsidianExtensions: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 	timestamp: {
-		orderTag: "metadata-tag",
+		orderTag: "timestamp",
 		id: "obsidian.timestamp",
 		label: "Obsidian - Timestamp",
 		rules: { allowedOn: ["any"] },
@@ -1135,7 +1121,7 @@ export const ObsidianExtensions: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 	datestamp: {
-		orderTag: "metadata-tag",
+		orderTag: "datestamp",
 		id: "obsidian.datestamp",
 		label: "Obsidian - Datestamp",
 		rules: { allowedOn: ["any"] },
