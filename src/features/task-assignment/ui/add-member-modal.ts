@@ -5,15 +5,40 @@
 import { App, Modal, Notice } from "obsidian";
 import type { MemberInfo } from "@features/org-structure";
 
+export type AddMemberKind =
+	| "member"
+	| "external"
+	| "team"
+	| "internal-team-member";
+
+export type AddMemberModalOptions = {
+	/**
+	 * Override button text (e.g. "Assign to New Member", "Delegate to New Member").
+	 */
+	submitButtonText?: string;
+	/**
+	 * Limit which kinds the user can pick. Defaults to all if not provided.
+	 * Values: "member" (Team Member), "external" (External Delegate),
+	 *         "team" (Internal Team), "existing" (Existing Member with role dropdown).
+	 */
+	allowedTypes?: Array<"member" | "external" | "team" | "existing">;
+	/**
+	 * Optional custom title for the modal header.
+	 */
+	titleText?: string;
+};
+
 export class AddMemberModal extends Modal {
 	private onSubmit: (
 		memberName: string,
-		memberAlias: string
+		memberAlias: string,
+		selectedKind: AddMemberKind
 	) => void | Promise<void>;
 	private teamName: string;
 	private allTeams: string[];
 	private existingMembers: MemberInfo[];
 	private internalTeamCodes: Map<string, string>;
+	private options?: AddMemberModalOptions;
 
 	constructor(
 		app: App,
@@ -23,8 +48,10 @@ export class AddMemberModal extends Modal {
 		internalTeamCodes: Map<string, string>,
 		onSubmit: (
 			memberName: string,
-			memberAlias: string
-		) => void | Promise<void>
+			memberAlias: string,
+			selectedKind: AddMemberKind
+		) => void | Promise<void>,
+		options?: AddMemberModalOptions
 	) {
 		super(app);
 		this.onSubmit = onSubmit;
@@ -32,6 +59,7 @@ export class AddMemberModal extends Modal {
 		this.allTeams = allTeams;
 		this.existingMembers = existingMembers;
 		this.internalTeamCodes = internalTeamCodes;
+		this.options = options;
 	}
 
 	/**
@@ -86,7 +114,15 @@ export class AddMemberModal extends Modal {
 
 		const code = this.generateCode();
 
-		contentEl.createEl("h3", { text: `Add Member to ${this.teamName}` });
+		contentEl.createEl("h3", {
+			text:
+				this.options?.titleText ??
+				`Add Member to ${this.teamName || "Team"}`,
+		});
+
+		const allowedTypes =
+			this.options?.allowedTypes ??
+			(["member", "external", "team", "existing"] as const);
 
 		const typeWrapper = contentEl.createEl("div", {
 			attr: { style: "margin-bottom: 8px;" },
@@ -99,30 +135,27 @@ export class AddMemberModal extends Modal {
 			attr: { style: "width: 100%;" },
 		}) as HTMLSelectElement;
 
-		const optMember = document.createElement("option");
-		optMember.value = "member";
-		optMember.text = "Team Member";
-		typeSelect.appendChild(optMember);
+		const addOpt = (value: string, text: string) => {
+			const opt = document.createElement("option");
+			opt.value = value;
+			opt.text = text;
+			typeSelect.appendChild(opt);
+		};
 
-		const optExternal = document.createElement("option");
-		optExternal.value = "external";
-		optExternal.text = "External Delegate";
-		typeSelect.appendChild(optExternal);
+		if (allowedTypes.includes("member")) addOpt("member", "Team Member");
+		if (allowedTypes.includes("external"))
+			addOpt("external", "External Delegate");
+		if (allowedTypes.includes("team")) addOpt("team", "Internal Team");
+		if (allowedTypes.includes("existing"))
+			addOpt("existing", "Existing Member");
 
-		const optInternalTeam = document.createElement("option");
-		optInternalTeam.value = "team";
-		optInternalTeam.text = "Internal Team";
-		typeSelect.appendChild(optInternalTeam);
+		// If nothing was added (defensive), default to "member"
+		if (typeSelect.options.length === 0) addOpt("member", "Team Member");
 
-		const optExisting = document.createElement("option");
-		optExisting.value = "existing";
-		optExisting.text = "Existing Member";
-		typeSelect.appendChild(optExisting);
-
-		typeSelect.value = "member";
-		let isExternal = false;
-		let isInternal = false;
-		let isExisting = false;
+		typeSelect.value = typeSelect.options[0].value;
+		let isExternal = typeSelect.value === "external";
+		let isInternal = typeSelect.value === "team";
+		let isExisting = typeSelect.value === "existing";
 
 		const nameWrapper = contentEl.createEl("div", {
 			attr: { style: "margin-bottom: 12px;" },
@@ -229,22 +262,19 @@ export class AddMemberModal extends Modal {
 			isExternal = typeSelect.value === "external";
 			isInternal = typeSelect.value === "team";
 			isExisting = typeSelect.value === "existing";
-			if (isInternal) {
-				nameWrapper.style.display = "none";
-				teamWrapper.style.display = "";
-				existingWrapper.style.display = "none";
-				roleWrapper.style.display = "none";
-			} else if (isExisting) {
-				nameWrapper.style.display = "none";
+
+			// Toggle UI blocks
+			nameWrapper.style.display =
+				!isInternal && !isExisting ? "" : "none";
+			teamWrapper.style.display = isInternal ? "" : "none";
+			existingWrapper.style.display = isExisting ? "" : "none";
+			roleWrapper.style.display = isExisting ? "" : "none";
+
+			// If Internal Team option is allowed but no teams are available, hide the selector block
+			if (isInternal && this.allTeams.length === 0) {
 				teamWrapper.style.display = "none";
-				existingWrapper.style.display = "";
-				roleWrapper.style.display = "";
-			} else {
-				nameWrapper.style.display = "";
-				teamWrapper.style.display = "none";
-				existingWrapper.style.display = "none";
-				roleWrapper.style.display = "none";
 			}
+
 			updateAlias();
 		});
 
@@ -263,12 +293,16 @@ export class AddMemberModal extends Modal {
 		const cancelBtn = buttons.createEl("button", { text: "Cancel" });
 		cancelBtn.addEventListener("click", () => this.close());
 
-		const addBtn = buttons.createEl("button", { text: "Add Member" });
+		const addBtn = buttons.createEl("button", {
+			text: this.options?.submitButtonText ?? "Add Member",
+		});
 		addBtn.addEventListener("click", async () => {
 			let memberName: string;
 			let memberAlias: string;
+			let selectedKind: AddMemberKind;
 
 			if (isInternal) {
+				// Internal Team
 				memberName = (teamSelect.value || "").trim();
 				if (!memberName) {
 					new Notice("Please select a team.");
@@ -277,7 +311,9 @@ export class AddMemberModal extends Modal {
 				const codeToUse =
 					this.internalTeamCodes.get(memberName) ?? code;
 				memberAlias = this.teamAlias(memberName, codeToUse);
+				selectedKind = "team";
 			} else if (isExisting) {
+				// Existing -> pick role
 				const selectedAlias = existingSelect.value || "";
 				if (!selectedAlias) {
 					new Notice("Please select an existing member.");
@@ -291,19 +327,23 @@ export class AddMemberModal extends Modal {
 					memberAlias = selectedAlias.toLowerCase().endsWith("-int")
 						? selectedAlias
 						: `${selectedAlias}-int`;
+					selectedKind = "internal-team-member";
 				} else {
 					memberAlias = selectedAlias;
+					selectedKind = "member";
 				}
 			} else {
+				// New person
 				memberName = nameInput.value.trim();
 				if (!memberName) {
 					new Notice("Please enter a member name.");
 					return;
 				}
 				memberAlias = this.nameToAlias(memberName, code, isExternal);
+				selectedKind = isExternal ? "external" : "member";
 			}
 
-			await this.onSubmit(memberName, memberAlias);
+			await this.onSubmit(memberName, memberAlias, selectedKind);
 			this.close();
 		});
 	}

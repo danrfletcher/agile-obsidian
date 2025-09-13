@@ -5,12 +5,11 @@
  */
 import { App, Notice } from "obsidian";
 import type { AgileObsidianSettings } from "@settings";
-import { AddMemberModal } from "../modals/add-member-modal";
 import { CreateOrganizationModal } from "../modals/create-organization-modal";
 import { CreateSubteamsModal } from "../modals/create-subteams-modal";
 import { getDisplayNameFromAlias } from "@shared/identity";
 import type { SettingsOrgActions } from "../../app/contracts";
-import type { MemberInfo, TeamInfo } from "@features/org-structure";
+import type { TeamInfo } from "@features/org-structure";
 
 // New helpers imported from org-structure API
 import {
@@ -70,9 +69,6 @@ export class TeamsPresenter {
 			const viewMembersBtn = btns.createEl("button", {
 				text: "View Members",
 			});
-			const addMemberBtn = btns.createEl("button", {
-				text: "Add Member",
-			});
 			const createOrgBtn = btns.createEl("button", {
 				text: "Create Organization",
 			});
@@ -92,58 +88,6 @@ export class TeamsPresenter {
 					membersContainer.style.display === "none"
 						? "block"
 						: "none";
-			});
-
-			addMemberBtn.addEventListener("click", () => {
-				const { teamNames, internalTeamCodes, existingMembers } =
-					this.buildMemberSources();
-				new AddMemberModal(
-					this.app,
-					t.name,
-					teamNames,
-					existingMembers,
-					internalTeamCodes,
-					async (memberName, memberAlias) => {
-						const idx = this.settings.teams.findIndex(
-							(x) =>
-								x.name === t.name && x.rootPath === t.rootPath
-						);
-						if (idx === -1) return;
-						const team = this.settings.teams[idx];
-						team.members = team.members || [];
-						if (
-							!team.members.find((mm) => mm.alias === memberAlias)
-						) {
-							const lower = memberAlias.toLowerCase();
-							const type: MemberInfo["type"] = lower.endsWith(
-								"-ext"
-							)
-								? "external"
-								: lower.endsWith("-team")
-								? "team"
-								: lower.endsWith("-int")
-								? "internal-team-member"
-								: "member";
-							team.members.push({
-								alias: memberAlias,
-								name: memberName,
-								type,
-							});
-							team.members.sort((a, b) =>
-								getDisplayNameFromAlias(a.alias).localeCompare(
-									getDisplayNameFromAlias(b.alias)
-								)
-							);
-							await this.actions.saveSettings();
-							renderMembers();
-							onRefreshUI();
-						} else {
-							new Notice(
-								"A member with the same alias already exists for this team."
-							);
-						}
-					}
-				).open();
 			});
 
 			createOrgBtn.addEventListener("click", () => {
@@ -199,9 +143,6 @@ export class TeamsPresenter {
 				text: "View Members & Teams",
 			});
 			const addTeamsBtn = btns.createEl("button", { text: "Add Teams" });
-			const addMemberBtn = btns.createEl("button", {
-				text: "Add Member",
-			});
 
 			const orgContainer = container.createEl("div", {
 				attr: {
@@ -245,59 +186,6 @@ export class TeamsPresenter {
 						addRowText: "Add Team",
 						submitText: "Add Teams",
 						emptyNoticeText: "Add at least one team.",
-					}
-				).open();
-			});
-
-			addMemberBtn.addEventListener("click", () => {
-				const { teamNames, internalTeamCodes, existingMembers } =
-					this.buildMemberSources();
-				new AddMemberModal(
-					this.app,
-					org.name,
-					teamNames,
-					existingMembers,
-					internalTeamCodes,
-					async (memberName, memberAlias) => {
-						const idx = this.settings.teams.findIndex(
-							(x) =>
-								x.name === org.name &&
-								x.rootPath === org.rootPath
-						);
-						if (idx === -1) return;
-						const team = this.settings.teams[idx];
-						team.members = team.members || [];
-						if (
-							!team.members.find((mm) => mm.alias === memberAlias)
-						) {
-							const lower = memberAlias.toLowerCase();
-							const type: MemberInfo["type"] = lower.endsWith(
-								"-ext"
-							)
-								? "external"
-								: lower.endsWith("-team")
-								? "team"
-								: lower.endsWith("-int")
-								? "internal-team-member"
-								: "member";
-							team.members.push({
-								alias: memberAlias,
-								name: memberName,
-								type,
-							});
-							team.members.sort((a, b) =>
-								getDisplayNameFromAlias(a.alias).localeCompare(
-									getDisplayNameFromAlias(b.alias)
-								)
-							);
-							await this.actions.saveSettings();
-							renderOrgDetails();
-							onRefreshUI();
-						} else {
-							new Notice(
-								"A member with the same alias already exists for this team."
-							);
-						}
 					}
 				).open();
 			});
@@ -401,7 +289,7 @@ export class TeamsPresenter {
 
 	/**
 	 * Render org teams and nested subteams with actions.
-	 * Recursively renders subteam members and allows adding subteams/members.
+	 * Recursively renders subteam members and allows adding subteams (members list is view-only here).
 	 */
 	private renderOrgTeams(
 		container: HTMLElement,
@@ -433,9 +321,6 @@ export class TeamsPresenter {
 			});
 			const createSubBtn = tBtns.createEl("button", {
 				text: "Add Subteams",
-			});
-			const addMemberBtn = tBtns.createEl("button", {
-				text: "Add Member",
 			});
 
 			const tContainer = container.createEl("div", {
@@ -469,7 +354,7 @@ export class TeamsPresenter {
 				) => {
 					nodeContainer.empty();
 
-					// Members
+					// Members (view only)
 					const members = (node.members ?? [])
 						.slice()
 						.sort((a, b) => {
@@ -545,9 +430,6 @@ export class TeamsPresenter {
 							const stCreateBtn = stBtns.createEl("button", {
 								text: "Add Subteams",
 							});
-							const stAddMemberBtn = stBtns.createEl("button", {
-								text: "Add Member",
-							});
 
 							const stContainer = nodeContainer.createEl("div", {
 								attr: {
@@ -590,69 +472,6 @@ export class TeamsPresenter {
 									}
 								).open();
 							});
-							stAddMemberBtn.addEventListener("click", () => {
-								const {
-									teamNames,
-									internalTeamCodes,
-									existingMembers,
-								} = this.buildMemberSources();
-								new AddMemberModal(
-									this.app,
-									st.name,
-									teamNames,
-									existingMembers,
-									internalTeamCodes,
-									async (memberName, memberAlias) => {
-										const idx =
-											this.settings.teams.findIndex(
-												(x) =>
-													x.name === st.name &&
-													x.rootPath === st.rootPath
-											);
-										if (idx === -1) return;
-										const teamRef =
-											this.settings.teams[idx];
-										teamRef.members = teamRef.members || [];
-										if (
-											!teamRef.members.find(
-												(mm) => mm.alias === memberAlias
-											)
-										) {
-											const lower =
-												memberAlias.toLowerCase();
-											const type: MemberInfo["type"] =
-												lower.endsWith("-ext")
-													? "external"
-													: lower.endsWith("-team")
-													? "team"
-													: lower.endsWith("-int")
-													? "internal-team-member"
-													: "member";
-											teamRef.members.push({
-												alias: memberAlias,
-												name: memberName,
-												type,
-											});
-											teamRef.members.sort((a, b) =>
-												getDisplayNameFromAlias(
-													a.alias
-												).localeCompare(
-													getDisplayNameFromAlias(
-														b.alias
-													)
-												)
-											);
-											await this.actions.saveSettings();
-											renderStDetails();
-											onRefreshUI();
-										} else {
-											new Notice(
-												"A member with the same alias already exists for this team."
-											);
-										}
-									}
-								).open();
-							});
 						}
 					}
 				};
@@ -664,61 +483,6 @@ export class TeamsPresenter {
 			viewBtn.addEventListener("click", () => {
 				tContainer.style.display =
 					tContainer.style.display === "none" ? "block" : "none";
-			});
-
-			addMemberBtn.addEventListener("click", () => {
-				const { teamNames, internalTeamCodes, existingMembers } =
-					this.buildMemberSources();
-				new AddMemberModal(
-					this.app,
-					team.name,
-					teamNames,
-					existingMembers,
-					internalTeamCodes,
-					async (memberName, memberAlias) => {
-						const idx = this.settings.teams.findIndex(
-							(x) =>
-								x.name === team.name &&
-								x.rootPath === team.rootPath
-						);
-						if (idx === -1) return;
-						const teamRef = this.settings.teams[idx];
-						teamRef.members = teamRef.members || [];
-						if (
-							!teamRef.members.find(
-								(mm) => mm.alias === memberAlias
-							)
-						) {
-							const lower = memberAlias.toLowerCase();
-							const type: MemberInfo["type"] = lower.endsWith(
-								"-ext"
-							)
-								? "external"
-								: lower.endsWith("-team")
-								? "team"
-								: lower.endsWith("-int")
-								? "internal-team-member"
-								: "member";
-							teamRef.members.push({
-								alias: memberAlias,
-								name: memberName,
-								type,
-							});
-							teamRef.members.sort((a, b) =>
-								getDisplayNameFromAlias(a.alias).localeCompare(
-									getDisplayNameFromAlias(b.alias)
-								)
-							);
-							await this.actions.saveSettings();
-							renderTeamDetails();
-							onRefreshUI();
-						} else {
-							new Notice(
-								"A member with the same alias already exists for this team."
-							);
-						}
-					}
-				).open();
 			});
 
 			createSubBtn.addEventListener("click", () => {
@@ -740,46 +504,5 @@ export class TeamsPresenter {
 				).open();
 			});
 		}
-	}
-
-	/**
-	 * Build sources used by the "Add Member" modal:
-	 * - teamNames: list of team display names
-	 * - internalTeamCodes: map of internal team name -> inferred code (when alias ends in "-team")
-	 * - existingMembers: unique list of 'member' kind (excludes external/team/internal-team-member)
-	 */
-	private buildMemberSources() {
-		const teamNames = (this.settings.teams ?? []).map((tt) => tt.name);
-		const internalTeamCodes = new Map<string, string>();
-		for (const tt of this.settings.teams ?? []) {
-			for (const m of tt.members ?? []) {
-				const lower = m.alias.toLowerCase();
-				if (lower.endsWith("-team")) {
-					const mm = /^([a-z0-9-]+)-([0-9][a-z0-9]{5})-team$/i.exec(
-						m.alias
-					);
-					if (mm) internalTeamCodes.set(m.name, mm[2]);
-				}
-			}
-		}
-
-		const uniq = new Map<string, MemberInfo>();
-		for (const tt of this.settings.teams ?? []) {
-			for (const m of tt.members ?? []) {
-				const kind = classifyMember(m).kind;
-				if (kind !== "member") continue;
-				if (!uniq.has(m.alias)) {
-					uniq.set(m.alias, {
-						alias: m.alias,
-						name: m.name,
-						type: "member",
-					});
-				}
-			}
-		}
-		const existingMembers = Array.from(uniq.values()).sort((a, b) =>
-			a.name.localeCompare(b.name)
-		);
-		return { teamNames, internalTeamCodes, existingMembers };
 	}
 }
