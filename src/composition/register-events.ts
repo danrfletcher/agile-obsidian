@@ -23,6 +23,9 @@ import {
 } from "@features/task-canonical-formatter";
 import type { CanonicalFormatterPort } from "@features/task-canonical-formatter";
 
+// NEW: import cascade wiring
+import { wireTaskAssignmentCascade } from "@features/task-assignment-cascade";
+
 // Strong singleton-per-run progress UI (per view)
 class ProgressNotice {
 	private static activeForView = new WeakMap<MarkdownView, ProgressNotice>();
@@ -166,6 +169,7 @@ class ProgressNotice {
  */
 export async function registerEvents(container: Container) {
 	const { plugin, app, settings } = container;
+	console.log("[boot] registerEvents called");
 
 	const appAdapter = createObsidianAppAdapter(app);
 
@@ -575,7 +579,18 @@ export async function registerEvents(container: Container) {
 			plugin.manifest.id,
 			{ orgStructure: orgStructurePort }
 		);
-	} catch {}
+		console.log("[boot] assignment commands registered");
+	} catch (e) {
+		console.error("[boot] assignment commands failed", e);
+	}
+
+	// NEW: Wire the cascade listener with TaskIndex port (hybrid mode)
+	try {
+		wireTaskAssignmentCascade(app, plugin, { taskIndex: taskIndexService });
+		console.log("[boot] cascade wired");
+	} catch (e) {
+		console.error("[boot] cascade wiring failed", e);
+	}
 
 	// Re-wire active view now that org ports exist, so the click menu is live immediately
 	tryWireView(app.workspace.getActiveViewOfType(MarkdownView) ?? null);
