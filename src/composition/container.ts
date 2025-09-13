@@ -5,6 +5,7 @@ import { createSettingsService } from "@settings";
 import type { OrgStructurePort } from "@features/org-structure";
 import type { TeamInfo } from "@features/org-structure";
 import type { OrgStructureResult } from "@features/org-structure";
+import type { TaskIndexService } from "@features/task-index";
 
 export interface Container {
 	plugin: Plugin;
@@ -12,6 +13,9 @@ export interface Container {
 	settings: AgileObsidianSettings;
 	settingsService: SettingsService;
 	manifestId: string;
+
+	// Wiring ports (optional) to keep features decoupled from composition
+	taskIndexService?: TaskIndexService;
 
 	orgStructureService?: {
 		getOrgStructure: () => OrgStructureResult;

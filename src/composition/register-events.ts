@@ -177,8 +177,8 @@ export async function registerEvents(container: Container) {
 	const taskIndexService = createTaskIndexService({ appAdapter });
 	const taskIndexOrchestrator = createTaskIndexOrchestrator(taskIndexService);
 
-	// Expose service on container for other wiring
-	(container as any).taskIndexService = taskIndexService;
+	// Expose service on container for other wiring (typed)
+	container.taskIndexService = taskIndexService;
 
 	// Build initial task index
 	await taskIndexOrchestrator.buildAll();
