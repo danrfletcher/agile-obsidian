@@ -69,6 +69,112 @@ function isChildSlugOf(parentSlug: string, childSlug: string): boolean {
 	return true;
 }
 
+/**
+ * Remove leading emojis/symbols and excess whitespace from a display string.
+ * Examples:
+ *   "👋 Cam Bloomfield" -> "Cam Bloomfield"
+ *   "  ⭐  Jane  Doe "  -> "Jane Doe"
+ */
+function stripLeadingEmojiAndSpace(s: string): string {
+	const trimmed = s.replace(/\s+/g, " ").trim();
+	// Remove common leading symbol or emoji sequences followed by space(s)
+	// This targets most unicode emoji and dingbats at the beginning.
+	const cleaned = trimmed.replace(
+		/^(?:[\p{Extended_Pictographic}\p{Emoji}\p{Symbol}\p{So}\p{Sk}]+|\p{P}|\s)+\s*/u,
+		""
+	);
+	return cleaned.trim();
+}
+
+/**
+ * Attempt to extract members from HTML-like spans/marks using data attributes.
+ *
+ * Supported elements:
+ *   <span ... data-template-key="members.assignee" data-member-slug="cam-bloomfield" data-member-type="teamMember">Cam Bloomfield</span>
+ *   <mark ... data-template-key="members.assignee" data-member-slug="cam-bloomfield" data-member-type="teamMember">...</mark>
+ *
+ * Only the following data-member-type values are accepted:
+ *   - "teamMember"           -> "member"
+ *   - "delegateTeamMember"   -> "internal-team-member"
+ *   - "delegateTeam"         -> "team"
+ *   - "delegateExternal"     -> "external"
+ *
+ * All other values (e.g., "special") are ignored.
+ */
+function extractMembersFromHtml(content: string): Array<{
+	alias: string;
+	name: string;
+	type: MemberType;
+}> {
+	const results: Array<{ alias: string; name: string; type: MemberType }> =
+		[];
+
+	if (!content) return results;
+
+	const tagRegex = /<(span|mark)\b([^>]*?)>([\s\S]*?)<\/\1>/gi;
+
+	let m: RegExpExecArray | null;
+	while ((m = tagRegex.exec(content)) !== null) {
+		const attrs = m[2] || "";
+		const innerTextRaw = m[3] || "";
+
+		// Require data-template-key="members.assignee" (exact) to avoid false positives.
+		const hasMembersAssignee =
+			/\bdata-template-key\s*=\s*["']members\.assignee["']/i.test(attrs);
+		if (!hasMembersAssignee) continue;
+
+		// Extract data-member-slug and data-member-type
+		const slugMatch = /\bdata-member-slug\s*=\s*["']([^"']+)["']/i.exec(
+			attrs
+		);
+		if (!slugMatch) continue;
+		const aliasRaw = slugMatch[1].trim();
+		if (!aliasRaw) continue;
+
+		const typeMatch = /\bdata-member-type\s*=\s*["']([^"']+)["']/i.exec(
+			attrs
+		);
+		const typeRaw = (typeMatch?.[1] || "").trim();
+
+		// Only allow the new, whitelisted types
+		let type: MemberType | null = null;
+		switch (typeRaw) {
+			case "teamMember":
+				type = "member";
+				break;
+			case "delegateTeamMember":
+				type = "internal-team-member";
+				break;
+			case "delegateTeam":
+				type = "team";
+				break;
+			case "delegateExternal":
+				type = "external";
+				break;
+			default:
+				type = null; // ignore anything else (e.g., "special")
+		}
+		if (!type) continue;
+
+		// Inner text as name (strip tags if any minimal HTML inside)
+		const textStripped = innerTextRaw
+			.replace(/<[^>]*>/g, "")
+			.replace(/\s+/g, " ")
+			.trim();
+
+		// Remove any leading emoji/symbol decorations from the name
+		const plainName = stripLeadingEmojiAndSpace(textStripped);
+
+		const alias = aliasRaw;
+		const name =
+			plainName.length > 0 ? plainName : getDisplayNameFromAlias(alias);
+
+		results.push({ alias, name, type });
+	}
+
+	return results;
+}
+
 export async function hydrateTeamsFromVault(
 	vault: Vault,
 	settings: MutableSettings
@@ -186,23 +292,16 @@ export async function hydrateTeamsFromVault(
 					(af.path === root || af.path.startsWith(root + "/"))
 				) {
 					const content = await vault.cachedRead(af);
-					const re = /\b(?:active|inactive)-([a-z0-9-]+)\b/gi;
-					let mm: RegExpExecArray | null;
-					while ((mm = re.exec(content)) !== null) {
-						const alias = mm[1];
-						if (alias.toLowerCase() === "team") continue;
-						const lower = alias.toLowerCase();
-						const type: MemberType = lower.endsWith("-ext")
-							? "external"
-							: lower.endsWith("-team")
-							? "team"
-							: lower.endsWith("-int")
-							? "internal-team-member"
-							: "member";
-						if (!info.members.has(alias)) {
-							info.members.set(alias, {
-								name: getDisplayNameFromAlias(alias),
-								type,
+
+					// Parse only the new HTML span/mark format with data-member-slug & data-member-type
+					const extracted = extractMembersFromHtml(content);
+
+					for (const m of extracted) {
+						// De-duplicate by alias, prefer first occurrence
+						if (!info.members.has(m.alias)) {
+							info.members.set(m.alias, {
+								name: m.name,
+								type: m.type,
 							});
 						}
 					}
@@ -275,19 +374,8 @@ export async function hydrateTeamsFromVault(
 						type: meta.type,
 					}))
 					.sort((a, b) => {
-						const typeOf = (m: MemberInfo): MemberType =>
-							m.type ??
-							((m.alias || "").toLowerCase().endsWith("-ext")
-								? "external"
-								: (m.alias || "")
-										.toLowerCase()
-										.endsWith("-team")
-								? "team"
-								: (m.alias || "").toLowerCase().endsWith("-int")
-								? "internal-team-member"
-								: "member");
-						const ra = rank(typeOf(a));
-						const rb = rank(typeOf(b));
+						const ra = rank(a.type ?? "member");
+						const rb = rank(b.type ?? "member");
 						if (ra !== rb) return ra - rb;
 						return a.name.localeCompare(b.name);
 					});
