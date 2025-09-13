@@ -3,7 +3,6 @@ import {
 	AgileDashboardView,
 	VIEW_TYPE_AGILE_DASHBOARD,
 } from "src/features/agile-dashboard-view/ui/views/agile-dashboard-view";
-import type AgileObsidianPlugin from "src/main.ts";
 import { WorkspaceLeaf } from "obsidian";
 
 /**
@@ -17,10 +16,10 @@ export async function registerAgileDashboardView(container: Container) {
 	plugin.registerView(
 		VIEW_TYPE_AGILE_DASHBOARD,
 		(leaf: WorkspaceLeaf) =>
-			new AgileDashboardView(
-				leaf,
-				plugin as unknown as AgileObsidianPlugin
-			)
+			new AgileDashboardView(leaf, {
+				taskIndex: container.taskIndexService, // wiring via ports
+				settings: container.settingsService, // wiring via ports
+			})
 	);
 
 	// Ensure any open leaves are detached when the plugin unloads

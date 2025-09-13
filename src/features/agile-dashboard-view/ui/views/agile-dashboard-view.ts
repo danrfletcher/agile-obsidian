@@ -1,9 +1,7 @@
 import { ItemView, WorkspaceLeaf, TFile, TAbstractFile } from "obsidian";
-import { TaskIndex } from "src/features/task-index/task-index";
-import { TaskItem } from "src/features/tasks/task-item";
 import manifest from "manifest.json";
-import { cleanupExpiredSnoozes } from "src/features/task-snooze/snooze-utils";
-import { getCurrentUserDisplayName } from "src/features/settings/infra/settings-store";
+import { cleanupExpiredSnoozes } from "@features/task-snooze";
+import { getCurrentUserDisplayName } from "@settings/index";
 
 // Section processors
 import { processAndRenderObjectives } from "../components/objectives";
@@ -11,24 +9,57 @@ import { processAndRenderArtifacts } from "../components/artifacts";
 import { processAndRenderInitiatives } from "../components/initiatives";
 import { processAndRenderResponsibilities } from "../components/responsibilities";
 import { processAndRenderPriorities } from "../components/priorities";
-import type AgileObsidianPlugin from "src/main.ts";
+
+// New imports for the refactored Task Index
+import type {
+	TaskItem,
+	TaskNode,
+} from "@features/task-index/domain/task-types";
+import type { TaskIndexService } from "@features/task-index";
+import type { SettingsService } from "@settings";
 
 export const VIEW_TYPE_AGILE_DASHBOARD = "agile-dashboard-view";
 
+export type AgileDashboardViewPorts = {
+	taskIndex?: TaskIndexService;
+	settings: SettingsService;
+};
+
 export class AgileDashboardView extends ItemView {
-	private taskIndex: TaskIndex;
+	private taskIndexService: TaskIndexService;
+	private settingsService: SettingsService;
+
 	private viewSelect: HTMLSelectElement;
 	private activeToggle: HTMLInputElement;
 	private activeToggleLabel: HTMLSpanElement;
 	private memberSelect: HTMLSelectElement;
-	private plugin: AgileObsidianPlugin; // New: Store the plugin instance for settings access
 	private suppressedFiles = new Set<string>();
 
-	constructor(leaf: WorkspaceLeaf, plugin: AgileObsidianPlugin) {
-		// Updated: Accept plugin
+	constructor(leaf: WorkspaceLeaf, ports: AgileDashboardViewPorts) {
 		super(leaf);
-		this.plugin = plugin; // New: Assign plugin
-		this.taskIndex = TaskIndex.getInstance(plugin.app);
+		this.settingsService = ports.settings;
+
+		// Wire the TaskIndex service through ports, with a no-op fallback
+		const svc = ports.taskIndex;
+		if (!svc) {
+			console.warn(
+				"[AgileDashboardView] TaskIndexService not found in ports. The dashboard will be empty."
+			);
+			this.taskIndexService = {
+				// minimal no-op facade (typed as TaskIndexService)
+				buildAll: async () => {},
+				updateFile: async () => {},
+				removeFile: () => {},
+				renameFile: () => {},
+				getSnapshot: () => ({} as any),
+				getAllTasks: () => [],
+				getByFile: () => undefined,
+				getById: () => undefined,
+				getItemAtCursor: () => undefined,
+			} as unknown as TaskIndexService;
+		} else {
+			this.taskIndexService = svc;
+		}
 	}
 
 	getViewType() {
@@ -47,7 +78,7 @@ export class AgileDashboardView extends ItemView {
 		const container = this.containerEl.children[1];
 		container.empty();
 
-		// UI Controls (from original)
+		// Controls
 		const controlsContainer = container.createEl("div", {
 			attr: { style: "display: flex; align-items: center; gap: 10px;" },
 		});
@@ -64,10 +95,6 @@ export class AgileDashboardView extends ItemView {
       <option value="completed">✅ Completed</option>
     `;
 
-		// Active/Inactive toggle:
-		// - When checked (true), the view is "Active".
-		// - When unchecked (false), the view is "Inactive".
-		// The label below reflects the current state, and the boolean is later passed to projectView as `status`.
 		const statusToggleContainer = controlsContainer.createEl("span", {
 			attr: {
 				style: "display: inline-flex; align-items: center; gap: 6px;",
@@ -110,14 +137,16 @@ export class AgileDashboardView extends ItemView {
 				label: string;
 			};
 			const entries: Entry[] = [];
-			const teams = this.plugin.settings.teams || [];
+
+			const settings = this.settingsService.getRaw();
+			const teams = settings.teams || [];
 			const seen = new Set<string>();
 			for (const t of teams) {
 				for (const m of t.members || []) {
 					const alias = (m.alias || "").trim();
 					const dispName = m.name || alias;
 					if (!alias) continue;
-					if (seen.has(alias)) continue; // de-duplicate members across teams by alias
+					if (seen.has(alias)) continue;
 					seen.add(alias);
 					const lower = alias.toLowerCase();
 					let role = m.type || "member";
@@ -157,7 +186,7 @@ export class AgileDashboardView extends ItemView {
 				this.memberSelect.appendChild(opt);
 			}
 
-			const def = this.plugin.settings.currentUserAlias || "";
+			const def = this.settingsService.getRaw().currentUserAlias || "";
 			if (def && entries.some((e) => e.alias === def)) {
 				this.memberSelect.value = def;
 			} else if (entries.length > 0) {
@@ -171,15 +200,12 @@ export class AgileDashboardView extends ItemView {
 			this.updateView();
 		});
 
-		// New: Listen for settings changes to auto-refresh
+		// Listen for settings changes to auto-refresh
 		this.registerEvent(
-			// @ts-ignore - Suppress type error for custom event (Obsidian typings don't support arbitrary events)
+			// @ts-ignore Obsidian typings do not include custom events
 			this.app.workspace.on("agile-settings-changed", () => {
 				if (this.memberSelect) {
 					const prev = this.memberSelect.value;
-					// Repopulate member dropdown and preserve selection if possible
-					// populateMemberSelect is defined above in onOpen scope
-					// @ts-ignore - using function from closure
 					typeof populateMemberSelect === "function" &&
 						(populateMemberSelect as any)();
 					if (
@@ -191,11 +217,11 @@ export class AgileDashboardView extends ItemView {
 						this.memberSelect.value = prev;
 					}
 				}
-				this.updateView(); // Force re-render with new settings
+				this.updateView();
 			})
 		);
 
-		// Listen for local optimistic updates to avoid full rerenders
+		// Local optimistic updates suppression
 		this.registerDomEvent(
 			window,
 			"agile:prepare-optimistic-file-change" as any,
@@ -216,7 +242,7 @@ export class AgileDashboardView extends ItemView {
 					this.suppressedFiles.add(filePath);
 					const file = this.app.vault.getAbstractFileByPath(filePath);
 					if (file instanceof TFile) {
-						await this.taskIndex.updateFile(file);
+						await this.taskIndexService.updateFile(file);
 					}
 				}
 			}
@@ -225,11 +251,14 @@ export class AgileDashboardView extends ItemView {
 		// Initial render
 		await this.updateView();
 
-		// Register events for auto-refresh on vault changes
+		// Auto-refresh on vault changes.
+		// IMPORTANT: We do not rebuild index ourselves here;
+		// We simply keep the local view current by calling updateFile/remove/rename
+		// on the shared TaskIndexService instance.
 		this.registerEvent(
 			this.app.vault.on("modify", async (file: TFile) => {
 				if (file.extension === "md") {
-					await this.taskIndex.updateFile(file);
+					await this.taskIndexService.updateFile(file);
 					if (this.suppressedFiles.has(file.path)) {
 						this.suppressedFiles.delete(file.path);
 						return; // Suppress full rerender; local DOM already updated
@@ -241,7 +270,7 @@ export class AgileDashboardView extends ItemView {
 		this.registerEvent(
 			this.app.vault.on("create", async (file: TAbstractFile) => {
 				if (file instanceof TFile && file.extension === "md") {
-					await this.taskIndex.updateFile(file);
+					await this.taskIndexService.updateFile(file);
 					this.updateView();
 				}
 			})
@@ -249,7 +278,7 @@ export class AgileDashboardView extends ItemView {
 		this.registerEvent(
 			this.app.vault.on("delete", (file: TAbstractFile) => {
 				if (file instanceof TFile && file.extension === "md") {
-					this.taskIndex.removeFile(file.path);
+					this.taskIndexService.removeFile(file.path);
 					this.updateView();
 				}
 			})
@@ -259,8 +288,8 @@ export class AgileDashboardView extends ItemView {
 				"rename",
 				async (file: TAbstractFile, oldPath: string) => {
 					if (file instanceof TFile && file.extension === "md") {
-						this.taskIndex.removeFile(oldPath);
-						await this.taskIndex.updateFile(file);
+						// Use repository-native rename to update IDs/links immutably
+						this.taskIndexService.renameFile(oldPath, file.path);
 						this.updateView();
 					}
 				}
@@ -269,7 +298,7 @@ export class AgileDashboardView extends ItemView {
 	}
 
 	async onClose() {
-		// Cleanup events if needed
+		// Cleanup if needed
 	}
 
 	private async updateView() {
@@ -283,62 +312,53 @@ export class AgileDashboardView extends ItemView {
 		const contentContainer =
 			existingContent ??
 			viewContainer.createEl("div", { cls: "content-container" });
-		contentContainer.empty(); // Clear previous content (keep controls)
+		contentContainer.empty();
 
 		const selectedView = this.viewSelect.value;
-		// isActive is true when the checkbox is checked ("Active"), false when unchecked ("Inactive").
 		const isActive = this.activeToggle ? this.activeToggle.checked : true;
 		const selectedAlias =
 			this.memberSelect?.value ||
-			this.plugin.settings.currentUserAlias ||
+			this.settingsService.getRaw().currentUserAlias ||
 			null;
 
 		if (selectedView === "projects") {
 			await this.projectView(contentContainer, isActive, selectedAlias);
 		} else if (selectedView === "completed") {
-			// Placeholder for completedView
 			contentContainer.createEl("h2", {
 				text: "✅ Completed (Coming Soon)",
 			});
 		}
 
-		// Restore scroll position after render
 		viewContainer.scrollTop = prevContainerScrollTop;
 		contentContainer.scrollTop = prevContentScrollTop;
 	}
 
-	/**
-	 * Render the Projects view.
-	 * @param container Target element to render into.
-	 * @param status When true => "Active" mode; when false => "Inactive" mode.
-	 * @param selectedAlias Alias whose items to emphasize/filter; null means current user or all.
-	 */
 	private async projectView(
 		container: HTMLElement,
 		status = true,
 		selectedAlias: string | null = null
 	) {
-		// Get all tasks from index
-		let currentTasks = this.taskIndex.getAllTasks();
+		// Get all tasks from the shared index
+		let currentTasks: TaskNode[] = this.taskIndexService.getAllTasks();
 
 		// Clean up expired snoozes for current user before rendering
+		const settings = this.settingsService.getRaw();
 		const changedFiles = await cleanupExpiredSnoozes(
 			this.app,
 			currentTasks,
-			getCurrentUserDisplayName(this.plugin.settings) || ""
+			getCurrentUserDisplayName(settings) || ""
 		);
 		if (changedFiles.size > 0) {
 			for (const path of changedFiles) {
 				const file = this.app.vault.getAbstractFileByPath(path);
 				if (file instanceof TFile) {
-					await this.taskIndex.updateFile(file);
+					await this.taskIndexService.updateFile(file);
 				}
 			}
-			// Re-fetch tasks after cleanup
-			currentTasks = this.taskIndex.getAllTasks();
+			currentTasks = this.taskIndexService.getAllTasks();
 		}
 
-		// Build shared taskMap and childrenMap (from original)
+		// Build taskMap and childrenMap
 		const taskMap = new Map<string, TaskItem>();
 		const childrenMap = new Map<string, TaskItem[]>();
 		currentTasks.forEach((t) => {
@@ -349,11 +369,10 @@ export class AgileDashboardView extends ItemView {
 		});
 		currentTasks.forEach((t) => {
 			if (t._parentId && childrenMap.has(t._parentId)) {
-				childrenMap.get(t._parentId)?.push(t); // Safe
+				childrenMap.get(t._parentId)!.push(t);
 			}
 		});
 
-		// Get task params from UI & view
 		const taskParams = {
 			inProgress: true,
 			completed: false,
@@ -361,8 +380,7 @@ export class AgileDashboardView extends ItemView {
 			cancelled: false,
 		};
 
-		// Call each section processor conditionally based on settings
-		if (this.plugin.settings.showObjectives) {
+		if (settings.showObjectives) {
 			processAndRenderObjectives(
 				container,
 				currentTasks,
@@ -374,7 +392,7 @@ export class AgileDashboardView extends ItemView {
 				taskParams
 			);
 		}
-		// Render Tasks / Stories / Epics via the unified artifacts presenter
+
 		processAndRenderArtifacts(
 			container,
 			currentTasks,
@@ -384,9 +402,10 @@ export class AgileDashboardView extends ItemView {
 			taskMap,
 			childrenMap,
 			taskParams,
-			this.plugin.settings
+			settings
 		);
-		if (this.plugin.settings.showInitiatives) {
+
+		if (settings.showInitiatives) {
 			processAndRenderInitiatives(
 				container,
 				currentTasks,
@@ -398,7 +417,7 @@ export class AgileDashboardView extends ItemView {
 				taskParams
 			);
 		}
-		if (this.plugin.settings.showResponsibilities) {
+		if (settings.showResponsibilities) {
 			processAndRenderResponsibilities(
 				container,
 				currentTasks,
@@ -410,7 +429,7 @@ export class AgileDashboardView extends ItemView {
 				taskParams
 			);
 		}
-		if (this.plugin.settings.showPriorities) {
+		if (settings.showPriorities) {
 			processAndRenderPriorities(
 				container,
 				currentTasks,
