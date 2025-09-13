@@ -403,13 +403,22 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 		orderTag: "parent-link",
 		id: "agile.parentLink",
 		label: "Agile - Artifact Parent Link",
+		hasParams: true,
+		paramsSchema: {
+			title: "Select Parent",
+			fields: [
+				{
+					name: "blockRef",
+					label: "Parent Block Reference",
+					required: true,
+					placeholder: "Start typing...",
+				},
+			],
+		},
 		rules: { allowedOn: ["task"] },
-		render() {
-			const inner = chip({
-				id: "agile-artifact-parent-link",
-				text: `${emojis.linkArrowUp}`,
-				href: "",
-			});
+		render(params: { blockRef: string }) {
+			const blockRef = params?.blockRef?.trim() ?? "";
+			const inner = `<a href="${blockRef}" class="internal-link">${emojis.linkArrowUp}</a>`;
 			return wrapTemplate("agile.parentLink", inner, {
 				orderTag: this.orderTag,
 			});
