@@ -1,6 +1,6 @@
 import type { App, Plugin } from "obsidian";
 import { MarkdownView, Notice, Menu } from "obsidian";
-import { renderTemplateOnly } from "@features/templating/app/templating-service";
+import { renderTemplateOnly } from "@features/templating";
 import type {
 	OrgStructurePort,
 	MemberInfo,
@@ -13,6 +13,10 @@ import {
 	replaceWrapperInstanceOnLine,
 } from "../app/assignment-inline-utils";
 import { getDisplayNameFromAlias } from "@shared/identity";
+import {
+	AddMemberModal,
+	type AddMemberKind,
+} from "../ui/add-member-modal";
 
 type AssignType = "assignee" | "delegate";
 
@@ -130,6 +134,21 @@ function getEventTargets(app: App, view: MarkdownView | null): EventTarget[] {
 	return targets;
 }
 
+function kindToMemberType(
+	kind: AddMemberKind
+): "teamMember" | "delegateTeam" | "delegateTeamMember" | "delegateExternal" {
+	switch (kind) {
+		case "member":
+			return "teamMember";
+		case "team":
+			return "delegateTeam";
+		case "internal-team-member":
+			return "delegateTeamMember";
+		case "external":
+			return "delegateExternal";
+	}
+}
+
 /**
  * Inserts menu items for all options appropriate to the clicked wrapper.
  */
@@ -166,6 +185,130 @@ function buildMenuForAssignment(
 	const isAssignee = assignType === "assignee";
 	const isDelegate = assignType === "delegate";
 
+	// New Member options (first)
+	const addNewMemberItem = (nextState: "active" | "inactive") => {
+		const title =
+			assignType === "assignee"
+				? `New Member (${toTitleCase(nextState)})`
+				: `New Member (${toTitleCase(nextState)})`;
+		menu.addItem((i) => {
+			i.setTitle(title);
+			i.onClick(() => {
+				// Build modal sources from current context
+				const teamName = team?.name ?? "Team";
+				const existingMembers = (members ?? []) as MemberInfo[];
+				const allTeams: string[] = []; // No global list available here
+				const internalTeamCodes = new Map<string, string>();
+				const submitButtonText =
+					assignType === "assignee"
+						? "Assign to New Member"
+						: "Delegate to New Member";
+				const allowedTypes =
+					assignType === "assignee"
+						? (["member"] as const)
+						: (["external", "existing"] as const);
+
+				new AddMemberModal(
+					app,
+					teamName,
+					allTeams,
+					existingMembers,
+					internalTeamCodes,
+					async (memberName, memberAlias, selectedKind) => {
+						const lineNo = findLineIndexByInstanceId(
+							editor,
+							instanceId
+						);
+						if (lineNo < 0) return;
+
+						const before = editor.getLine(lineNo) ?? "";
+						const beforeDoc = (editor.getValue() ?? "").split(
+							/\r?\n/
+						);
+
+						// Determine memberType for the wrapper
+						const memberType =
+							assignType === "assignee"
+								? "teamMember"
+								: kindToMemberType(selectedKind);
+
+						// Render wrapper HTML
+						let newHtml = renderTemplateOnly("members.assignee", {
+							memberName,
+							memberSlug: memberAlias,
+							memberType,
+							assignmentState: nextState,
+						});
+
+						// Preserve instanceId
+						newHtml = newHtml.replace(
+							/data-template-wrapper="[^"]*"/,
+							`data-template-wrapper="${instanceId}"`
+						);
+
+						// Replace clicked wrapper
+						let updated = replaceWrapperInstanceOnLine(
+							before,
+							instanceId,
+							newHtml
+						);
+
+						// Remove other wrappers of the same type on the same line (keep our instance)
+						updated = removeWrappersOfTypeOnLine(
+							updated,
+							assignType,
+							instanceId
+						);
+
+						updated = updated.replace(/\s+$/, " ");
+						updateEditorLine(editor, lineNo, updated);
+
+						// Cascade only for assignee
+						if (assignType === "assignee") {
+							const targetsEls = getEventTargets(app, view);
+							const detail = {
+								filePath,
+								parentLine0: lineNo,
+								beforeLines: beforeDoc.map(
+									(s: string, idx: number) =>
+										idx === lineNo ? before : s
+								),
+								newAssigneeSlug: memberAlias,
+								oldAssigneeSlug:
+									/data-member-slug="([^"]+)"/.exec(
+										before
+									)?.[1] ?? null,
+							};
+							for (const t of targetsEls) {
+								try {
+									(t as any).dispatchEvent?.(
+										new CustomEvent(
+											"agile:assignee-changed",
+											{
+												detail,
+											}
+										)
+									);
+								} catch {}
+							}
+						}
+					},
+					{
+						submitButtonText,
+						allowedTypes: [...allowedTypes],
+						titleText:
+							assignType === "assignee"
+								? "Assign to New Member"
+								: "Delegate to New Member",
+					}
+				).open();
+			});
+		});
+	};
+
+	addNewMemberItem("active");
+	addNewMemberItem("inactive");
+
 	// Remove item
 	menu.addItem((i) => {
 		i.setTitle(isAssignee ? "Remove Assignee" : "Remove Delegate");
@@ -197,7 +340,7 @@ function buildMenuForAssignment(
 			if (isAssignee) {
 				const targetsEls = getEventTargets(app, view);
 				const detail = {
-					filePath,
+					filePath: filePath,
 					parentLine0: lineNo,
 					beforeLines: beforeDoc, // true pre-mutation doc
 					newAssigneeSlug: null, // cleared
@@ -216,7 +359,7 @@ function buildMenuForAssignment(
 		});
 	});
 
-	// Convenience helpers
+	// Convenience helpers for existing members
 	const addAssignItem = (
 		title: string,
 		memberName: string,
