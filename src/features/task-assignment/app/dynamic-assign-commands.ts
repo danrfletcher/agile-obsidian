@@ -8,9 +8,7 @@ import type {
 } from "@features/org-structure";
 import { classifyMember } from "@features/org-structure";
 import { getCursorContext } from "@platform/obsidian";
-import {
-	removeWrappersOfTypeOnLine,
-} from "./assignment-inline-utils";
+import { removeWrappersOfTypeOnLine } from "./assignment-inline-utils";
 
 /**
  * Map org-structure member kind to templating "Members.assignee" memberType.
@@ -30,18 +28,10 @@ function mapMemberKindToAssigneeType(
 	}
 }
 
-/**
- * Get active MarkdownView safely.
- */
 function getActiveMarkdownView(app: App): MarkdownView | null {
 	return app.workspace.getActiveViewOfType(MarkdownView) ?? null;
 }
 
-/**
- * Determine whether the current line is allowed for the assignee template:
- * - Task line is allowed
- * - Empty line is allowed (we will convert to a task line at insert time)
- */
 async function isAssigneeAllowedHere(app: App): Promise<boolean> {
 	const view = getActiveMarkdownView(app);
 	if (!view) return false;
@@ -53,8 +43,7 @@ async function isAssigneeAllowedHere(app: App): Promise<boolean> {
 		const text = ctx.lineText ?? "";
 		const trimmed = text.trim();
 
-		if (trimmed.length === 0) return true; // empty: okay (we'll coerce to task)
-		// Task regex: starts with optional spaces, then -, *, or + followed by [ ] or [x] and a space
+		if (trimmed.length === 0) return true;
 		const isTask = /^\s*[-*+]\s+\[(?: |x|X)\]\s+/.test(text);
 		return isTask;
 	} catch {
@@ -62,9 +51,6 @@ async function isAssigneeAllowedHere(app: App): Promise<boolean> {
 	}
 }
 
-/**
- * Build the set of "assignment target" members from org-structure for a file.
- */
 function buildAssignmentTargets(
 	members: MemberInfo[],
 	_buckets: MembersBuckets
@@ -72,7 +58,7 @@ function buildAssignmentTargets(
 	const out: Array<{
 		memberName: string;
 		memberSlug: string;
-		memberLabel: string; // e.g., "Team Member", "Internal Team", ...
+		memberLabel: string;
 		memberType:
 			| "teamMember"
 			| "delegateTeam"
@@ -93,22 +79,12 @@ function buildAssignmentTargets(
 	return out;
 }
 
-/**
- * Authoritative template id for assignee.
- */
 const ASSIGNEE_TEMPLATE_ID = "members.assignee";
 
-/**
- * Create a safe command id suffix from arbitrary text.
- */
 function safeIdPart(s: string): string {
 	return s.toLowerCase().replace(/[^a-z0-9._-]/g, "_");
 }
 
-/**
- * Human formatted command name per spec:
- * "Assign as <active/inactive> to <Member Name> (<Member type>)"
- */
 function makeCommandName(
 	state: "active" | "inactive",
 	memberName: string,
@@ -117,10 +93,6 @@ function makeCommandName(
 	return `Assign as ${state} to ${memberName} (${memberLabel})`;
 }
 
-/**
- * Remove all assignment wrappers of the specified assignType ("assignee" or "delegate")
- * from the current editor line before inserting a new one.
- */
 function clearExistingOfTypeOnCurrentLine(
 	editor: any,
 	assignType: "assignee" | "delegate"
@@ -136,21 +108,29 @@ function clearExistingOfTypeOnCurrentLine(
 				{ line: lineNo, ch: 0 },
 				{ line: lineNo, ch: lineText.length }
 			);
-			// place cursor at end
 			editor.setCursor?.({ line: lineNo, ch: updated.length });
 		}
-	} catch {
-		// ignore
-	}
+	} catch {}
 }
 
-/**
- * Register dynamic assignment commands.
- * - Two commands per member associated with the open file (active/inactive).
- * - One "Everyone" command (active only) if file is associated with a team.
- * - Commands are dynamically rebuilt on file/view/content changes (debounced).
- * - Commands only enable/appear when the current line is a task or empty (assignee template rule).
- */
+// Resolve the preferred DOM target for events (content root) plus global fallback
+function getEventTargets(app: App): EventTarget[] {
+	const targets: EventTarget[] = [];
+	const globalDoc = (window as any)?.document ?? document;
+	if (globalDoc) targets.push(globalDoc);
+
+	const view = getActiveMarkdownView(app);
+	const cmHolder = view as unknown as {
+		editor?: { cm?: { contentDOM?: HTMLElement } };
+	};
+	const cmContent =
+		cmHolder?.editor?.cm?.contentDOM ??
+		view?.containerEl?.querySelector?.(".cm-content") ??
+		null;
+	if (cmContent) targets.unshift(cmContent);
+	return targets;
+}
+
 export async function registerTaskAssignmentDynamicCommands(
 	app: App,
 	plugin: Plugin,
@@ -163,24 +143,18 @@ export async function registerTaskAssignmentDynamicCommands(
 	const removeCommand = (id: string) => {
 		try {
 			(app as any)?.commands?.removeCommand?.(id);
-		} catch {
-			// ignore
-		}
+		} catch {}
 	};
 
 	const clearAll = () => {
-		for (const id of currentIds) {
-			removeCommand(id);
-		}
+		for (const id of currentIds) removeCommand(id);
 		currentIds.clear();
 	};
 
-	// Ensure cleanup on unload
 	plugin.register(() => {
 		clearAll();
 	});
 
-	// Core recompute: rebuild the full set of commands for the current active file
 	const recompute = async () => {
 		clearAll();
 
@@ -188,14 +162,10 @@ export async function registerTaskAssignmentDynamicCommands(
 		const filePath = view?.file?.path ?? "";
 		if (!filePath) return;
 
-		// Ask org-structure which team and members apply to this file
 		const { members, buckets, team } =
 			ports.orgStructure.getTeamMembersForFile(filePath);
-
-		// Build assignment targets (sorted as provided by the service)
 		const targets = buildAssignmentTargets(members, buckets);
 
-		// Build and register commands: 2 per member (active, inactive)
 		for (const t of targets) {
 			for (const state of ["active", "inactive"] as const) {
 				const id = `${manifestId}:assign:${safeIdPart(
@@ -211,9 +181,6 @@ export async function registerTaskAssignmentDynamicCommands(
 					id,
 					name,
 					checkCallback: (checking: boolean) => {
-						// Only enable when:
-						// - The member is still applicable for the current file
-						// - The current line is a task or empty
 						const v = getActiveMarkdownView(app);
 						if (!v?.file?.path) return false;
 
@@ -227,16 +194,12 @@ export async function registerTaskAssignmentDynamicCommands(
 						);
 						if (!exists) return false;
 
-						// Enforce allowed-on (task-only) rule for assignee template
-						// but allow empty line (we'll coerce it to a task line on insert).
-						// If checking: return boolean. If invoking: perform insertion and return true.
 						const whenAllowed = async () => {
 							const ok = await isAssigneeAllowedHere(app);
 							return ok;
 						};
 
 						if (checking) {
-							// Synchronous fallback: we try best-effort sync check. If view/editor missing, hide.
 							const vnow = getActiveMarkdownView(app);
 							if (!vnow || !(vnow as any).editor) return false;
 
@@ -265,7 +228,6 @@ export async function registerTaskAssignmentDynamicCommands(
 							return true;
 						}
 
-						// Use live filePath for insertion
 						const pathNow = vnow.file?.path ?? "";
 						if (!pathNow) {
 							new Notice("No active file.");
@@ -282,10 +244,14 @@ export async function registerTaskAssignmentDynamicCommands(
 							}
 
 							try {
-								// Enforce uniqueness: remove any existing of the same assignType on this line
+								const beforeLines = (
+									editor.getValue?.() ?? ""
+								).split(/\r?\n/);
+								const parentLine0 =
+									editor.getCursor?.().line ?? 0;
+
 								const assignType: "assignee" | "delegate" =
 									t.memberType === "teamMember" ||
-									// treat "special" (Everyone) as assignee
 									(t as any).memberType === "special"
 										? "assignee"
 										: "delegate";
@@ -305,7 +271,40 @@ export async function registerTaskAssignmentDynamicCommands(
 										assignmentState: state,
 									}
 								);
+
+								// Emit cascade event only for assignee (not delegates)
+								if (assignType === "assignee") {
+									const targets = getEventTargets(app);
+									const detail = {
+										filePath: pathNow,
+										parentLine0,
+										beforeLines,
+										newAssigneeSlug:
+											(t as any).memberType === "special"
+												? "everyone"
+												: t.memberSlug,
+									};
+									console.log(
+										"[assign] command invoked; dispatch cascade",
+										{
+											id,
+											target: t.memberSlug,
+											state,
+											detail,
+											targets: targets.length,
+										}
+									);
+									for (const target of targets) {
+										(target as any).dispatchEvent?.(
+											new CustomEvent(
+												"agile:assignee-changed",
+												{ detail }
+											)
+										);
+									}
+								}
 							} catch (err) {
+								console.error("[assign] unexpected error", err);
 								new Notice(
 									`Insert failed: ${String(
 										(err as Error)?.message ?? err
@@ -322,7 +321,6 @@ export async function registerTaskAssignmentDynamicCommands(
 			}
 		}
 
-		// Special "Everyone" (active only) when file is associated with a team
 		if (team) {
 			const everyoneId = `${manifestId}:assign:everyone:active`;
 			const everyoneName = `Assign as active to Everyone (Special)`;
@@ -374,7 +372,11 @@ export async function registerTaskAssignmentDynamicCommands(
 							return;
 						}
 						try {
-							// Enforce uniqueness: 'Everyone' is an assignee
+							const beforeLines = (
+								editor.getValue?.() ?? ""
+							).split(/\r?\n/);
+							const parentLine0 = editor.getCursor?.().line ?? 0;
+
 							clearExistingOfTypeOnCurrentLine(
 								editor,
 								"assignee"
@@ -391,7 +393,36 @@ export async function registerTaskAssignmentDynamicCommands(
 									assignmentState: "active",
 								}
 							);
+
+							const targets = getEventTargets(app);
+							const detail = {
+								filePath: pathNow,
+								parentLine0,
+								beforeLines,
+								newAssigneeSlug: "everyone",
+							};
+							console.log(
+								"[assign] command invoked; dispatch cascade",
+								{
+									id: everyoneId,
+									target: "everyone",
+									state: "active",
+									detail,
+									targets: targets.length,
+								}
+							);
+							for (const target of targets) {
+								try {
+									(target as any).dispatchEvent?.(
+										new CustomEvent(
+											"agile:assignee-changed",
+											{ detail }
+										)
+									);
+								} catch {}
+							}
 						} catch (err) {
+							console.error("[assign] unexpected error", err);
 							new Notice(
 								`Insert failed: ${String(
 									(err as Error)?.message ?? err

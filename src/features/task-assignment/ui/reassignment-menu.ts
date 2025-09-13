@@ -12,6 +12,7 @@ import {
 	removeWrappersOfTypeOnLine,
 	replaceWrapperInstanceOnLine,
 } from "../app/assignment-inline-utils";
+import { getDisplayNameFromAlias } from "@shared/identity";
 
 type AssignType = "assignee" | "delegate";
 
@@ -75,8 +76,14 @@ function buildAssignmentTargets(
 
 	for (const m of members) {
 		const c = classifyMember(m);
+		// Use display name from alias
+		const display =
+			getDisplayNameFromAlias(m.alias ?? "") ||
+			m.name?.trim() ||
+			m.alias?.trim() ||
+			"";
 		out.push({
-			memberName: m.name?.trim() ?? m.alias?.trim() ?? "",
+			memberName: display,
 			memberSlug: (m.alias ?? "").trim(),
 			memberLabel: c.label,
 			memberType: mapMemberKindToAssigneeType(c.kind),
@@ -104,6 +111,25 @@ function updateEditorLine(editor: any, lineNo: number, newText: string) {
 	placeCursorEndOfLine(editor, lineNo, newText);
 }
 
+// Resolve the preferred DOM target for events (content root) plus global fallback
+function getEventTargets(app: App, view: MarkdownView | null): EventTarget[] {
+	const targets: EventTarget[] = [];
+	const globalDoc = (window as any)?.document ?? document;
+	if (globalDoc) targets.push(globalDoc);
+
+	const cmHolder = (view ?? getActiveView(app)) as unknown as {
+		editor?: { cm?: { contentDOM?: HTMLElement } };
+	};
+	const cmContent =
+		cmHolder?.editor?.cm?.contentDOM ??
+		(view ?? getActiveView(app))?.containerEl?.querySelector?.(
+			".cm-content"
+		) ??
+		null;
+	if (cmContent) targets.unshift(cmContent as EventTarget);
+	return targets;
+}
+
 /**
  * Inserts menu items for all options appropriate to the clicked wrapper.
  */
@@ -116,6 +142,7 @@ function buildMenuForAssignment(
 		instanceId: string;
 		filePath: string;
 		app: App;
+		plugin: Plugin;
 		ports: { orgStructure: OrgStructurePort };
 	}
 ) {
@@ -146,15 +173,46 @@ function buildMenuForAssignment(
 			const lineNo = findLineIndexByInstanceId(editor, instanceId);
 			if (lineNo < 0) return;
 			const before = editor.getLine(lineNo) ?? "";
-			// Remove this wrapper instance; keep others (including the other assign type)
+
+			// Capture true pre-mutation snapshot and old slug from the clicked wrapper
+			const beforeDoc = (editor.getValue() ?? "").split(/\r?\n/);
 			const wrappers = findAssignmentWrappersOnLine(before);
 			const target = wrappers.find((w) => w.instanceId === instanceId);
+			const oldSlug =
+				(target?.assignType === "assignee"
+					? /data-member-slug="([^"]+)"/.exec(
+							target?.segment || ""
+					  )?.[1]
+					: null) || null;
+
+			// Remove this wrapper instance; keep others (including the other assign type)
 			if (!target) return;
 			let updated =
 				before.slice(0, target.start) + before.slice(target.end);
 			// Normalize spaces
 			updated = updated.replace(/ {2,}/g, " ").replace(/\s+$/, " ");
 			updateEditorLine(editor, lineNo, updated);
+
+			// If we removed an assignee wrapper, emit cascade with pre-mutation state + explicit oldAssigneeSlug
+			if (isAssignee) {
+				const targetsEls = getEventTargets(app, view);
+				const detail = {
+					filePath,
+					parentLine0: lineNo,
+					beforeLines: beforeDoc, // true pre-mutation doc
+					newAssigneeSlug: null, // cleared
+					oldAssigneeSlug: oldSlug, // explicit from clicked wrapper
+				};
+				for (const t of targetsEls) {
+					try {
+						(t as any).dispatchEvent?.(
+							new CustomEvent("agile:assignee-changed", {
+								detail,
+							})
+						);
+					} catch {}
+				}
+			}
 		});
 	});
 
@@ -177,11 +235,18 @@ function buildMenuForAssignment(
 				const lineNo = findLineIndexByInstanceId(editor, instanceId);
 				if (lineNo < 0) return;
 
-				// Render the new wrapper HTML (reuse the same instance id for seamless replacement)
+				// Build the new assignee HTML using the display name. For "everyone", enforce special.
+				const isEveryone =
+					memberType === "special" ||
+					memberSlug.trim().toLowerCase() === "everyone";
+				const displayName = isEveryone
+					? "Everyone"
+					: getDisplayNameFromAlias(memberSlug) || memberName;
+
 				let newHtml = renderTemplateOnly("members.assignee", {
-					memberName,
-					memberSlug,
-					memberType,
+					memberName: displayName,
+					memberSlug: memberSlug,
+					memberType: isEveryone ? "special" : memberType,
 					assignmentState: nextState,
 				});
 
@@ -192,6 +257,20 @@ function buildMenuForAssignment(
 				);
 
 				const before = editor.getLine(lineNo) ?? "";
+				const beforeDoc = (editor.getValue() ?? "").split(/\r?\n/);
+
+				// Extract old slug from the clicked wrapper before we replace it
+				const wrappers = findAssignmentWrappersOnLine(before);
+				const target = wrappers.find(
+					(w) => w.instanceId === instanceId
+				);
+				const oldSlug =
+					(target?.assignType === "assignee"
+						? /data-member-slug="([^"]+)"/.exec(
+								target?.segment || ""
+						  )?.[1]
+						: null) || null;
+
 				// Replace the clicked wrapper with the new one
 				let updated = replaceWrapperInstanceOnLine(
 					before,
@@ -210,6 +289,30 @@ function buildMenuForAssignment(
 				updated = updated.replace(/\s+$/, " ");
 
 				updateEditorLine(editor, lineNo, updated);
+
+				// Emit cascade only when the assignment type is the primary "assignee"
+				if (assignType === "assignee") {
+					const targetsEls = getEventTargets(app, view);
+					const detail = {
+						filePath,
+						parentLine0: lineNo,
+						// Provide a true pre-mutation snapshot; override parent line with 'before'
+						beforeLines: beforeDoc.map((s: string, idx: number) =>
+							idx === lineNo ? before : s
+						),
+						newAssigneeSlug: isEveryone ? "everyone" : memberSlug,
+						oldAssigneeSlug: oldSlug, // explicitly pass the previous assignee
+					};
+					for (const t of targetsEls) {
+						try {
+							(t as any).dispatchEvent?.(
+								new CustomEvent("agile:assignee-changed", {
+									detail,
+								})
+							);
+						} catch {}
+					}
+				}
 			});
 		});
 	};
@@ -249,7 +352,9 @@ function buildMenuForAssignment(
 		// Team members only (exclude delegates)
 		for (const t of targets) {
 			if (t.memberType !== "teamMember") continue;
-			const display = toTitleCase(t.memberName || t.memberSlug || "");
+			const display =
+				getDisplayNameFromAlias(t.memberSlug) ||
+				toTitleCase(t.memberName || t.memberSlug || "");
 			if (t.memberSlug.toLowerCase() === currentSlug.toLowerCase()) {
 				addAssignItem(
 					`${display} (${toTitleCase(stateOpposite)})`,
@@ -287,7 +392,9 @@ function buildMenuForAssignment(
 		);
 
 		for (const t of delegateTargets) {
-			const display = toTitleCase(t.memberName || t.memberSlug || "");
+			const display =
+				getDisplayNameFromAlias(t.memberSlug) ||
+				toTitleCase(t.memberName || t.memberSlug || "");
 			const labelWithType = `${display} (${t.memberLabel})`;
 			if (t.memberSlug.toLowerCase() === currentSlug.toLowerCase()) {
 				addAssignItem(
@@ -380,7 +487,7 @@ export function wireTaskAssignmentDomHandlers(
 			const filePath = viewNow.file?.path ?? "";
 			if (!editor || !filePath) return;
 
-			// Build and show menu at click position (FIX: use Menu import, not window.obsidian)
+			// Build and show menu at click position
 			const menu = new Menu();
 			buildMenuForAssignment(menu, {
 				assignType,
@@ -389,6 +496,7 @@ export function wireTaskAssignmentDomHandlers(
 				instanceId,
 				filePath,
 				app,
+				plugin,
 				ports,
 			});
 			// Show the menu
