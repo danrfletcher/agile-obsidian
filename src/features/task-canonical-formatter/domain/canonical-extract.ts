@@ -11,7 +11,10 @@ import {
 	removeDateTokensFromText,
 } from "./canonical-date-tokens";
 import type { Extracted, ParsedLine, TagInstance } from "./canonical-types";
-import { findAllWrappers } from "../ui/canonical-html";
+import {
+	findAllWrappers,
+	removeWrappersByTemplate,
+} from "../ui/canonical-html";
 
 // Assignee/delegate detection relies on Members.assignee template with props:
 //  - data-assign-type="assignee" | "delegate"
@@ -97,7 +100,7 @@ export function extractAll(line: string): Extracted | null {
 	const parsed = parseLine(line);
 	if (!parsed) return null;
 
-	// gather wrappers
+	// Gather wrappers using a balanced scanner (handles nested spans safely)
 	const wrappers = findAllWrappers(parsed.restSansBlockId);
 
 	// Extract date tokens
@@ -105,13 +108,11 @@ export function extractAll(line: string): Extracted | null {
 	let textSansDates = removeDateTokensFromText(parsed.restSansBlockId);
 
 	// Remove wrappers from text to get the task "plain text"
-	// We remove wrappers entirely and collapse whitespace (internally), also remove "→"
-	const textRemoveWrappers = textSansDates.replace(
-		/<span\b[^>]*\bdata-template-key="[^"]+"[^>]*>[\s\S]*?<\/span>/gi,
-		" "
-	);
+	// Use the same balanced scanner to ensure we remove full wrappers without leaving stray closers.
+	const { withoutWrappers } = removeWrappersByTemplate(textSansDates);
 
-	let taskText = textRemoveWrappers.replace(/→/g, " ");
+	// We remove wrappers entirely and collapse whitespace (internally); also remove "→"
+	let taskText = withoutWrappers.replace(/→/g, " ");
 	taskText = normalizeWhitespacePreserveTrailing(taskText);
 
 	const classes = classifyTags(wrappers);
