@@ -1,30 +1,91 @@
 import { TaskItem } from "@features/tasks";
 import { Tokens } from "./types";
 import { escapeRegExp } from "@utils";
-import { DateRe, parseYyyyMmDd, todayAtMidnight } from "@features/task-date-manager";
+import {
+	DateRe,
+	parseYyyyMmDd,
+	todayAtMidnight,
+} from "@features/task-date-manager";
 
 /**
- * Checks if a task is completed by detecting a ✅ YYYY-MM-DD marker in the text.
- *
- * Pattern: "✅ 2025-01-31" or "✅ 2025-01-31" (single space tolerated)
+ * Utility: parse new inline assignee wrappers from a task line.
+ * We only need the opening tag's attributes.
+ */
+type AssigneeSpan = {
+	assignType: "assignee" | "delegate" | null;
+	assignmentState: "active" | "inactive" | null;
+	memberSlug: string | null;
+};
+
+function getAttr(tag: string, name: string): string | null {
+	const re1 = new RegExp(`\\b${name}\\s*=\\s*"([^"]*)"`, "i");
+	const m1 = re1.exec(tag);
+	if (m1) return m1[1] ?? null;
+	const re2 = new RegExp(`\\b${name}\\s*=\\s*'([^']*)'`, "i");
+	const m2 = re2.exec(tag);
+	return m2 ? m2[1] ?? null : null;
+}
+
+function parseAssigneeSpans(text: string | undefined | null): AssigneeSpan[] {
+	if (!text || typeof text !== "string") return [];
+	const out: AssigneeSpan[] = [];
+	const openTagRe =
+		/<span\b[^>]*data-template-key\s*=\s*["']members\.assignee["'][^>]*>/gi;
+	for (const m of text.matchAll(openTagRe)) {
+		const tag = m[0] ?? "";
+		const assignTypeRaw = (
+			getAttr(tag, "data-assign-type") || ""
+		).toLowerCase();
+		const assignmentStateRaw = (
+			getAttr(tag, "data-assignment-state") || ""
+		).toLowerCase();
+		const memberSlugRaw = getAttr(tag, "data-member-slug");
+
+		const assignType: "assignee" | "delegate" | null =
+			assignTypeRaw === "assignee" || assignTypeRaw === "delegate"
+				? (assignTypeRaw as "assignee" | "delegate")
+				: null;
+
+		const assignmentState: "active" | "inactive" | null =
+			assignmentStateRaw === "active" || assignmentStateRaw === "inactive"
+				? (assignmentStateRaw as "active" | "inactive")
+				: null;
+
+		out.push({
+			assignType,
+			assignmentState,
+			memberSlug: memberSlugRaw ?? null,
+		});
+	}
+	return out;
+}
+
+/**
+ * Checks if a task is completed using the new format only:
+ * - ✅ marker, with optional space and optional date:
+ *   "✅ 2025-01-31", "✅2025-01-31", or just "✅"
  */
 export const isCompleted = (task: TaskItem): boolean => {
 	const txt = task?.text ?? "";
-	return new RegExp(
-		`${escapeRegExp(Tokens.CompletedEmoji)}\\s${DateRe.source}`
-	).test(txt);
+	const completedEmoji = escapeRegExp(Tokens.CompletedEmoji);
+	const completedWithOptionalDate = new RegExp(
+		`${completedEmoji}(?:\\s?${DateRe.source})?`
+	);
+	return completedWithOptionalDate.test(txt);
 };
 
 /**
- * Checks if a task is cancelled by detecting a ❌ YYYY-MM-DD marker in the text.
- *
- * Pattern: "❌ 2025-01-31" or "❌2025-01-31" (optional space tolerated)
+ * Checks if a task is cancelled using the new format only:
+ * - ❌ marker, with optional space and optional date:
+ *   "❌ 2025-01-31", "❌2025-01-31", or just "❌"
  */
 export const isCancelled = (task: TaskItem): boolean => {
 	const txt = task?.text ?? "";
-	return new RegExp(
-		`${escapeRegExp(Tokens.CancelledEmoji)}\\s?${DateRe.source}`
-	).test(txt);
+	const cancelledEmoji = escapeRegExp(Tokens.CancelledEmoji);
+	const cancelledWithOptionalDate = new RegExp(
+		`${cancelledEmoji}(?:\\s?${DateRe.source})?`
+	);
+	return cancelledWithOptionalDate.test(txt);
 };
 
 /**
@@ -72,9 +133,9 @@ function collectSnoozeMatches(text: string, inherited: boolean): SnoozeMatch[] {
 
 /**
  * Returns true if the task is snoozed either directly or by inheritance from ancestors.
- * Snooze rules:
+ * New-format only:
  * - Global snooze (no alias) applies to everyone until date (if provided). Without date, indefinite.
- * - Alias-specific snooze applies only to selectedAlias.
+ * - Alias-specific snooze applies only to selectedAlias (hidden within a display:none span).
  * - Inheritance is indicated with 💤⬇️ on ancestors; direct snooze uses 💤 without ⬇️.
  * - A snooze with a valid future date snoozes until that date (exclusive). Past or invalid dates do not snooze.
  */
@@ -138,9 +199,15 @@ export const isSnoozed = (
 
 /**
  * Returns whether a task is active for a specific member alias.
- * - active=true: must have active-{alias} and NOT have inactive-{alias}
- * - active=false: returns true if has inactive-{alias}
- * If alias is missing/null, returns false (cannot determine membership).
+ * New-format only via inline wrappers:
+ * <span data-template-key="members.assignee"
+ *       data-assign-type="assignee"
+ *       data-assignment-state="active|inactive"
+ *       data-member-slug="<alias>">...</span>
+ *
+ * Semantics:
+ * - active=true => must have an active marker and NOT have an inactive marker for the alias
+ * - active=false => returns true if it has an inactive marker for the alias
  */
 export const activeForMember = (
 	task: TaskItem,
@@ -149,43 +216,66 @@ export const activeForMember = (
 ): boolean => {
 	const txt = task?.text ?? "";
 	if (!selectedAlias) return false;
-	const alias = escapeRegExp(String(selectedAlias));
-	const activePattern = new RegExp(
-		`\\b${escapeRegExp(Tokens.ActivePrefix)}${alias}(?![\\w-])`,
-		"i"
+
+	const spans = parseAssigneeSpans(txt);
+	const aliasLower = String(selectedAlias).toLowerCase();
+
+	const hasActiveNew = spans.some(
+		(s) =>
+			s.assignType === "assignee" &&
+			s.assignmentState === "active" &&
+			(s.memberSlug ?? "").toLowerCase() === aliasLower
 	);
-	const inactivePattern = new RegExp(
-		`\\b${escapeRegExp(Tokens.InactivePrefix)}${alias}(?![\\w-])`,
-		"i"
+	const hasInactiveNew = spans.some(
+		(s) =>
+			s.assignType === "assignee" &&
+			s.assignmentState === "inactive" &&
+			(s.memberSlug ?? "").toLowerCase() === aliasLower
 	);
-	const hasActive = activePattern.test(txt);
-	const hasInactive = inactivePattern.test(txt);
-	return active ? hasActive && !hasInactive : hasInactive;
+
+	if (active) {
+		return hasActiveNew && !hasInactiveNew;
+	} else {
+		return hasInactiveNew;
+	}
 };
 
 /**
- * Returns true if the task is assigned to any user (has an active-<alias> tag).
+ * Returns true if the task is assigned to any user.
+ * New-format only via "assignee" wrappers.
  */
 export const isAssignedToAnyUser = (task: TaskItem): boolean => {
 	const txt = task?.text ?? "";
-	return /\bactive-[\w-]+(?![\w-])/.test(txt);
+	const spans = parseAssigneeSpans(txt);
+	return spans.some(
+		(s) =>
+			s.assignType === "assignee" &&
+			s.assignmentState === "active" &&
+			!!s.memberSlug
+	);
 };
 
 /**
  * Returns true if the task is assigned to the provided member alias OR is an active team task.
- * Note: If selectedAlias is not provided, only the team check applies.
+ * New-format only:
+ * - "Everyone" assignee via wrapper
+ * - Member-specific via activeForMember
  */
 export const isAssignedToMemberOrTeam = (
 	task: TaskItem,
 	selectedAlias?: string | null
 ): boolean => {
 	const txt = task?.text ?? "";
+	const spans = parseAssigneeSpans(txt);
 
-	const hasActiveTeam =
-		/\bactive-team\b/i.test(txt) ||
-		/class\s*=\s*["'][^"']*\bactive-team\b[^"']*["']/i.test(txt);
+	const hasEveryoneActiveNew = spans.some(
+		(s) =>
+			s.assignType === "assignee" &&
+			s.assignmentState === "active" &&
+			(s.memberSlug ?? "").toLowerCase() === "everyone"
+	);
 
-	return hasActiveTeam || activeForMember(task, true, selectedAlias);
+	return hasEveryoneActiveNew || activeForMember(task, true, selectedAlias);
 };
 
 /**

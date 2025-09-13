@@ -3,50 +3,104 @@ import { getTemplateKeysFromTask } from "@features/templating";
 import type { AgileArtifactType } from "./types";
 
 /**
- * Map known template keys to canonical AgileArtifactType used by projectView.
- * Adjust keys to your actual preset ids.
+ * Fallback: extract template keys directly from HTML wrappers if present.
+ * Looks for data-template-key="...".
  */
-const TEMPLATE_KEY_TO_TYPE = Object.freeze({
-	"agile.initiative": "initiative",
-	"agile.learningInitiative": "learning-initiative",
-	"agile.epic": "epic",
-	"agile.learningEpic": "learning-epic",
-	"agile.userStory": "story",
-	"agile.okr": "okr",
-	"agile.responsibilityRecurring": "recurring-responsibility",
-} as const);
+function extractTemplateKeysFromText(
+	text: string | undefined | null
+): string[] {
+	if (!text || typeof text !== "string") return [];
+	const re = /data-template-key\s*=\s*["']([^"']+)["']/gi;
+	const keys: string[] = [];
+	for (const m of text.matchAll(re)) {
+		if (m[1]) keys.push(m[1]);
+	}
+	return keys;
+}
 
-type TemplateKey = keyof typeof TEMPLATE_KEY_TO_TYPE;
+/**
+ * Normalize a template key to a canonical AgileArtifactType by pattern matching.
+ * This is resilient to different naming styles (kebab/camel/dotted, v2 suffixes, etc.).
+ */
+function inferTypeFromKey(key: string): AgileArtifactType | undefined {
+	const k = (key || "").toLowerCase();
+
+	// Learning Initiative
+	if (k.includes("learning") && k.includes("initiative")) {
+		return "learning-initiative";
+	}
+	// Initiative
+	if (k.includes("initiative")) {
+		return "initiative";
+	}
+
+	// Learning Epic
+	if (k.includes("learning") && k.includes("epic")) {
+		return "learning-epic";
+	}
+	// Epic
+	if (k.includes("epic")) {
+		return "epic";
+	}
+
+	// Story / User Story
+	if (
+		k.includes("userstory") ||
+		k.includes("user-story") ||
+		k.includes("user.story")
+	) {
+		return "story";
+	}
+	if (k.endsWith(".story") || k.includes(".story") || k.includes("story")) {
+		return "story";
+	}
+
+	// OKR
+	if (k.includes("okr")) {
+		return "okr";
+	}
+
+	// Recurring Responsibility
+	if (
+		k.includes("recurring-responsibility") ||
+		k.includes("responsibility.recurring") ||
+		(k.includes("responsibility") && k.includes("recurring")) ||
+		k.includes("responsibilityrecurring")
+	) {
+		return "recurring-responsibility";
+	}
+
+	return undefined;
+}
 
 /**
  * Resolve the first matching canonical type from present template keys, if any.
  * If no recognized template is present:
  * - returns "task" for non-open/done/archived items (legacy rule)
  * - returns null for open/done/archived items (preserve prior behavior)
- *
- * Note: The “task vs null” outcome for non-template items is a domain rule.
- * Keep it consistent with consumers that rely on null meaning “exclude/unknown”.
- *
- * @example
- * getAgileArtifactType(taskWithUserStoryTemplate) -> "story"
- *
- * @returns AgileArtifactType or null
  */
 export const getAgileArtifactType = (
 	task: TaskItem
 ): AgileArtifactType | null => {
-	const keys = getTemplateKeysFromTask(task) as string[];
-	for (const k of keys) {
-		const mapped = (
-			TEMPLATE_KEY_TO_TYPE as Record<
-				string,
-				AgileArtifactType | undefined
-			>
-		)[k as TemplateKey];
-		if (mapped) return mapped;
+	// Prefer templating helper
+	let keys = (getTemplateKeysFromTask(task) as string[]) ?? [];
+
+	// Fallback to scanning inline wrappers if helper returns nothing
+	if (
+		!keys.length &&
+		typeof task.text === "string" &&
+		task.text.includes("data-template-key")
+	) {
+		keys = extractTemplateKeysFromText(task.text);
 	}
 
-	// Preserve original rule: only return "task" if status is not O/d/A; else null
+	// Apply resilient inference for refactored keys
+	for (const k of keys) {
+		const inferred = inferTypeFromKey(k);
+		if (inferred) return inferred;
+	}
+
+	// No template detected -> preserve original rule
 	if (task.status !== "O" && task.status !== "d" && task.status !== "A") {
 		return "task";
 	} else {
