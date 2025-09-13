@@ -42,8 +42,7 @@ export function wireTemplatingDomHandlers(
 			>;
 			const def = groupMap[group]?.[key];
 			if (def && def.hiddenFromDynamicCommands) {
-				// Do NOT intercept this click. Let other feature handlers (e.g., task-assignment) handle it. 
-				// We intentionally do not preventDefault/stopPropagation here.
+				// Do NOT intercept this click. Let other feature handlers (e.g., task-assignment) handle it.
 				return;
 			}
 		}
@@ -66,8 +65,10 @@ export function wireTemplatingDomHandlers(
 	plugin.registerDomEvent(targetEl, "click", onClick, { capture: true });
 
 	// Enter key (delegate)
+	// Minimal delay to allow editor to apply the line split; no heavy async here.
 	const onKeyDown = async (evt: KeyboardEvent) => {
 		if (evt.key !== "Enter") return;
+
 		setTimeout(async () => {
 			try {
 				await processEnter(app, view, ports);
@@ -78,7 +79,7 @@ export function wireTemplatingDomHandlers(
 					)}`
 				);
 			}
-		}, 50);
+		}, 24);
 	};
 
 	plugin.registerDomEvent(targetEl, "keydown", onKeyDown, { capture: true });

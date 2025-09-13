@@ -110,6 +110,18 @@ export async function processClick(app: App, el: HTMLElement): Promise<void> {
 	}
 }
 
+/**
+ * Enter handling with a lightweight, single-shot guard:
+ * - Only inspects previous/current line for an artifact-item-type template.
+ * - Opens at most one modal per physical Enter.
+ * - After Insert or Cancel, the session ends; no follow-up reopen until next Enter.
+ */
+type EnterSession = {
+	key: string; // filePath#line#wrapperIdOrKey#offset
+	active: boolean;
+};
+let enterSession: EnterSession | null = null;
+
 export async function processEnter(
 	app: App,
 	view: MarkdownView,
@@ -121,8 +133,7 @@ export async function processEnter(
 		// Capture a fresh context after Enter.
 		const ctx = await getCursorContext(app, view, editor);
 
-		// Helper: detect if cursor was at end-of-line (ignoring trailing spaces) when Enter occurred.
-		// We infer this by reading the current line text and ensuring nothing non-space exists after column.
+		// Detect if cursor was at end-of-line (ignoring trailing spaces) when Enter occurred.
 		const lineText = ctx.lineText ?? editor.getLine(ctx.lineNumber) ?? "";
 		const afterCursor = lineText.slice(ctx.column ?? 0);
 		const cursorAtLogicalEOL = /^\s*$/.test(afterCursor);
@@ -130,11 +141,6 @@ export async function processEnter(
 			return;
 		}
 
-		// We need to confirm the ENTER happened from an artifact-bearing line.
-		// When Enter moves to next line, the previous line is ctx.lineNumber - 1.
-		// Some timing jitter can happen, so we check:
-		//   1) previous line
-		//   2) current line (in case event fired slightly earlier/later)
 		const filePath = ctx.filePath;
 		const curLineNo = ctx.lineNumber;
 		const prevLineNo = curLineNo - 1;
@@ -151,55 +157,116 @@ export async function processEnter(
 		const prevLine = safeGetLine(prevLineNo);
 		const curLine = safeGetLine(curLineNo);
 
-		const findWrapperInRawLine = (s: string) => {
-			const trimmed = (s ?? "").trim();
-			if (!trimmed) return null;
-
-			// Matches a wrapper like:
-			// <span ... data-template-key="group.key" ... data-order-tag="..." ...>...</span>
-			const wrapperRe =
-				/<span\b[^>]*\bdata-template-key\s*=\s*"([^"]+)"[^>]*\bdata-order-tag\s*=\s*"([^"]+)"[^>]*>.*?<\/span>/i;
-
-			const wrapperReNoOrder =
-				/<span\b[^>]*\bdata-template-key\s*=\s*"([^"]+)"[^>]*>.*?<\/span>/i;
-
-			let m = trimmed.match(wrapperRe);
-			if (m) {
-				return { templateKey: m[1] ?? null, orderTag: m[2] ?? null };
-			}
-			m = trimmed.match(wrapperReNoOrder);
-			if (m) {
-				return { templateKey: m[1] ?? null, orderTag: null };
-			}
-			return null;
+		// Scan a line for ALL wrappers, pick the right-most artifact-item-type
+		type Found = {
+			templateKey: string;
+			orderTag: string | null;
+			wrapperId: string | null;
+			start: number;
+			end: number;
 		};
 
-		// Prefer wrapper on previous line (the one we split), but accept current line if that’s where the wrapper is.
-		let wrapperInfo =
-			findWrapperInRawLine(prevLine) ?? findWrapperInRawLine(curLine);
+		const collectWrappers = (s: string): Found[] => {
+			const out: Found[] = [];
+			if (!s) return out;
 
-		if (!wrapperInfo?.templateKey) {
+			const spanOpenRe = /<span\b[^>]*>/gi;
+			let m: RegExpExecArray | null;
+			const lower = s.toLowerCase();
+
+			while ((m = spanOpenRe.exec(s)) !== null) {
+				const openIdx = m.index;
+				const gt = s.indexOf(">", openIdx);
+				if (gt === -1) break;
+
+				// Deterministic close finder
+				let depth = 1;
+				let i = gt + 1;
+				let closeEnd = -1;
+				while (i < s.length) {
+					const nextOpen = lower.indexOf("<span", i);
+					const nextClose = lower.indexOf("</span>", i);
+
+					if (nextClose === -1) break;
+
+					if (nextOpen !== -1 && nextOpen < nextClose) {
+						const gtn = s.indexOf(">", nextOpen);
+						if (gtn === -1) break;
+						depth += 1;
+						i = gtn + 1;
+						continue;
+					}
+
+					depth -= 1;
+					const endPos = nextClose + "</span>".length;
+					if (depth === 0) {
+						closeEnd = endPos;
+						break;
+					}
+					i = endPos;
+				}
+				if (closeEnd === -1) continue;
+
+				const block = s.slice(openIdx, closeEnd);
+
+				const keyMatch = block.match(
+					/\bdata-template-key\s*=\s*"([^"]+)"/i
+				);
+				if (!keyMatch) continue;
+
+				const orderMatch = block.match(
+					/\bdata-order-tag\s*=\s*"([^"]+)"/i
+				);
+				const idMatch = block.match(
+					/\bdata-template-wrapper\s*=\s*"([^"]+)"/i
+				);
+
+				out.push({
+					templateKey: keyMatch[1],
+					orderTag: orderMatch ? orderMatch[1] : null,
+					wrapperId: idMatch ? idMatch[1] : null,
+					start: openIdx,
+					end: closeEnd,
+				});
+			}
+			return out;
+		};
+
+		const pickArtifactItemTypeRightMost = (s: string): Found | null => {
+			const all = collectWrappers(s);
+			if (all.length === 0) return null;
+			const candidates = all.filter(
+				(w) => (w.orderTag ?? "") === "artifact-item-type"
+			);
+			if (candidates.length === 0) return null;
+			candidates.sort((a, b) => a.start - b.start);
+			return candidates[candidates.length - 1];
+		};
+
+		const prevFound = pickArtifactItemTypeRightMost(prevLine);
+		const curFound = pickArtifactItemTypeRightMost(curLine);
+		const found = prevFound ?? curFound;
+
+		if (!found?.templateKey) return;
+
+		const causeKey = `${filePath ?? ""}#${
+			prevFound ? prevLineNo : curLineNo
+		}#${found.wrapperId ?? found.templateKey}#${found.start}`;
+
+		// If a session is active for the same cause, do nothing.
+		if (enterSession?.active && enterSession.key === causeKey) {
 			return;
 		}
 
-		// Only trigger for agile artifact chain
-		if (wrapperInfo.orderTag !== "artifact-item-type") {
-			return;
-		}
-
-		// Resolve the template definition to ensure it supports params with a schema
-		const [g, k] = (wrapperInfo.templateKey ?? "").split(".");
+		// Resolve definition quickly; bail if not parameterized or hidden.
+		const [g, k] = (found.templateKey ?? "").split(".");
 		const groupMap = presetTemplates as unknown as Record<
 			string,
 			Record<string, TemplateDefinition>
 		>;
 		const def = groupMap[g]?.[k] as TemplateDefinition | undefined;
-		if (!def || !def.hasParams) {
-			return;
-		}
-		if (def.hiddenFromDynamicCommands) {
-			return;
-		}
+		if (!def || !def.hasParams) return;
+		if (def.hiddenFromDynamicCommands) return;
 
 		const schema = def.paramsSchema
 			? {
@@ -208,28 +275,36 @@ export async function processEnter(
 						def.paramsSchema.fields?.map((f) => ({ ...f })) ?? [],
 			  }
 			: undefined;
-		if (!schema) {
-			return;
-		}
+		if (!schema) return;
 
-		// Open the modal immediately (no waiting for TaskIndex or blank-task detection)
-		const params = await showSchemaModal(
-			app,
-			wrapperInfo.templateKey,
-			schema,
-			false
-		);
-		if (!params) {
-			return;
-		}
+		// Start single-shot session BEFORE opening the modal to block re-triggers caused by DOM/editor ripples.
+		enterSession = { key: causeKey, active: true };
 
-		// Insert at the current cursor. We don’t enforce that the new line is a blank task.
-		insertTemplateAtCursor(
-			wrapperInfo.templateKey,
-			editor as any,
-			filePath,
-			params as Record<string, unknown> | undefined
-		);
+		try {
+			const params = await showSchemaModal(
+				app,
+				found.templateKey,
+				schema,
+				false
+			);
+
+			if (!params) {
+				// Cancelled: end the session and return cleanly.
+				return;
+			}
+
+			// Insert once. This update will not retrigger the modal because session is still active.
+			insertTemplateAtCursor(
+				found.templateKey,
+				editor as any,
+				filePath,
+				params as Record<string, unknown> | undefined
+			);
+		} finally {
+			// Session ends after we have either cancelled or inserted.
+			// This guarantees no duplicate modal opens for the same Enter press.
+			enterSession = null;
+		}
 	} catch (err) {
 		console.error(
 			"[templating] processEnter: error",
