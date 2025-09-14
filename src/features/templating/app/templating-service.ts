@@ -114,7 +114,9 @@ export function insertTemplate<TParams = unknown>(
 	if (!tpl || typeof tpl !== "object" || typeof tpl.render !== "function") {
 		throw new TemplateInsertError(
 			`Unknown or invalid template: ${templateId}`,
-			{ code: "UNKNOWN_TEMPLATE" }
+			{
+				code: "UNKNOWN_TEMPLATE",
+			}
 		);
 	}
 
@@ -180,7 +182,9 @@ export function insertTemplateAtCursor<TParams = unknown>(
 	if (!tpl || typeof tpl !== "object" || typeof tpl.render !== "function") {
 		throw new TemplateInsertError(
 			`Unknown or invalid template: ${templateId}`,
-			{ code: "UNKNOWN_TEMPLATE" }
+			{
+				code: "UNKNOWN_TEMPLATE",
+			}
 		);
 	}
 
@@ -269,7 +273,9 @@ export function renderTemplateOnly<TParams = unknown>(
 	if (!tpl || typeof tpl !== "object" || typeof tpl.render !== "function") {
 		throw new TemplateInsertError(
 			`Unknown or invalid template: ${templateId}`,
-			{ code: "UNKNOWN_TEMPLATE" }
+			{
+				code: "UNKNOWN_TEMPLATE",
+			}
 		);
 	}
 	const finalParams = tpl.defaults
@@ -286,94 +292,136 @@ export function renderTemplateOnly<TParams = unknown>(
  * If a template supplies parseParamsFromDom, it must also return marker-only values.
  */
 export function prefillTemplateParams(
-  templateId: string,
-  wrapperEl: HTMLElement
+	templateId: string,
+	wrapperEl: HTMLElement
 ): Record<string, unknown> | undefined {
-  const def = findTemplateById(templateId) as TemplateDefinition | undefined;
-  if (!def) return undefined;
+	const def = findTemplateById(templateId) as TemplateDefinition | undefined;
+	if (!def) return undefined;
 
-  // Template-specific override (must be marker-only)
-  if (typeof def.parseParamsFromDom === "function") {
-    try {
-      const parsed = def.parseParamsFromDom(wrapperEl) as Record<string, unknown> | undefined;
-      if (parsed && Object.keys(parsed).length > 0) return parsed;
-    } catch {
-      // fall through
-    }
-  }
+	// Template-specific override (must be marker-only)
+	if (typeof def.parseParamsFromDom === "function") {
+		try {
+			const parsed = def.parseParamsFromDom(wrapperEl) as
+				| Record<string, unknown>
+				| undefined;
+			if (parsed && Object.keys(parsed).length > 0) return parsed;
+		} catch {
+			// fall through
+		}
+	}
 
-  // Generic: explicit var markers only
-  const explicit = extractParamsFromWrapperEl(wrapperEl);
-  if (Object.keys(explicit).length > 0) return explicit;
+	// Generic: explicit var markers only
+	const explicit = extractParamsFromWrapperEl(wrapperEl);
+	if (Object.keys(explicit).length > 0) return explicit;
 
-  // No markers found. Enforce “wrapped vars only”.
-  console.warn(
-    "[templating] No [data-tpl-var] markers found for parameterized template:",
-    templateId,
-    wrapperEl
-  );
-  return {};
+	// No markers found. Enforce “wrapped vars only”.
+	console.warn(
+		"[templating] No [data-tpl-var] markers found for parameterized template:",
+		templateId,
+		wrapperEl
+	);
+	return {};
 }
 
 /**
  * Replace the first template wrapper on the current editor line with newHtml.
  * Uses instanceId if provided for precise matching; otherwise falls back to templateKey.
+ * Fallback: if not found on the current line, scan the entire file for the wrapper instance id.
  */
 export async function replaceTemplateWrapperOnCurrentLine(
-  app: any,
-  view: any,
-  editor: MinimalEditor,
-  templateKey: string,
-  newHtml: string,
-  wrapperInstanceId?: string
+	app: any,
+	view: any,
+	editor: MinimalEditor,
+	templateKey: string,
+	newHtml: string,
+	wrapperInstanceId?: string
 ): Promise<void> {
-  try {
-    const cur = editor.getCursor();
-    const lineNo = cur.line;
-    const lineText = editor.getLine(lineNo);
+	try {
+		const tryReplaceOnLine = (lineNo: number): boolean => {
+			const lineText = editor.getLine(lineNo);
 
-    // Prefer matching by data-template-wrapper (unique per instance)
-    const openTagRe = new RegExp(
-      wrapperInstanceId
-        ? `<span\\b[^>]*\\bdata-template-wrapper\\s*=\\s*"${escapeRegExp(wrapperInstanceId)}"[^>]*>`
-        : `<span\\b[^>]*\\bdata-template-key\\s*=\\s*"${escapeRegExp(templateKey)}"[^>]*>`,
-      "i"
-    );
+			const openTagRe = new RegExp(
+				wrapperInstanceId
+					? `<span\\b[^>]*\\bdata-template-wrapper\\s*=\\s*"${escapeRegExp(
+							wrapperInstanceId
+					  )}"[^>]*>`
+					: `<span\\b[^>]*\\bdata-template-key\\s*=\\s*"${escapeRegExp(
+							templateKey
+					  )}"[^>]*>`,
+				"i"
+			);
 
-    const openMatch = openTagRe.exec(lineText);
-    if (!openMatch) {
-      console.debug(
-        "[templating] replaceTemplateWrapperOnCurrentLine: wrapper not found on line",
-        { lineNo, templateKey, wrapperInstanceId, lineText }
-      );
-      return;
-    }
+			const openMatch = openTagRe.exec(lineText);
+			if (!openMatch) return false;
 
-    const startIdx = openMatch.index;
+			const startIdx = openMatch.index;
 
-    // Find the end index of the matching </span> for this wrapper via deterministic counting
-    const endIdx = findMatchingSpanEndIndexDeterministic(lineText, startIdx);
-    if (endIdx === -1) {
-      console.warn(
-        "[templating] replaceTemplateWrapperOnCurrentLine: could not find matching </span> for wrapper",
-        { lineNo, templateKey, wrapperInstanceId }
-      );
-      return;
-    }
+			// Find the end index of the matching </span> for this wrapper via deterministic counting
+			const endIdx = findMatchingSpanEndIndexDeterministic(
+				lineText,
+				startIdx
+			);
+			if (endIdx === -1) {
+				console.warn(
+					"[templating] replaceTemplateWrapperOnCurrentLine: could not find matching </span> for wrapper",
+					{ lineNo, templateKey, wrapperInstanceId }
+				);
+				return false;
+			}
 
-    const updated = lineText.slice(0, startIdx) + newHtml + lineText.slice(endIdx);
+			const updated =
+				lineText.slice(0, startIdx) + newHtml + lineText.slice(endIdx);
 
-    const from = { line: lineNo, ch: 0 };
-    const to = { line: lineNo, ch: lineText.length };
-    editor.replaceRange(updated, from, to);
+			const from = { line: lineNo, ch: 0 };
+			const to = { line: lineNo, ch: lineText.length };
+			editor.replaceRange(updated, from, to);
 
-    // Place caret at end of line to avoid caret jumping inside HTML
-    if (typeof editor.setCursor === "function") {
-      editor.setCursor({ line: lineNo, ch: updated.length });
-    }
-  } catch (e) {
-    console.error("[templating] replaceTemplateWrapperOnCurrentLine error", e);
-  }
+			// Place caret at end of line to avoid caret jumping inside HTML
+			if (typeof editor.setCursor === "function") {
+				editor.setCursor({ line: lineNo, ch: updated.length });
+			}
+			return true;
+		};
+
+		// 1) First, try current cursor line
+		const cur = editor.getCursor();
+		const curLineNo = cur.line;
+		if (tryReplaceOnLine(curLineNo)) return;
+
+		// 2) Fallback: find wrapper instance id anywhere in the file and compute its line
+		if (wrapperInstanceId) {
+			const fileText = editor.getValue();
+			const re = new RegExp(
+				`data-template-wrapper\\s*=\\s*"${escapeRegExp(
+					wrapperInstanceId
+				)}"`,
+				"i"
+			);
+			const m = re.exec(fileText);
+			if (m && typeof m.index === "number") {
+				// Count newlines up to the match to compute the line number
+				const prefix = fileText.slice(0, m.index);
+				const lineNo = prefix.split(/\r?\n/).length - 1;
+				if (lineNo >= 0 && tryReplaceOnLine(lineNo)) {
+					return;
+				}
+			}
+		}
+
+		console.debug(
+			"[templating] replaceTemplateWrapperOnCurrentLine: wrapper not found",
+			{
+				curLineNo,
+				templateKey,
+				wrapperInstanceId,
+			}
+		);
+	} catch (e) {
+		console.error(
+			"[templating] replaceTemplateWrapperOnCurrentLine error",
+			e
+		);
+	}
 }
 
 /**
@@ -381,44 +429,47 @@ export async function replaceTemplateWrapperOnCurrentLine(
  * and count '<span' vs '</span>' to find the matching closing position.
  * This avoids regex corner cases with nested spans.
  */
-function findMatchingSpanEndIndexDeterministic(s: string, startIdx: number): number {
-  // Sanity: the startIdx must point at an opening '<span'
-  if (s.slice(startIdx, startIdx + 5).toLowerCase() !== "<span") {
-    // find the next opening from startIdx just in case
-    const firstOpen = s.toLowerCase().indexOf("<span", startIdx);
-    if (firstOpen === -1) return -1;
-    startIdx = firstOpen;
-  }
+function findMatchingSpanEndIndexDeterministic(
+	s: string,
+	startIdx: number
+): number {
+	// Sanity: the startIdx must point at an opening '<span'
+	if (s.slice(startIdx, startIdx + 5).toLowerCase() !== "<span") {
+		// find the next opening from startIdx just in case
+		const firstOpen = s.toLowerCase().indexOf("<span", startIdx);
+		if (firstOpen === -1) return -1;
+		startIdx = firstOpen;
+	}
 
-  // Move to end of the opening tag
-  const firstGt = s.indexOf(">", startIdx);
-  if (firstGt === -1) return -1;
+	// Move to end of the opening tag
+	const firstGt = s.indexOf(">", startIdx);
+	if (firstGt === -1) return -1;
 
-  let depth = 1;
-  let i = firstGt + 1;
+	let depth = 1;
+	let i = firstGt + 1;
 
-  while (i < s.length) {
-    const nextOpen = s.toLowerCase().indexOf("<span", i);
-    const nextClose = s.toLowerCase().indexOf("</span>", i);
+	while (i < s.length) {
+		const nextOpen = s.toLowerCase().indexOf("<span", i);
+		const nextClose = s.toLowerCase().indexOf("</span>", i);
 
-    // No more closing tag: unbalanced
-    if (nextClose === -1) return -1;
+		// No more closing tag: unbalanced
+		if (nextClose === -1) return -1;
 
-    // If next opening comes before next closing, it's a nested span
-    if (nextOpen !== -1 && nextOpen < nextClose) {
-      depth += 1;
-      const gt = s.indexOf(">", nextOpen);
-      if (gt === -1) return -1;
-      i = gt + 1;
-      continue;
-    }
+		// If next opening comes before next closing, it's a nested span
+		if (nextOpen !== -1 && nextOpen < nextClose) {
+			depth += 1;
+			const gt = s.indexOf(">", nextOpen);
+			if (gt === -1) return -1;
+			i = gt + 1;
+			continue;
+		}
 
-    // Otherwise we encountered a closing
-    depth -= 1;
-    const closeEnd = nextClose + "</span>".length;
-    if (depth === 0) return closeEnd;
-    i = closeEnd;
-  }
+		// Otherwise we encountered a closing
+		depth -= 1;
+		const closeEnd = nextClose + "</span>".length;
+		if (depth === 0) return closeEnd;
+		i = closeEnd;
+	}
 
-  return -1;
+	return -1;
 }

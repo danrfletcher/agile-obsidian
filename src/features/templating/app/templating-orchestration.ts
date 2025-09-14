@@ -17,6 +17,12 @@ import { showJsonModal } from "../ui/template-json-modal";
 import { MarkdownView, Notice } from "obsidian";
 import type { TaskIndexPort } from "./templating-ports";
 
+type ClickSession = {
+	key: string; // filePath#line#wrapperIdOrKey
+	active: boolean;
+};
+let clickSession: ClickSession | null = null;
+
 export async function processClick(app: App, el: HTMLElement): Promise<void> {
 	try {
 		const templateKey = el.getAttribute("data-template-key") ?? "";
@@ -33,6 +39,24 @@ export async function processClick(app: App, el: HTMLElement): Promise<void> {
 		if (def?.hiddenFromDynamicCommands) return;
 
 		if (!def || !def.hasParams) return;
+
+		// Compute a stable click-session key to suppress duplicate modals/handlers
+		const instanceId = el.getAttribute("data-template-wrapper") ?? "";
+		const view = app.workspace.getActiveViewOfType(MarkdownView) ?? null;
+		const editor: any = (view as any)?.editor;
+		const filePath = (view?.file?.path ?? "") as string;
+		const lineNo =
+			typeof editor?.getCursor?.().line === "number"
+				? editor.getCursor().line
+				: -1;
+		const causeKey = `${filePath}#${lineNo}#${instanceId || templateKey}`;
+
+		if (clickSession?.active) {
+			// If the same click cause is still active, ignore; otherwise, also ignore to keep one modal at a time.
+			if (clickSession.key === causeKey) return;
+			return;
+		}
+		clickSession = { key: causeKey, active: true };
 
 		// Prefill strictly from explicit markers (plus template-specific override)
 		const prefill = prefillTemplateParams(templateKey, el) ?? {};
@@ -58,19 +82,15 @@ export async function processClick(app: App, el: HTMLElement): Promise<void> {
 		if (!params) return;
 
 		try {
-			const view =
-				app.workspace.getActiveViewOfType(MarkdownView) ?? null;
-			const editor: any = (view as any)?.editor;
 			if (!view || !editor) {
 				// Fallback: DOM-only update
 				const fresh = renderTemplateOnly(templateKey, params);
 				// Preserve original instance id if present
-				const instanceId =
-					el.getAttribute("data-template-wrapper") ?? "";
-				const freshWithSameId = instanceId
+				const iid = instanceId;
+				const freshWithSameId = iid
 					? fresh.replace(
 							/data-template-wrapper="[^"]*"/,
-							`data-template-wrapper="${instanceId}"`
+							`data-template-wrapper="${iid}"`
 					  )
 					: fresh;
 
@@ -79,7 +99,6 @@ export async function processClick(app: App, el: HTMLElement): Promise<void> {
 			}
 
 			// Render new HTML and preserve the original instance id
-			const instanceId = el.getAttribute("data-template-wrapper") ?? "";
 			let newHtml = renderTemplateOnly(templateKey, params);
 			if (instanceId) {
 				newHtml = newHtml.replace(
@@ -107,6 +126,9 @@ export async function processClick(app: App, el: HTMLElement): Promise<void> {
 		new Notice(
 			`Template edit failed: ${String((err as Error)?.message ?? err)}`
 		);
+	} finally {
+		// End the click session regardless of outcome
+		clickSession = null;
 	}
 }
 
@@ -260,11 +282,11 @@ export async function processEnter(
 
 		// Resolve definition quickly; bail if not parameterized or hidden.
 		const [g, k] = (found.templateKey ?? "").split(".");
-		const groupMap = presetTemplates as unknown as Record<
+		const defMap = presetTemplates as unknown as Record<
 			string,
 			Record<string, TemplateDefinition>
 		>;
-		const def = groupMap[g]?.[k] as TemplateDefinition | undefined;
+		const def = defMap[g]?.[k] as TemplateDefinition | undefined;
 		if (!def || !def.hasParams) return;
 		if (def.hiddenFromDynamicCommands) return;
 
