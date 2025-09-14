@@ -27,7 +27,7 @@ export class AgileSettingTab extends PluginSettingTab {
 
 		containerEl.createEl("h1", { text: "Agile Obsidian Settings" });
 
-		containerEl.createEl("h3", { text: "Teams" });
+		containerEl.createEl("h3", { text: "Org Structure" });
 		const teamsButtons = new Setting(containerEl)
 			.setName("List Members & Teams")
 			.setDesc(
@@ -79,7 +79,7 @@ export class AgileSettingTab extends PluginSettingTab {
 			this.display()
 		);
 
-		containerEl.createEl("h3", { text: "Project View" });
+		containerEl.createEl("h3", { text: "Agile Dashboard View" });
 		new Setting(containerEl)
 			.setName("Toggle Sections")
 			.setDesc(
