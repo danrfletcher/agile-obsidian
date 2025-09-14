@@ -379,18 +379,6 @@ export class AgileDashboardView extends ItemView {
 			sleeping: false,
 			cancelled: false,
 		};
-		if (settings.showResponsibilities) {
-			processAndRenderResponsibilities(
-				container,
-				currentTasks,
-				status,
-				selectedAlias,
-				this.app,
-				taskMap,
-				childrenMap,
-				taskParams
-			);
-		}
 		if (settings.showObjectives) {
 			processAndRenderObjectives(
 				container,
@@ -403,7 +391,18 @@ export class AgileDashboardView extends ItemView {
 				taskParams
 			);
 		}
-
+		if (settings.showResponsibilities) {
+			processAndRenderResponsibilities(
+				container,
+				currentTasks,
+				status,
+				selectedAlias,
+				this.app,
+				taskMap,
+				childrenMap,
+				taskParams
+			);
+		}
 		processAndRenderArtifacts(
 			container,
 			currentTasks,
