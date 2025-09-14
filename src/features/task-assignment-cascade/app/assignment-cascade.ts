@@ -1,5 +1,5 @@
-import type { App, Plugin, TFile } from "obsidian";
-import { MarkdownView, Notice } from "obsidian";
+import type { App, Plugin } from "obsidian";
+import { MarkdownView, Notice, TFile } from "obsidian";
 import type { TaskIndexService } from "@features/task-index";
 import { renderTemplateOnly } from "@features/templating";
 import { removeWrappersOfTypeOnLine } from "@features/task-assignment";
@@ -237,7 +237,6 @@ export async function applyAssigneeCascade(
 			}
 		}
 
-		// Build explicit maps
 		const buildExplicitMap = (arr: string[]) =>
 			arr.map((ln) =>
 				isReassignableTaskLine(ln)
@@ -251,7 +250,7 @@ export async function applyAssigneeCascade(
 			? buildExplicitMap(before)
 			: explicitAfter.slice();
 
-		// If oldAlias still missing, infer from descendants' effective "before" by majority vote
+		// If oldAlias still missing, infer from descendants’ effective "before" by majority vote
 		const nearestUpExplicitRaw: NearestUpFn = (l0, map) => {
 			let cur = byLine.get(l0) ?? null;
 			while (cur) {
@@ -267,7 +266,7 @@ export async function applyAssigneeCascade(
 			map[l0] ?? nearestUpExplicitRaw(l0, map);
 
 		const effBeforeAt = effectiveWith(explicitBefore);
-		// const effAfterAt = effectiveWith(explicitAfter); // not used directly here
+		// const effAfterAt = effectiveWith(explicitAfter);
 
 		if (!oldAlias) {
 			const counts = new Map<string, number>();
@@ -278,7 +277,6 @@ export async function applyAssigneeCascade(
 				if (!eff) continue;
 				counts.set(eff, (counts.get(eff) ?? 0) + 1);
 			}
-			// Pick the most frequent assignee under the parent before the change
 			let best: { slug: string; n: number } | null = null;
 			for (const [slug, n] of counts.entries()) {
 				if (!best || n > best.n) best = { slug, n };
@@ -288,7 +286,7 @@ export async function applyAssigneeCascade(
 			}
 		}
 
-		// Force the parent's old explicit in the "before" model so prevEff computes correctly
+		// Force the parent’s old explicit in the "before" model so prevEff computes correctly
 		if (typeof oldAlias === "string" && oldAlias.length > 0) {
 			explicitBefore[parentLine0] = oldAlias;
 		}
@@ -436,19 +434,47 @@ export async function applyAssigneeCascade(
 	}
 }
 
-// ---------- event wiring ----------
+// ---------- event wiring (now supports headless) ----------
 export function wireTaskAssignmentCascade(
 	app: App,
 	plugin: Plugin,
 	ports?: CascadePorts
 ) {
+	class HeadlessEditor {
+		private _lines: string[];
+		constructor(lines: string[]) {
+			this._lines = lines.slice();
+		}
+		getValue(): string {
+			return this._lines.join("\n");
+		}
+		getLine(n: number): string {
+			return this._lines[n] ?? "";
+		}
+		// Only supports single-line full replacements used by applyAssigneeCascade
+		replaceRange(
+			newText: string,
+			from: { line: number; ch: number },
+			to: { line: number; ch: number }
+		) {
+			if (from.line !== to.line || from.ch !== 0) {
+				// Minimal implementation: clamp to full line
+			}
+			const lineNo = from.line;
+			this._lines[lineNo] = newText;
+		}
+		dumpLines(): string[] {
+			return this._lines.slice();
+		}
+	}
+
 	const onAssigneeChanged = async (evt: Event) => {
 		const ce = evt as CustomEvent<{
 			filePath: string;
 			parentLine0: number;
 			beforeLines?: string[] | null;
 			newAssigneeSlug: string | null;
-			oldAssigneeSlug?: string | null; // NEW: explicit old value from UI dispatcher
+			oldAssigneeSlug?: string | null; // explicit old value from UI dispatcher
 		}>;
 		const detail = ce?.detail;
 		if (!detail) return;
@@ -458,55 +484,98 @@ export function wireTaskAssignmentCascade(
 		try {
 			const view =
 				app.workspace.getActiveViewOfType(MarkdownView) ?? null;
-			if (!view || !view.file || view.file.path !== filePath) return;
-			const editor: any = (view as any).editor;
-			if (!editor) return;
 
-			const before = beforeLines ?? editor.getValue().split(/\r?\n/);
-			const after = editor.getValue().split(/\r?\n/);
-
-			// 1) Prefer oldAssigneeSlug if provided by dispatcher
+			// Prefer oldAssigneeSlug passed by dispatcher
 			let oldAlias: string | null =
 				(detail as any).oldAssigneeSlug ?? null;
 
-			// 2) If not provided, attempt parent-line diff recovery
+			if (view && view.file && view.file.path === filePath) {
+				const editor: any = (view as any).editor;
+				if (!editor) return;
+
+				const before = beforeLines ?? editor.getValue().split(/\r?\n/);
+				const after = editor.getValue().split(/\r?\n/);
+
+				if (!oldAlias) {
+					const beforeParent = before[parentLine0] ?? "";
+					const afterParent = after[parentLine0] ?? "";
+					const beforeSlugs =
+						extractAssigneeSlugsFromText(beforeParent);
+					const afterSlugs =
+						extractAssigneeSlugsFromText(afterParent);
+					for (const s of beforeSlugs) {
+						if (!afterSlugs.includes(s)) {
+							oldAlias = s;
+							break;
+						}
+					}
+					if (!oldAlias) {
+						oldAlias =
+							getExplicitAssigneeSlugFromText(beforeParent);
+					}
+				}
+
+				await applyAssigneeCascade(
+					app,
+					filePath,
+					editor,
+					parentLine0,
+					oldAlias,
+					newAssigneeSlug,
+					beforeLines,
+					ports ?? {}
+				);
+				return;
+			}
+
+			// Headless branch: file not open — run cascade over file content directly
+			const abs = app.vault.getAbstractFileByPath(filePath);
+			if (!(abs instanceof TFile)) return;
+
+			const afterContent = await app.vault.read(abs);
+			const afterLines = afterContent.split(/\r?\n/);
+			const headlessEditor = new HeadlessEditor(afterLines);
+
+			const before = beforeLines ?? afterLines.slice();
+			const beforeParent = before[parentLine0] ?? "";
 			if (!oldAlias) {
-				const beforeParent = before[parentLine0] ?? "";
-				const afterParent = after[parentLine0] ?? "";
+				// Try to recover old alias from before/after difference
 				const beforeSlugs = extractAssigneeSlugsFromText(beforeParent);
-				const afterSlugs = extractAssigneeSlugsFromText(afterParent);
+				const afterSlugs = extractAssigneeSlugsFromText(
+					afterLines[parentLine0] ?? ""
+				);
 				for (const s of beforeSlugs) {
 					if (!afterSlugs.includes(s)) {
 						oldAlias = s;
 						break;
 					}
 				}
-				// 3) Fallback: explicit on before parent
 				if (!oldAlias) {
 					oldAlias = getExplicitAssigneeSlugFromText(beforeParent);
 				}
 			}
 
-			console.log("[cascade] detail", {
-				filePath,
-				parentLine0,
-				newAssigneeSlug,
-				derivedOldAlias: oldAlias,
-				hasExplicitOldFromDispatcher: !!(detail as any).oldAssigneeSlug,
-				beforeLine_parent: (before[parentLine0] ?? "").slice(0, 200),
-				afterLine_parent: (after[parentLine0] ?? "").slice(0, 200),
-			});
-
 			await applyAssigneeCascade(
 				app,
 				filePath,
-				editor,
+				headlessEditor as any,
 				parentLine0,
 				oldAlias,
 				newAssigneeSlug,
 				beforeLines,
 				ports ?? {}
 			);
+
+			const newLines = headlessEditor.dumpLines();
+			if (newLines.join("\n") !== afterContent) {
+				// Let dashboard suppress double-render
+				window.dispatchEvent(
+					new CustomEvent("agile:prepare-optimistic-file-change", {
+						detail: { filePath },
+					})
+				);
+				await app.vault.modify(abs, newLines.join("\n"));
+			}
 		} catch (e) {
 			new Notice(
 				`Assignment cascade failed: ${String(

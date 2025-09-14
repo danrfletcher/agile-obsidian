@@ -1,5 +1,5 @@
 import type { App, Plugin } from "obsidian";
-import { MarkdownView, Notice, Menu } from "obsidian";
+import { MarkdownView, Notice, Menu, TFile } from "obsidian";
 import { renderTemplateOnly } from "@features/templating";
 import type {
 	OrgStructurePort,
@@ -28,16 +28,37 @@ function getActiveView(app: App): MarkdownView | null {
 	return app.workspace.getActiveViewOfType(MarkdownView) ?? null;
 }
 
-function findLineIndexByInstanceId(editor: any, instanceId: string): number {
+// Robust attribute matcher (supports ' or ")
+function hasAttrWithValue(s: string, attr: string, value: string): boolean {
+	const esc = String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	const re = new RegExp(`\\b${attr}\\s*=\\s*(['"])${esc}\\1`, "i");
+	return re.test(s);
+}
+
+function findLineIndexByInstanceIdInEditor(
+	editor: any,
+	instanceId: string
+): number {
 	try {
 		const raw = editor.getValue() ?? "";
 		const lines = raw.split(/\r?\n/);
-		const needle = `data-template-wrapper="${instanceId}"`;
 		for (let i = 0; i < lines.length; i++) {
-			if (lines[i].includes(needle)) return i;
+			if (hasAttrWithValue(lines[i], "data-template-wrapper", instanceId))
+				return i;
 		}
 	} catch {
-		// ignore
+		/* ignore */
+	}
+	return -1;
+}
+
+function findLineIndexByInstanceIdInLines(
+	lines: string[],
+	instanceId: string
+): number {
+	for (let i = 0; i < lines.length; i++) {
+		if (hasAttrWithValue(lines[i], "data-template-wrapper", instanceId))
+			return i;
 	}
 	return -1;
 }
@@ -77,7 +98,6 @@ function buildAssignmentTargets(
 
 	for (const m of members) {
 		const c = classifyMember(m);
-		// Use display name from alias
 		const display =
 			getDisplayNameFromAlias(m.alias ?? "") ||
 			m.name?.trim() ||
@@ -98,7 +118,7 @@ function placeCursorEndOfLine(editor: any, lineNo: number, lineText: string) {
 	try {
 		editor.setCursor?.({ line: lineNo, ch: lineText.length });
 	} catch {
-		// ignore
+		/* ignore */
 	}
 }
 
@@ -115,6 +135,14 @@ function updateEditorLine(editor: any, lineNo: number, newText: string) {
 // Resolve the preferred DOM target for events (content root) plus global fallback
 function getEventTargets(app: App, view: MarkdownView | null): EventTarget[] {
 	const targets: EventTarget[] = [];
+
+	// IMPORTANT: include window so the Agile Dashboard (listening on window) sees the event
+	const win: EventTarget | null =
+		typeof window !== "undefined"
+			? (window as unknown as EventTarget)
+			: null;
+	if (win) targets.push(win);
+
 	const globalDoc = (window as any)?.document ?? document;
 	if (globalDoc) targets.push(globalDoc);
 
@@ -147,38 +175,137 @@ function kindToMemberType(
 }
 
 /**
- * Inserts menu items for all options appropriate to the clicked wrapper.
- * Ensures ordering:
- *  - First: all team-member options (existing behavior)
- *  - Then: special assignees (e.g., "Everyone", future specials) alphabetically,
- *          with Active then Inactive for each special (or only the opposite state if currently selected)
- *  - Finally (footer): New Member (Active), New Member (Inactive), Remove Assignee/Delegate
+ * Headless helpers: read/modify/write the file without opening a tab.
  */
-function buildMenuForAssignment(
-	menu: Menu,
-	params: {
-		assignType: AssignType;
-		currentSlug: string;
-		currentState: "active" | "inactive";
-		instanceId: string;
-		filePath: string;
-		app: App;
-		plugin: Plugin;
-		ports: { orgStructure: OrgStructurePort };
+async function readFileLines(
+	app: App,
+	filePath: string
+): Promise<{ file: TFile; lines: string[] }> {
+	const abs = app.vault.getAbstractFileByPath(filePath);
+	if (!(abs instanceof TFile)) throw new Error(`File not found: ${filePath}`);
+	const content = await app.vault.read(abs);
+	return { file: abs, lines: content.split(/\r?\n/) };
+}
+
+async function writeFileLines(
+	app: App,
+	file: TFile,
+	lines: string[]
+): Promise<void> {
+	await app.vault.modify(file, lines.join("\n"));
+}
+
+/**
+ * Extract current assignee slug from a wrapper segment.
+ */
+function extractSlugFromWrapperSegment(segment: string): string | null {
+	const m = /data-member-slug\s*=\s*['"]([^'"]+)['"]/i.exec(segment);
+	return m ? (m[1] ?? "").trim() || null : null;
+}
+
+function generateWrapperId(): string {
+	return `agile-assignee-${Date.now().toString(36)}-${Math.random()
+		.toString(36)
+		.slice(2, 8)}`;
+}
+
+function findNearbyCandidateLine(
+	lines: string[],
+	hint0: number,
+	assignType: AssignType,
+	currentSlug: string
+): number {
+	const inRange = (i: number) => i >= 0 && i < lines.length;
+
+	const hasWrapperOfType = (s: string) =>
+		/\bdata-template-key\s*=\s*['"]members\.assignee['"]/i.test(s) &&
+		new RegExp(
+			`\\bdata-assign-type\\s*=\\s*['"](?!\\s)${assignType}['"]`,
+			"i"
+		).test(s);
+
+	const hasSlug = (s: string) =>
+		currentSlug
+			? new RegExp(
+					`\\bdata-member-slug\\s*=\\s*['"]${currentSlug.replace(
+						/[-/\\^$*+?.()|[\]{}]/g,
+						"\\$&"
+					)}['"]`,
+					"i"
+			  ).test(s)
+			: true;
+
+	// Prefer exact type+slug within ±5
+	const order: number[] = [];
+	for (let d = 0; d <= 5; d++) {
+		if (d === 0) order.push(hint0);
+		else {
+			order.push(hint0 - d, hint0 + d);
+		}
 	}
-) {
+	for (const i of order) {
+		if (!inRange(i)) continue;
+		const s = lines[i] ?? "";
+		if (hasWrapperOfType(s) && hasSlug(s)) return i;
+	}
+	// Next, type-only in the same neighborhood
+	for (const i of order) {
+		if (!inRange(i)) continue;
+		const s = lines[i] ?? "";
+		if (hasWrapperOfType(s)) return i;
+	}
+	// Fallback: first line in file with wrapper of type
+	for (let i = 0; i < lines.length; i++) {
+		if (hasWrapperOfType(lines[i] ?? "")) return i;
+	}
+	return -1;
+}
+
+type MenuMode = "editor" | "headless";
+
+type OpenMenuParams = {
+	mode?: MenuMode | "auto";
+	app: App;
+	plugin?: Plugin | null;
+	ports: { orgStructure: OrgStructurePort };
+	at: { x: number; y: number };
+	filePath: string;
+	instanceId: string;
+	assignType: AssignType;
+	currentState: "active" | "inactive";
+	currentSlug: string;
+
+	// dashboard context hints for robustness and localized refresh
+	parentUid?: string | null;
+	lineHint0?: number | null;
+};
+
+/**
+ * Exported entry point: open the reassignment menu at a position, for either editor or headless modes.
+ */
+export function openAssignmentMenuAt(params: OpenMenuParams) {
 	const {
+		mode = "auto",
+		app,
+		ports,
+		at,
+		filePath,
+		instanceId,
 		assignType,
 		currentSlug,
 		currentState,
-		instanceId,
-		filePath,
-		app,
-		ports,
+		parentUid = null,
+		lineHint0 = null,
 	} = params;
+
 	const view = getActiveView(app);
-	const editor: any = (view as any)?.editor;
-	if (!view || !editor) return;
+	const editor: any =
+		view && view.file && view.file.path === filePath
+			? (view as any)?.editor
+			: null;
+
+	const effectiveMode: MenuMode =
+		mode === "auto" ? (editor ? "editor" : "headless") : (mode as MenuMode);
 
 	const { members, buckets, team } =
 		ports.orgStructure.getTeamMembersForFile(filePath);
@@ -187,197 +314,529 @@ function buildMenuForAssignment(
 	const isAssignee = assignType === "assignee";
 	const isDelegate = assignType === "delegate";
 
-	// We'll queue items, then add them in the desired order at the end.
-	const mainItems: Array<() => void> = [];
-	const specialsItems: Array<() => void> = []; // Alphabetically sorted "special" options (assignee only)
-	const footerItems: Array<() => void> = []; // New Member (Active), New Member (Inactive), Remove
+	const menu = new Menu();
+
+	const stateOpposite = currentState === "active" ? "inactive" : "active";
+
+	// Helpers to dispatch cascade with a true pre-mutation snapshot.
+	const dispatchCascade = (
+		beforeDoc: string[],
+		lineNo: number,
+		oldAssigneeSlug: string | null,
+		newAssigneeSlug: string | null
+	) => {
+		const targetsEls = getEventTargets(app, view);
+		const detail: any = {
+			filePath,
+			parentLine0: lineNo,
+			beforeLines: beforeDoc,
+			newAssigneeSlug,
+			oldAssigneeSlug,
+		};
+		if (parentUid) detail.parentUid = parentUid;
+
+		for (const t of targetsEls) {
+			try {
+				(t as any).dispatchEvent?.(
+					new CustomEvent("agile:assignee-changed", {
+						detail,
+					})
+				);
+			} catch {
+				/* ignore */
+			}
+		}
+	};
+
+	const ensureWrapperId = (html: string, desiredId?: string | null) => {
+		const keepId = desiredId || generateWrapperId();
+		if (/\bdata-template-wrapper\s*=/.test(html)) {
+			return html.replace(
+				/\bdata-template-wrapper\s*=\s*['"][^'"]*['"]/,
+				`data-template-wrapper="${keepId}"`
+			);
+		}
+		// As a guard, add if missing (shouldn't happen for template)
+		return html.replace(
+			/^<span/i,
+			`<span data-template-wrapper="${keepId}"`
+		);
+	};
+
+	const replaceOnLineByType = (
+		line: string,
+		newHtml: string,
+		type: AssignType,
+		preferredInstance?: string | null,
+		preferredSlug?: string | null
+	): { updated: string; keptInstanceId: string } => {
+		const wrappers = findAssignmentWrappersOnLine(line);
+		let target =
+			(preferredInstance &&
+				wrappers.find((w) => w.instanceId === preferredInstance)) ||
+			(preferredSlug &&
+				wrappers.find(
+					(w) =>
+						w.assignType === type &&
+						extractSlugFromWrapperSegment(
+							w.segment || ""
+						)?.toLowerCase() === preferredSlug.toLowerCase()
+				)) ||
+			wrappers.find((w) => w.assignType === type) ||
+			null;
+
+		let keepId = target?.instanceId || null;
+		let patched = ensureWrapperId(newHtml, keepId);
+		const m = /data-template-wrapper\s*=\s*['"]([^'"]+)['"]/i.exec(patched);
+		keepId = m ? m[1] : generateWrapperId();
+		patched = ensureWrapperId(patched, keepId);
+
+		let updated: string;
+		if (target) {
+			updated =
+				line.slice(0, target.start) + patched + line.slice(target.end);
+		} else {
+			const needsSpace = line.length > 0 && !/\s$/.test(line);
+			updated = (
+				needsSpace ? `${line} ${patched}` : `${line}${patched}`
+			).replace(/\s+$/, " ");
+		}
+		updated = removeWrappersOfTypeOnLine(updated, type, keepId);
+		updated = updated.replace(/\s+$/, " ");
+		return { updated, keptInstanceId: keepId };
+	};
+
+	// Build operations for each mode
+	const ops = {
+		async replaceInEditor(args: {
+			memberName: string;
+			memberSlug: string;
+			memberType:
+				| "teamMember"
+				| "delegateTeam"
+				| "delegateTeamMember"
+				| "delegateExternal"
+				| "special";
+			nextState: "active" | "inactive";
+		}) {
+			if (!editor) return;
+
+			// Try instanceId -> neighborhood hint -> global fallback
+			let lineNo = findLineIndexByInstanceIdInEditor(editor, instanceId);
+			{
+				const raw = editor.getValue() ?? "";
+				const lines = raw.split(/\r?\n/);
+				if (lineNo < 0) {
+					const hint =
+						typeof lineHint0 === "number"
+							? Math.max(0, Math.min(lines.length - 1, lineHint0))
+							: 0;
+					lineNo = findNearbyCandidateLine(
+						lines,
+						hint,
+						assignType,
+						currentSlug
+					);
+				}
+				if (lineNo < 0) return;
+			}
+
+			const beforeLine = editor.getLine(lineNo) ?? "";
+			const beforeDoc = (editor.getValue() ?? "").split(/\r?\n/);
+
+			// Extract previous assignee slug (best effort)
+			let oldSlug: string | null = null;
+			{
+				const wrappers = findAssignmentWrappersOnLine(beforeLine);
+				const target = wrappers.find(
+					(w) => w.instanceId === instanceId
+				);
+				oldSlug =
+					(target?.assignType === "assignee"
+						? extractSlugFromWrapperSegment(target?.segment || "")
+						: null) || null;
+				if (!oldSlug) {
+					const near =
+						wrappers.find(
+							(w) =>
+								w.assignType === "assignee" &&
+								extractSlugFromWrapperSegment(
+									w.segment || ""
+								)?.toLowerCase() === currentSlug.toLowerCase()
+						) ||
+						wrappers.find((w) => w.assignType === "assignee") ||
+						null;
+					if (near) {
+						oldSlug =
+							extractSlugFromWrapperSegment(near.segment || "") ||
+							null;
+					}
+				}
+			}
+
+			const display =
+				args.memberType === "special"
+					? args.memberName
+					: getDisplayNameFromAlias(args.memberSlug) ||
+					  args.memberName;
+
+			let newHtml = renderTemplateOnly("members.assignee", {
+				memberName: display,
+				memberSlug: args.memberSlug,
+				memberType: args.memberType,
+				assignmentState: args.nextState,
+			});
+
+			// If we can preserve the instance, do so
+			const wrappers = findAssignmentWrappersOnLine(beforeLine);
+			const target =
+				wrappers.find((w) => w.instanceId === instanceId) || null;
+
+			let updated: string;
+			if (target) {
+				newHtml = ensureWrapperId(newHtml, instanceId);
+				updated = replaceWrapperInstanceOnLine(
+					beforeLine,
+					instanceId,
+					newHtml
+				);
+				updated = removeWrappersOfTypeOnLine(
+					updated,
+					assignType,
+					instanceId
+				);
+				updated = updated.replace(/\s+$/, " ");
+			} else {
+				const res = replaceOnLineByType(
+					beforeLine,
+					newHtml,
+					assignType,
+					null,
+					currentSlug || null
+				);
+				updated = res.updated;
+			}
+
+			updateEditorLine(editor, lineNo, updated);
+
+			if (isAssignee) {
+				const beforeDocForEvent = beforeDoc.map(
+					(s: string, i: number) => (i === lineNo ? beforeLine : s)
+				);
+				dispatchCascade(
+					beforeDocForEvent,
+					lineNo,
+					oldSlug,
+					args.memberSlug
+				);
+			}
+		},
+
+		async removeInEditor() {
+			if (!editor) return;
+
+			let lineNo = findLineIndexByInstanceIdInEditor(editor, instanceId);
+			{
+				const raw = editor.getValue() ?? "";
+				const lines = raw.split(/\r?\n/);
+				if (lineNo < 0) {
+					const hint =
+						typeof lineHint0 === "number"
+							? Math.max(0, Math.min(lines.length - 1, lineHint0))
+							: 0;
+					lineNo = findNearbyCandidateLine(
+						lines,
+						hint,
+						assignType,
+						currentSlug
+					);
+				}
+				if (lineNo < 0) return;
+			}
+
+			const before = editor.getLine(lineNo) ?? "";
+			const beforeDoc = (editor.getValue() ?? "").split(/\r?\n/);
+
+			const wrappers = findAssignmentWrappersOnLine(before);
+			const target =
+				wrappers.find((w) => w.instanceId === instanceId) ||
+				wrappers.find(
+					(w) =>
+						w.assignType === assignType &&
+						extractSlugFromWrapperSegment(
+							w.segment || ""
+						)?.toLowerCase() === currentSlug.toLowerCase()
+				) ||
+				wrappers.find((w) => w.assignType === assignType) ||
+				null;
+
+			const oldSlug =
+				(target?.assignType === "assignee"
+					? extractSlugFromWrapperSegment(target?.segment || "")
+					: null) || null;
+
+			if (!target) return;
+
+			let updated =
+				before.slice(0, target.start) + before.slice(target.end);
+			updated = updated.replace(/ {2,}/g, " ").replace(/\s+$/, " ");
+
+			updateEditorLine(editor, lineNo, updated);
+
+			if (isAssignee) {
+				dispatchCascade(beforeDoc, lineNo, oldSlug, null);
+			}
+		},
+
+		async replaceHeadless(args: {
+			memberName: string;
+			memberSlug: string;
+			memberType:
+				| "teamMember"
+				| "delegateTeam"
+				| "delegateTeamMember"
+				| "delegateExternal"
+				| "special";
+			nextState: "active" | "inactive";
+		}) {
+			const { file, lines } = await readFileLines(app, filePath);
+			const beforeDoc = lines.slice();
+
+			// Try instanceId -> neighborhood hint (if any) -> global fallback
+			let lineNo = findLineIndexByInstanceIdInLines(lines, instanceId);
+			if (lineNo < 0) {
+				const hint =
+					typeof lineHint0 === "number"
+						? Math.max(0, Math.min(lines.length - 1, lineHint0))
+						: 0;
+				lineNo = findNearbyCandidateLine(
+					lines,
+					hint,
+					assignType,
+					currentSlug
+				);
+			}
+			if (lineNo < 0) return;
+
+			const beforeLine = lines[lineNo] ?? "";
+
+			// Extract old slug from clicked/near wrapper in line
+			let oldSlug: string | null = null;
+			{
+				const wrappers = findAssignmentWrappersOnLine(beforeLine);
+				const target =
+					wrappers.find((w) => w.instanceId === instanceId) ||
+					wrappers.find(
+						(w) =>
+							w.assignType === "assignee" &&
+							extractSlugFromWrapperSegment(
+								w.segment || ""
+							)?.toLowerCase() === currentSlug.toLowerCase()
+					) ||
+					wrappers.find((w) => w.assignType === "assignee") ||
+					null;
+				if (target) {
+					oldSlug =
+						extractSlugFromWrapperSegment(target.segment || "") ||
+						null;
+				}
+			}
+
+			const display =
+				args.memberType === "special"
+					? args.memberName
+					: getDisplayNameFromAlias(args.memberSlug) ||
+					  args.memberName;
+
+			let newHtml = renderTemplateOnly("members.assignee", {
+				memberName: display,
+				memberSlug: args.memberSlug,
+				memberType: args.memberType,
+				assignmentState: args.nextState,
+			});
+
+			let updated: string;
+			const present = hasAttrWithValue(
+				beforeLine,
+				"data-template-wrapper",
+				instanceId
+			);
+			if (present) {
+				newHtml = ensureWrapperId(newHtml, instanceId);
+				updated = replaceWrapperInstanceOnLine(
+					beforeLine,
+					instanceId,
+					newHtml
+				);
+				updated = removeWrappersOfTypeOnLine(
+					updated,
+					assignType,
+					instanceId
+				);
+				updated = updated.replace(/\s+$/, " ");
+			} else {
+				const res = replaceOnLineByType(
+					beforeLine,
+					newHtml,
+					assignType,
+					null,
+					currentSlug || null
+				);
+				updated = res.updated;
+			}
+
+			if (updated !== beforeLine) {
+				// Notify dashboard to suppress double-render
+				window.dispatchEvent(
+					new CustomEvent("agile:prepare-optimistic-file-change", {
+						detail: { filePath },
+					})
+				);
+				lines[lineNo] = updated;
+				await writeFileLines(app, file, lines);
+			}
+
+			if (isAssignee) {
+				dispatchCascade(beforeDoc, lineNo, oldSlug, args.memberSlug);
+			}
+		},
+
+		async removeHeadless() {
+			const { file, lines } = await readFileLines(app, filePath);
+			const beforeDoc = lines.slice();
+
+			let lineNo = findLineIndexByInstanceIdInLines(lines, instanceId);
+			if (lineNo < 0) {
+				const hint =
+					typeof lineHint0 === "number"
+						? Math.max(0, Math.min(lines.length - 1, lineHint0))
+						: 0;
+				lineNo = findNearbyCandidateLine(
+					lines,
+					hint,
+					assignType,
+					currentSlug
+				);
+			}
+			if (lineNo < 0) return;
+
+			const beforeLine = lines[lineNo] ?? "";
+			const wrappers = findAssignmentWrappersOnLine(beforeLine);
+			const target =
+				wrappers.find((w) => w.instanceId === instanceId) ||
+				wrappers.find(
+					(w) =>
+						w.assignType === assignType &&
+						extractSlugFromWrapperSegment(
+							w.segment || ""
+						)?.toLowerCase() === currentSlug.toLowerCase()
+				) ||
+				wrappers.find((w) => w.assignType === assignType) ||
+				null;
+
+			const oldSlug =
+				(target?.assignType === "assignee"
+					? extractSlugFromWrapperSegment(target?.segment || "")
+					: null) || null;
+
+			if (!target) return;
+
+			let updated =
+				beforeLine.slice(0, target.start) +
+				beforeLine.slice(target.end);
+			updated = updated.replace(/ {2,}/g, " ").replace(/\s+$/, " ");
+
+			if (updated !== beforeLine) {
+				window.dispatchEvent(
+					new CustomEvent("agile:prepare-optimistic-file-change", {
+						detail: { filePath },
+					})
+				);
+				lines[lineNo] = updated;
+				await writeFileLines(app, file, lines);
+			}
+
+			if (isAssignee) {
+				dispatchCascade(beforeDoc, lineNo, oldSlug, null);
+			}
+		},
+	};
 
 	// Footer: New Member items
 	const queueNewMemberItem = (nextState: "active" | "inactive") => {
-		footerItems.push(() => {
+		menu.addItem((i) => {
 			const title = `New Member (${toTitleCase(nextState)})`;
-			menu.addItem((i) => {
-				i.setTitle(title);
-				i.onClick(() => {
-					// Build modal sources from current context
-					const teamName = team?.name ?? "Team";
-					const existingMembers = (members ?? []) as MemberInfo[];
-					const allTeams: string[] = []; // No global list available here
-					const internalTeamCodes = new Map<string, string>();
-					const submitButtonText =
-						assignType === "assignee"
-							? "Assign to New Member"
-							: "Delegate to New Member";
-					const allowedTypes =
-						assignType === "assignee"
-							? (["member"] as const)
-							: (["external", "existing"] as const);
+			i.setTitle(title);
+			i.onClick(() => {
+				const teamName = team?.name ?? "Team";
+				const existingMembers = (members ?? []) as MemberInfo[];
+				const allTeams: string[] = []; // no global list available here
+				const internalTeamCodes = new Map<string, string>();
+				const submitButtonText =
+					assignType === "assignee"
+						? "Assign to New Member"
+						: "Delegate to New Member";
+				const allowedTypes =
+					assignType === "assignee"
+						? (["member"] as const)
+						: (["external", "existing"] as const);
 
-					new AddMemberModal(
-						app,
-						teamName,
-						allTeams,
-						existingMembers,
-						internalTeamCodes,
-						async (memberName, memberAlias, selectedKind) => {
-							const lineNo = findLineIndexByInstanceId(
-								editor,
-								instanceId
-							);
-							if (lineNo < 0) return;
+				new AddMemberModal(
+					app,
+					teamName,
+					allTeams,
+					existingMembers,
+					internalTeamCodes,
+					async (memberName, memberAlias, selectedKind) => {
+						const memberType =
+							assignType === "assignee"
+								? "teamMember"
+								: kindToMemberType(selectedKind);
 
-							const before = editor.getLine(lineNo) ?? "";
-							const beforeDoc = (editor.getValue() ?? "").split(
-								/\r?\n/
-							);
-
-							// Determine memberType for the wrapper
-							const memberType =
-								assignType === "assignee"
-									? "teamMember"
-									: kindToMemberType(selectedKind);
-
-							// Render wrapper HTML
-							let newHtml = renderTemplateOnly(
-								"members.assignee",
-								{
-									memberName,
-									memberSlug: memberAlias,
-									memberType,
-									assignmentState: nextState,
-								}
-							);
-
-							// Preserve instanceId
-							newHtml = newHtml.replace(
-								/data-template-wrapper="[^"]*"/,
-								`data-template-wrapper="${instanceId}"`
-							);
-
-							// Replace clicked wrapper
-							let updated = replaceWrapperInstanceOnLine(
-								before,
-								instanceId,
-								newHtml
-							);
-
-							// Remove other wrappers of the same type on the same line (keep our instance)
-							updated = removeWrappersOfTypeOnLine(
-								updated,
-								assignType,
-								instanceId
-							);
-
-							updated = updated.replace(/\s+$/, " ");
-							updateEditorLine(editor, lineNo, updated);
-
-							// Cascade only for assignee
-							if (assignType === "assignee") {
-								const targetsEls = getEventTargets(app, view);
-								const detail = {
-									filePath,
-									parentLine0: lineNo,
-									beforeLines: beforeDoc.map(
-										(s: string, idx: number) =>
-											idx === lineNo ? before : s
-									),
-									newAssigneeSlug: memberAlias,
-									oldAssigneeSlug:
-										/data-member-slug="([^"]+)"/.exec(
-											before
-										)?.[1] ?? null,
-								};
-								for (const t of targetsEls) {
-									try {
-										(t as any).dispatchEvent?.(
-											new CustomEvent(
-												"agile:assignee-changed",
-												{
-													detail,
-												}
-											)
-										);
-									} catch {}
-								}
-							}
-						},
-						{
-							submitButtonText,
-							allowedTypes: [...allowedTypes],
-							titleText:
-								assignType === "assignee"
-									? "Assign to New Member"
-									: "Delegate to New Member",
+						if (effectiveMode === "editor") {
+							await ops.replaceInEditor({
+								memberName,
+								memberSlug: memberAlias,
+								memberType,
+								nextState,
+							});
+						} else {
+							await ops.replaceHeadless({
+								memberName,
+								memberSlug: memberAlias,
+								memberType,
+								nextState,
+							});
 						}
-					).open();
-				});
+					},
+					{
+						submitButtonText,
+						allowedTypes: [...allowedTypes],
+						titleText:
+							assignType === "assignee"
+								? "Assign to New Member"
+								: "Delegate to New Member",
+					}
+				).open();
 			});
 		});
 	};
 
 	// Footer: Remove item
 	const queueRemoveItem = () => {
-		footerItems.push(() => {
-			menu.addItem((i) => {
-				i.setTitle(isAssignee ? "Remove Assignee" : "Remove Delegate");
-				i.onClick(() => {
-					const lineNo = findLineIndexByInstanceId(
-						editor,
-						instanceId
-					);
-					if (lineNo < 0) return;
-					const before = editor.getLine(lineNo) ?? "";
-
-					// Capture true pre-mutation snapshot and old slug from the clicked wrapper
-					const beforeDoc = (editor.getValue() ?? "").split(/\r?\n/);
-					const wrappers = findAssignmentWrappersOnLine(before);
-					const target = wrappers.find(
-						(w) => w.instanceId === instanceId
-					);
-					const oldSlug =
-						(target?.assignType === "assignee"
-							? /data-member-slug="([^"]+)"/.exec(
-									target?.segment || ""
-							  )?.[1]
-							: null) || null;
-
-					// Remove this wrapper instance; keep others (including the other assign type)
-					if (!target) return;
-					let updated =
-						before.slice(0, target.start) +
-						before.slice(target.end);
-					// Normalize spaces
-					updated = updated
-						.replace(/ {2,}/g, " ")
-						.replace(/\s+$/, " ");
-					updateEditorLine(editor, lineNo, updated);
-
-					// If we removed an assignee wrapper, emit cascade with pre-mutation state + explicit oldAssigneeSlug
-					if (isAssignee) {
-						const targetsEls = getEventTargets(app, view);
-						const detail = {
-							filePath: filePath,
-							parentLine0: lineNo,
-							beforeLines: beforeDoc, // true pre-mutation doc
-							newAssigneeSlug: null, // cleared
-							oldAssigneeSlug: oldSlug, // explicit from clicked wrapper
-						};
-						for (const t of targetsEls) {
-							try {
-								(t as any).dispatchEvent?.(
-									new CustomEvent("agile:assignee-changed", {
-										detail,
-									})
-								);
-							} catch {}
-						}
-					}
-				});
+		menu.addItem((i) => {
+			i.setTitle(isAssignee ? "Remove Assignee" : "Remove Delegate");
+			i.onClick(async () => {
+				if (effectiveMode === "editor") {
+					await ops.removeInEditor();
+				} else {
+					await ops.removeHeadless();
+				}
 			});
 		});
 	};
 
-	// Main list: convenience helpers for existing members + specials
+	// Helper for adding assignment options
 	const addAssignItem = (
 		title: string,
 		memberName: string,
@@ -390,106 +849,30 @@ function buildMenuForAssignment(
 			| "special",
 		nextState: "active" | "inactive"
 	) => {
-		const bucket =
-			memberType === "special" && isAssignee ? specialsItems : mainItems;
-
-		bucket.push(() => {
-			menu.addItem((i) => {
-				i.setTitle(title);
-				i.onClick(() => {
-					const lineNo = findLineIndexByInstanceId(
-						editor,
-						instanceId
-					);
-					if (lineNo < 0) return;
-
-					// Determine display name: for specials use given memberName; otherwise derive from alias if available
-					const isSpecial = memberType === "special";
-					const computedDisplay = isSpecial
-						? memberName
-						: getDisplayNameFromAlias(memberSlug) || memberName;
-
-					let newHtml = renderTemplateOnly("members.assignee", {
-						memberName: computedDisplay,
-						memberSlug: memberSlug,
-						memberType: isSpecial ? "special" : memberType,
-						assignmentState: nextState,
+		menu.addItem((i) => {
+			i.setTitle(title);
+			i.onClick(async () => {
+				if (effectiveMode === "editor") {
+					await ops.replaceInEditor({
+						memberName,
+						memberSlug,
+						memberType,
+						nextState,
 					});
-
-					// Preserve original instanceId
-					newHtml = newHtml.replace(
-						/data-template-wrapper="[^"]*"/,
-						`data-template-wrapper="${instanceId}"`
-					);
-
-					const before = editor.getLine(lineNo) ?? "";
-					const beforeDoc = (editor.getValue() ?? "").split(/\r?\n/);
-
-					// Extract old slug from the clicked wrapper before we replace it
-					const wrappers = findAssignmentWrappersOnLine(before);
-					const target = wrappers.find(
-						(w) => w.instanceId === instanceId
-					);
-					const oldSlug =
-						(target?.assignType === "assignee"
-							? /data-member-slug="([^"]+)"/.exec(
-									target?.segment || ""
-							  )?.[1]
-							: null) || null;
-
-					// Replace the clicked wrapper with the new one
-					let updated = replaceWrapperInstanceOnLine(
-						before,
-						instanceId,
-						newHtml
-					);
-
-					// Remove any other wrappers of the same assignType on the same line
-					updated = removeWrappersOfTypeOnLine(
-						updated,
-						assignType,
-						instanceId
-					);
-
-					// Ensure trailing spacing
-					updated = updated.replace(/\s+$/, " ");
-
-					updateEditorLine(editor, lineNo, updated);
-
-					// Emit cascade only when the assignment type is the primary "assignee"
-					if (assignType === "assignee") {
-						const targetsEls = getEventTargets(app, view);
-						const detail = {
-							filePath,
-							parentLine0: lineNo,
-							// Provide a true pre-mutation snapshot; override parent line with 'before'
-							beforeLines: beforeDoc.map(
-								(s: string, idx: number) =>
-									idx === lineNo ? before : s
-							),
-							newAssigneeSlug: memberSlug,
-							oldAssigneeSlug: oldSlug, // explicitly pass the previous assignee
-						};
-						for (const t of targetsEls) {
-							try {
-								(t as any).dispatchEvent?.(
-									new CustomEvent("agile:assignee-changed", {
-										detail,
-									})
-								);
-							} catch {}
-						}
-					}
-				});
+				} else {
+					await ops.replaceHeadless({
+						memberName,
+						memberSlug,
+						memberType,
+						nextState,
+					});
+				}
 			});
 		});
 	};
 
-	const stateOpposite = currentState === "active" ? "inactive" : "active";
-
-	// MAIN LIST FIRST
+	// MAIN LIST: assignees first (team members)
 	if (isAssignee) {
-		// Team members only (exclude delegates)
 		for (const t of targets) {
 			if (t.memberType !== "teamMember") continue;
 			const display =
@@ -521,17 +904,13 @@ function buildMenuForAssignment(
 			}
 		}
 
-		// SPECIAL ASSIGNEES (bottom of main list, before footer)
-		// Start with "Everyone" for team files, then merge any additional specials provided by orgStructure (if any).
+		// SPECIAL ASSIGNEES
 		type SpecialCandidate = { name: string; slug: string };
 		const specialsMap = new Map<string, SpecialCandidate>();
 
-		// Include Everyone for team contexts
 		if (team) {
 			specialsMap.set("everyone", { name: "Everyone", slug: "everyone" });
 		}
-
-		// Optionally include any org-defined specials; ignore malformed entries and dedupe by slug
 		try {
 			const getSpecials = (ports.orgStructure as any)
 				?.getSpecialAssigneesForFile;
@@ -555,10 +934,9 @@ function buildMenuForAssignment(
 				}
 			}
 		} catch {
-			// ignore optional specials discovery
+			/* ignore optional specials discovery */
 		}
 
-		// Sort specials alphabetically by name (case-insensitive)
 		const specialsSorted = Array.from(specialsMap.values()).sort((a, b) =>
 			a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
 		);
@@ -576,7 +954,6 @@ function buildMenuForAssignment(
 					stateOpposite
 				);
 			} else {
-				// Active then Inactive
 				addAssignItem(
 					`${nameForTitle} (Active)`,
 					nameForTitle,
@@ -595,8 +972,8 @@ function buildMenuForAssignment(
 		}
 	}
 
+	// Delegates list
 	if (isDelegate) {
-		// Delegates: internal teams, internal team members, external delegates
 		const delegateTargets = targets.filter(
 			(t) =>
 				t.memberType === "delegateTeam" ||
@@ -636,23 +1013,16 @@ function buildMenuForAssignment(
 		}
 	}
 
-	// FOOTER LAST (in the requested order)
-	// 1) New Member (Active)
+	// Footer
 	queueNewMemberItem("active");
-	// 2) New Member (Inactive)
 	queueNewMemberItem("inactive");
-	// 3) Remove Assignee/Delegate
 	queueRemoveItem();
 
-	// Emit items in the correct order
-	for (const add of mainItems) add();
-	for (const add of specialsItems) add();
-	for (const add of footerItems) add();
+	menu.showAtPosition({ x: at.x, y: at.y });
 }
 
 /**
- * Wire DOM handlers to manage clicks on members.assignee wrappers (assignee / delegate marks).
- * This should be registered similarly to your templating DOM handlers.
+ * Editor-only handler (existing behavior): wires clicks inside a MarkdownView.
  */
 export function wireTaskAssignmentDomHandlers(
 	app: App,
@@ -660,7 +1030,6 @@ export function wireTaskAssignmentDomHandlers(
 	plugin: Plugin,
 	ports: { orgStructure: OrgStructurePort }
 ) {
-	// Resolve content root
 	const cmHolder = view as unknown as {
 		editor?: { cm?: { contentDOM?: HTMLElement } };
 	};
@@ -675,7 +1044,6 @@ export function wireTaskAssignmentDomHandlers(
 		) as HTMLElement | null;
 		if (!el) return;
 
-		// We handle this click; prevent downstream handlers
 		evt.preventDefault();
 		evt.stopPropagation();
 		// @ts-ignore
@@ -685,7 +1053,6 @@ export function wireTaskAssignmentDomHandlers(
 			const templateKey = el.getAttribute("data-template-key") ?? "";
 			if (templateKey !== "members.assignee") return;
 
-			// Extract current props from the wrapper
 			const instanceId = el.getAttribute("data-template-wrapper") ?? "";
 			if (!instanceId) return;
 
@@ -709,24 +1076,21 @@ export function wireTaskAssignmentDomHandlers(
 
 			const viewNow = getActiveView(app);
 			if (!viewNow) return;
-			const editor: any = (viewNow as any).editor;
 			const filePath = viewNow.file?.path ?? "";
-			if (!editor || !filePath) return;
+			if (!filePath) return;
 
-			// Build and show menu at click position
-			const menu = new Menu();
-			buildMenuForAssignment(menu, {
-				assignType,
-				currentSlug,
-				currentState,
-				instanceId,
-				filePath,
+			openAssignmentMenuAt({
+				mode: "editor",
 				app,
 				plugin,
 				ports,
+				at: { x: evt.clientX, y: evt.clientY },
+				filePath,
+				instanceId,
+				assignType,
+				currentState,
+				currentSlug,
 			});
-			// Show the menu
-			menu.showAtPosition({ x: evt.clientX, y: evt.clientY });
 		} catch (err) {
 			new Notice(
 				`Assignment menu failed: ${String(
