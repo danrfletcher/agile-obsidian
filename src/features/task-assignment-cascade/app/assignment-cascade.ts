@@ -443,7 +443,6 @@ export function wireTaskAssignmentCascade(
 	ports?: CascadePorts
 ) {
 	const onAssigneeChanged = async (evt: Event) => {
-		console.log("[cascade] received agile:assignee-changed", evt);
 		const ce = evt as CustomEvent<{
 			filePath: string;
 			parentLine0: number;
