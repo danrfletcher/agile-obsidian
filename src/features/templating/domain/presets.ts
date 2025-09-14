@@ -317,19 +317,19 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 
-	kpi: {
+	recurringResponsibility: {
 		orderTag: "artifact-item-type",
-		id: "agile.kpi",
-		label: "Agile - KPI",
+		id: "agile.recurringRes",
+		label: "Agile - Recurring Responsibility",
 		hasParams: true,
 		paramsSchema: {
-			title: "Add KPI",
+			title: "Add Recurring Responsibility",
 			fields: [
 				{
 					name: "title",
 					label: "Title",
 					required: true,
-					placeholder: "e.g., Weekly Active Users",
+					placeholder: "e.g., Post Once Per Week on Social Media",
 				},
 				{
 					name: "details",
@@ -348,11 +348,11 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 				title
 			)}</strong>${details ? `:` : ""}`;
 			const inner = `${chip({
-				id: "agile-kpi",
+				id: "agile-recurring-res",
 				text,
 				bg: colors.artifactGrey,
 			})}${details ? ` ${wrapVar("details", details)}` : ""}`;
-			return wrapTemplate("agile.kpi", inner, {
+			return wrapTemplate("agile.recurringRes", inner, {
 				orderTag: this.orderTag,
 			});
 		},
