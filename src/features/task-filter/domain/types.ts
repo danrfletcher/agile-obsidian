@@ -40,5 +40,5 @@ export const Tokens = {
 	ActivePrefix: "active-",
 	InactivePrefix: "inactive-",
 	ActiveTeamClass: "active-team",
+	// Calendar variations are handled via regex in filters for robustness.
 } as const;
-

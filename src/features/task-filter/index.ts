@@ -3,7 +3,7 @@
  *
  * Exposes:
  * - getAgileArtifactType
- * - Task filters factory (if present)
+ * - Task filters and helpers
  */
 export { getAgileArtifactType } from "./domain/agile-artifact-types";
 export * from "./domain/task-filters";

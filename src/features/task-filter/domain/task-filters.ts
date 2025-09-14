@@ -15,6 +15,7 @@ type AssigneeSpan = {
 	assignType: "assignee" | "delegate" | null;
 	assignmentState: "active" | "inactive" | null;
 	memberSlug: string | null;
+	memberType?: string | null;
 };
 
 function getAttr(tag: string, name: string): string | null {
@@ -40,6 +41,7 @@ function parseAssigneeSpans(text: string | undefined | null): AssigneeSpan[] {
 			getAttr(tag, "data-assignment-state") || ""
 		).toLowerCase();
 		const memberSlugRaw = getAttr(tag, "data-member-slug");
+		const memberTypeRaw = getAttr(tag, "data-member-type");
 
 		const assignType: "assignee" | "delegate" | null =
 			assignTypeRaw === "assignee" || assignTypeRaw === "delegate"
@@ -54,7 +56,8 @@ function parseAssigneeSpans(text: string | undefined | null): AssigneeSpan[] {
 		out.push({
 			assignType,
 			assignmentState,
-			memberSlug: memberSlugRaw ?? null,
+			memberSlug: memberSlugRaw ? memberSlugRaw.trim() : null,
+			memberType: memberTypeRaw ? memberTypeRaw.trim() : null,
 		});
 	}
 	return out;
@@ -123,8 +126,9 @@ function collectSnoozeMatches(text: string, inherited: boolean): SnoozeMatch[] {
 	);
 	const matches: SnoozeMatch[] = [];
 	for (const m of text.matchAll(re)) {
+		const rawAlias = (m[1] ?? null) as string | null;
 		matches.push({
-			alias: m[1] ?? null,
+			alias: typeof rawAlias === "string" ? rawAlias.trim() : null,
 			date: m[2] ?? null,
 		});
 	}
@@ -149,21 +153,22 @@ export const isSnoozed = (
 	}
 	const today = todayAtMidnight();
 
-	const applies = (
-		matches: SnoozeMatch[],
-		isGlobalCheck: boolean
-	): boolean => {
+	const applies = (matches: SnoozeMatch[], allowGlobal: boolean): boolean => {
 		// Global snooze (no alias)
 		const global = matches.find((m) => !m.alias);
-		if (global && isGlobalCheck) {
-			const until = parseYyyyMmDd(global.date);
+		if (global && allowGlobal) {
+			const until = parseYyyyMmDd(global.date ?? undefined);
 			if (!global.date) return true;
 			if (until && until > today) return true;
 		}
 		if (selectedAlias) {
-			const aliasMatch = matches.find((m) => m.alias === selectedAlias);
+			const aliasMatch = matches.find(
+				(m) =>
+					(m.alias ?? "").trim().toLowerCase() ===
+					selectedAlias.toLowerCase()
+			);
 			if (aliasMatch) {
-				const until = parseYyyyMmDd(aliasMatch.date);
+				const until = parseYyyyMmDd(aliasMatch.date ?? undefined);
 				if (!aliasMatch.date) return true;
 				if (until && until > today) return true;
 			}
@@ -173,7 +178,7 @@ export const isSnoozed = (
 
 	// Direct snoozes
 	const direct = collectSnoozeMatches(task.text, /* inherited */ false);
-	if (direct.length && applies(direct, /* isGlobalCheck */ true)) {
+	if (direct.length && applies(direct, /* allowGlobal */ true)) {
 		return true;
 	}
 
@@ -188,7 +193,7 @@ export const isSnoozed = (
 			parent.text ?? "",
 			/* inherited */ true
 		);
-		if (inh.length && applies(inh, /* isGlobalCheck */ true)) {
+		if (inh.length && applies(inh, /* allowGlobal */ true)) {
 			return true;
 		}
 		parentId = parent._parentId;
@@ -286,3 +291,244 @@ export const isBlankTask = (task: TaskItem): boolean => {
 	if (typeof txt !== "string") return true;
 	return txt.trim().length === 0;
 };
+
+/**
+ * Schedule parsing: detect day-of-week schedules like:
+ * - "🗓️ Sundays" / "🗓️ Sunday" (case-insensitive)
+ * - "🗓 Sundays:" (with punctuation)
+ * - "🗓️ Mon-Fri", "🗓️ Monday–Friday", "🗓️ Weekdays"
+ * - "🗓️ Weekends" (Sat + Sun)
+ * - "🗓️ Daily", "🗓️ Every day"
+ * - Lists: "🗓️ Mon, Wed, Fri", "🗓️ Tuesday and Thursday"
+ *
+ * Notes:
+ * - We only parse up to the next markup "<" to avoid pulling in HTML tags.
+ * - Multiple calendar markers are supported; if any includes today, we return true.
+ * - We accept both 🗓 and 🗓️ (with VS16) and common alternatives 📅, 📆
+ */
+const DOW_NAMES: Record<string, number> = {
+	sun: 0,
+	sunday: 0,
+	mon: 1,
+	monday: 1,
+	tue: 2,
+	tues: 2,
+	tuesday: 2,
+	wed: 3,
+	weds: 3,
+	wednesday: 3,
+	thu: 4,
+	thur: 4,
+	thurs: 4,
+	thursday: 4,
+	fri: 5,
+	friday: 5,
+	sat: 6,
+	saturday: 6,
+};
+
+function normalizeWord(w: string): string {
+	return w.toLowerCase().replace(/[^a-z]/g, "");
+}
+
+function expandRange(start: number, end: number): number[] {
+	// Inclusive, circular week
+	const out: number[] = [];
+	let cur = start;
+	out.push(cur);
+	while (cur !== end) {
+		cur = (cur + 1) % 7;
+		out.push(cur);
+	}
+	return out;
+}
+
+function parseScheduleChunk(rawChunk: string): Set<number> {
+	const days = new Set<number>();
+	const raw = rawChunk.toLowerCase().trim();
+
+	// Simple buckets
+	if (/\bdaily\b|\bevery\s*day\b/.test(raw)) {
+		[0, 1, 2, 3, 4, 5, 6].forEach((d) => days.add(d));
+		return days;
+	}
+	if (
+		/\bweekdays?\b/.test(raw) ||
+		/\bmonday\s*[-–]\s*friday\b/.test(raw) ||
+		/\bmon\s*[-–]\s*fri\b/.test(raw)
+	) {
+		[1, 2, 3, 4, 5].forEach((d) => days.add(d));
+		return days;
+	}
+	if (
+		/\bweekends?\b/.test(raw) ||
+		/\bsat\s*[-–]\s*sun\b/.test(raw) ||
+		/\bsaturday\s*[-–]\s*sunday\b/.test(raw)
+	) {
+		[6, 0].forEach((d) => days.add(d));
+		return days;
+	}
+
+	// Ranges like "Mon–Fri", "Thu-Sun"
+	const rangeRe =
+		/(sun|sunday|mon|monday|tue|tues|tuesday|wed|weds|wednesday|thu|thur|thurs|thursday|fri|friday|sat|saturday)\s*[-–]\s*(sun|sunday|mon|monday|tue|tues|tuesday|wed|weds|wednesday|thu|thur|thurs|thursday|fri|friday|sat|saturday)/gi;
+	for (const m of raw.matchAll(rangeRe)) {
+		const a = DOW_NAMES[normalizeWord(m[1])];
+		const b = DOW_NAMES[normalizeWord(m[2])];
+		if (a !== undefined && b !== undefined) {
+			expandRange(a, b).forEach((d) => days.add(d));
+		}
+	}
+
+	// Expressions like "Every Sunday", "On Tuesday and Thursday"
+	const cleaned = raw
+		.replace(/\bevery\b/gi, " ")
+		.replace(/\bon\b/gi, " ")
+		.replace(/[:.;,]+/g, " ");
+
+	// Individual days list: split on commas/and/slashes/spaces and collect
+	const tokens = cleaned
+		.split(/[,/]|(?:\band\b)/gi)
+		.flatMap((t) => t.split(/\s+/))
+		.map((t) => normalizeWord(t.replace(/s\b/, ""))) // remove trailing plural 's'
+		.filter(Boolean);
+
+	for (const tok of tokens) {
+		const d = DOW_NAMES[tok];
+		if (d !== undefined) days.add(d);
+	}
+
+	return days;
+}
+
+/**
+ * Returns true when the task text contains a recognized calendar schedule marker.
+ * We accept 🗓, 🗓️, 📅, 📆.
+ */
+export function hasCalendarScheduleMarker(task: TaskItem): boolean {
+	const txt = task?.text ?? "";
+	if (!txt) return false;
+	// u-flag for proper unicode handling
+	const markerRe = /(?:🗓️|🗓|📅|📆)/u;
+	return markerRe.test(txt);
+}
+
+export function isScheduledForToday(
+	task: TaskItem,
+	date = new Date()
+): boolean {
+	const txt = task?.text ?? "";
+	if (!txt) return false;
+
+	// Match any of the accepted calendar markers followed by the schedule text until markup/newline
+	const re = /(?:🗓️|🗓|📅|📆)\s*([^<\n\r]*)/giu;
+
+	const today = date.getDay(); // 0=Sun ... 6=Sat
+
+	for (const m of txt.matchAll(re)) {
+		const chunk = (m[1] ?? "").trim();
+		if (!chunk) continue;
+		const days = parseScheduleChunk(chunk);
+		if (days.has(today)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/**
+ * Extra helpers you can use in your dashboard predicates
+ */
+
+// Simple checkbox-open heuristic for markdown task lines beginning with "- [ ]"
+export function isMarkdownCheckboxOpen(task: TaskItem): boolean {
+	const txt = task?.text ?? "";
+	return /^\s*-\s*\[\s\]/.test(txt);
+}
+
+// Decision function for recurring responsibilities
+export function shouldShowRecurringResponsibility(
+	task: TaskItem,
+	taskMap: Map<string, TaskItem>,
+	options?: {
+		selectedAlias?: string | null;
+		date?: Date;
+		requireAssignee?: boolean; // default true
+		requireScheduleToday?: boolean; // default true, but enforced only if a calendar marker exists
+		requireOpenCheckbox?: boolean; // default false
+	}
+): boolean {
+	const {
+		selectedAlias,
+		date = new Date(),
+		requireAssignee = true,
+		requireScheduleToday = true,
+		requireOpenCheckbox = false,
+	} = options ?? {};
+
+	// Base state
+	if (!isInProgress(task, taskMap)) return false;
+
+	// Optional checkbox gating (some dashboards want "- [ ]" explicitly)
+	if (requireOpenCheckbox && !isMarkdownCheckboxOpen(task)) return false;
+
+	// Assignee gating
+	if (requireAssignee && !isAssignedToMemberOrTeam(task, selectedAlias)) {
+		return false;
+	}
+
+	// Schedule gating — only enforce DOW if a calendar marker exists on the line
+	if (requireScheduleToday && hasCalendarScheduleMarker(task)) {
+		if (!isScheduledForToday(task, date)) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+// Debug object to log exactly which checks pass/fail
+export function debugRecurringResDecision(
+	task: TaskItem,
+	taskMap: Map<string, TaskItem>,
+	options?: {
+		selectedAlias?: string | null;
+		date?: Date;
+		requireAssignee?: boolean;
+		requireScheduleToday?: boolean;
+		requireOpenCheckbox?: boolean;
+	}
+) {
+	const {
+		selectedAlias,
+		date = new Date(),
+		requireAssignee = true,
+		requireScheduleToday = true,
+		requireOpenCheckbox = false,
+	} = options ?? {};
+
+	const state = {
+		text: (task?.text ?? "").slice(0, 240),
+		isCompleted: isCompleted(task),
+		isCancelled: isCancelled(task),
+		isSnoozed: isSnoozed(task, taskMap, selectedAlias || undefined),
+		isInProgress: isInProgress(task, taskMap),
+		isMarkdownCheckboxOpen: isMarkdownCheckboxOpen(task),
+		isAssignedToMemberOrTeam: isAssignedToMemberOrTeam(task, selectedAlias),
+		hasCalendarScheduleMarker: hasCalendarScheduleMarker(task),
+		isScheduledForToday: isScheduledForToday(task, date),
+		requireAssignee,
+		requireScheduleToday,
+		requireOpenCheckbox,
+		selectedAlias: selectedAlias ?? null,
+		todayDOW: date.getDay(),
+	};
+	const result = shouldShowRecurringResponsibility(task, taskMap, {
+		selectedAlias,
+		date,
+		requireAssignee,
+		requireScheduleToday,
+		requireOpenCheckbox,
+	});
+	return { ...state, result };
+}

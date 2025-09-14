@@ -23,54 +23,107 @@ function extractTemplateKeysFromText(
  * This is resilient to different naming styles (kebab/camel/dotted, v2 suffixes, etc.).
  */
 function inferTypeFromKey(key: string): AgileArtifactType | undefined {
-	const k = (key || "").toLowerCase();
+	if (!key) return undefined;
+
+	// Lowercase and variants for robust matching
+	const k = key.toLowerCase();
+	// Flatten out separators to catch things like "agile.user_story" / "agile-userStory" / "agile.userstory"
+	const flat = k.replace(/[._-\s]+/g, "");
+
+	// Handle version suffixes like ".v2", "-v3", etc. (non-destructive for other patterns)
+	const kNoVer = k.replace(/([._-])v(?:er(?:sion)?)?\d+\b/g, "");
+	const flatNoVer = kNoVer.replace(/[._-\s]+/g, "");
+
+	const has = (s: string) =>
+		k.includes(s) ||
+		flat.includes(s) ||
+		kNoVer.includes(s) ||
+		flatNoVer.includes(s);
+
+	// Most specific first
 
 	// Learning Initiative
-	if (k.includes("learning") && k.includes("initiative")) {
+	if (
+		has("learninginitiative") ||
+		(has("learning") && has("initiative")) ||
+		has("personallearninginitiative")
+	) {
 		return "learning-initiative";
-	}
-	// Initiative
-	if (k.includes("initiative")) {
-		return "initiative";
 	}
 
 	// Learning Epic
-	if (k.includes("learning") && k.includes("epic")) {
+	if (
+		has("learningepic") ||
+		(has("learning") && has("epic")) ||
+		has("personallearningepic")
+	) {
 		return "learning-epic";
 	}
+
+	// Initiative
+	if (has("agile.initiative") || has("initiative")) {
+		return "initiative";
+	}
+
 	// Epic
-	if (k.includes("epic")) {
+	if (has("agile.epic") || has("epic")) {
 		return "epic";
 	}
 
 	// Story / User Story
-	if (
-		k.includes("userstory") ||
-		k.includes("user-story") ||
-		k.includes("user.story")
-	) {
+	if (has("agile.userstory") || has("userstory") || has("user_story")) {
 		return "story";
 	}
-	if (k.endsWith(".story") || k.includes(".story") || k.includes("story")) {
+	// Guarded fallback: "story" as a standalone token (avoid matching "history")
+	if (/(^|[^a-z])story([^a-z]|$)/.test(k)) {
 		return "story";
 	}
 
 	// OKR
-	if (k.includes("okr")) {
+	if (has("agile.okr") || has("okr")) {
 		return "okr";
 	}
 
 	// Recurring Responsibility
 	if (
-		k.includes("recurring-responsibility") ||
-		k.includes("responsibility.recurring") ||
-		(k.includes("responsibility") && k.includes("recurring")) ||
-		k.includes("responsibilityrecurring")
+		has("agile.recurringres") ||
+		has("recurringres") ||
+		has("recurring-responsibility") ||
+		has("recurringresponsibility")
 	) {
 		return "recurring-responsibility";
 	}
 
 	return undefined;
+}
+
+/**
+ * Heuristic fallback when templating is missing:
+ * If a line has "🔁" plus an assignee wrapper, treat as a recurring responsibility.
+ * Conservatively avoid colliding with initiatives/epics/stories.
+ */
+function heuristicRecurringResponsibility(
+	text: string
+): AgileArtifactType | undefined {
+	if (typeof text !== "string" || text.length === 0) return undefined;
+	const hasLoop = text.includes("🔁");
+	// New-format assignee wrapper
+	const hasAssigneeWrapper =
+		/<span\b[^>]*data-template-key\s*=\s*["']members\.assignee["'][^>]*>/i.test(
+			text
+		);
+	if (!hasLoop || !hasAssigneeWrapper) return undefined;
+
+	// Avoid misclassifying common artifact words if present elsewhere
+	const lc = text.toLowerCase();
+	if (
+		/\binitiative\b/.test(lc) ||
+		/\bepic\b/.test(lc) ||
+		/\buser\s*story\b|\bstory\b/.test(lc)
+	) {
+		return undefined;
+	}
+	return "recurring-responsibility";
 }
 
 /**
@@ -82,28 +135,48 @@ function inferTypeFromKey(key: string): AgileArtifactType | undefined {
 export const getAgileArtifactType = (
 	task: TaskItem
 ): AgileArtifactType | null => {
-	// Prefer templating helper
-	let keys = (getTemplateKeysFromTask(task) as string[]) ?? [];
+	const txt = typeof task?.text === "string" ? task.text : "";
 
-	// Fallback to scanning inline wrappers if helper returns nothing
-	if (
-		!keys.length &&
-		typeof task.text === "string" &&
-		task.text.includes("data-template-key")
-	) {
-		keys = extractTemplateKeysFromText(task.text);
-	}
+	try {
+		// Prefer templating helper
+		const keysFromHelper =
+			(getTemplateKeysFromTask(task) as string[]) ?? [];
 
-	// Apply resilient inference for refactored keys
-	for (const k of keys) {
-		const inferred = inferTypeFromKey(k);
-		if (inferred) return inferred;
-	}
+		// 1) Try helper-provided keys first
+		for (const k of keysFromHelper) {
+			const inferred = inferTypeFromKey(k);
+			if (inferred) {
+				return inferred;
+			}
+		}
 
-	// No template detected -> preserve original rule
-	if (task.status !== "O" && task.status !== "d" && task.status !== "A") {
-		return "task";
-	} else {
-		return null;
+		// 2) If no match yet, scan inline wrappers (helper may miss artifact key)
+		if (txt && txt.includes("data-template-key")) {
+			const scannedKeys = extractTemplateKeysFromText(txt);
+			for (const k of scannedKeys) {
+				const inferred = inferTypeFromKey(k);
+				if (inferred) {
+					return inferred;
+				}
+			}
+		}
+
+		// 2b) Heuristic fallback for recurring-responsibility (template missing)
+		const heuristic = heuristicRecurringResponsibility(txt);
+		if (heuristic) {
+			return heuristic;
+		}
+
+		// 3) No template detected -> preserve original rule
+		const status = (task as any)?.status;
+		return status !== "O" && status !== "d" && status !== "A"
+			? "task"
+			: null;
+	} catch {
+		// Safe fallback
+		const status = (task as any)?.status;
+		return status !== "O" && status !== "d" && status !== "A"
+			? "task"
+			: null;
 	}
 };
