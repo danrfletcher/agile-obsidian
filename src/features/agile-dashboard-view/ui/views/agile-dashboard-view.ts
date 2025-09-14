@@ -3,50 +3,64 @@ import manifest from "manifest.json";
 import { cleanupExpiredSnoozes } from "@features/task-snooze";
 import { getCurrentUserDisplayName } from "@settings/index";
 
-// Section processors
 import { processAndRenderObjectives } from "../components/objectives";
 import { processAndRenderArtifacts } from "../components/artifacts";
 import { processAndRenderInitiatives } from "../components/initiatives";
 import { processAndRenderResponsibilities } from "../components/responsibilities";
 import { processAndRenderPriorities } from "../components/priorities";
 
-// New imports for the refactored Task Index
 import type {
 	TaskItem,
-	TaskNode,
-} from "@features/task-index/domain/task-types";
-import type { TaskIndexService } from "@features/task-index";
+	TaskIndexService,
+} from "@features/task-index";
 import type { SettingsService } from "@settings";
+import type { OrgStructurePort } from "@features/org-structure";
+import { renderTeamsPopupContent, TeamsPopupContext } from "./teams-popup";
 
 export const VIEW_TYPE_AGILE_DASHBOARD = "agile-dashboard-view";
 
 export type AgileDashboardViewPorts = {
 	taskIndex?: TaskIndexService;
 	settings: SettingsService;
+	orgStructure?: OrgStructurePort;
+	manifestId?: string;
 };
 
+/**
+ * Agile Dashboard View
+ * A lean orchestrator: composes controls and delegates to focused renderers and services.
+ */
 export class AgileDashboardView extends ItemView {
 	private taskIndexService: TaskIndexService;
 	private settingsService: SettingsService;
 
-	private viewSelect: HTMLSelectElement;
-	private activeToggle: HTMLInputElement;
-	private activeToggleLabel: HTMLSpanElement;
-	private memberSelect: HTMLSelectElement;
+	private viewSelect!: HTMLSelectElement;
+	private activeToggle!: HTMLInputElement;
+	private activeToggleLabel!: HTMLSpanElement;
+	private memberSelect!: HTMLSelectElement;
 	private suppressedFiles = new Set<string>();
+
+	// Team selection UI
+	private orgStructurePort?: OrgStructurePort;
+	private selectTeamsBtn: HTMLButtonElement | null = null;
+	private teamsPopupEl: HTMLDivElement | null = null;
+	private outsideClickHandler: ((ev: MouseEvent) => void) | null = null;
+
+	// Team selection state
+	private selectedTeamSlugs: Set<string> = new Set();
+	private implicitAllSelected = true;
+	private storageKey: string;
 
 	constructor(leaf: WorkspaceLeaf, ports: AgileDashboardViewPorts) {
 		super(leaf);
 		this.settingsService = ports.settings;
 
-		// Wire the TaskIndex service through ports, with a no-op fallback
 		const svc = ports.taskIndex;
 		if (!svc) {
 			console.warn(
-				"[AgileDashboardView] TaskIndexService not found in ports. The dashboard will be empty."
+				"[AgileDashboardView] TaskIndexService not found in ports."
 			);
 			this.taskIndexService = {
-				// minimal no-op facade (typed as TaskIndexService)
 				buildAll: async () => {},
 				updateFile: async () => {},
 				removeFile: () => {},
@@ -60,6 +74,11 @@ export class AgileDashboardView extends ItemView {
 		} else {
 			this.taskIndexService = svc;
 		}
+
+		this.orgStructurePort = ports.orgStructure;
+		const mid = (ports.manifestId || "").trim() || "agile-default";
+		this.storageKey = `agile:selected-team-slugs:${mid}`;
+		this.loadSelectedTeamSlugs();
 	}
 
 	getViewType() {
@@ -78,26 +97,49 @@ export class AgileDashboardView extends ItemView {
 		const container = this.containerEl.children[1];
 		container.empty();
 
-		// Controls
+		// Controls row
 		const controlsContainer = container.createEl("div", {
-			attr: { style: "display: flex; align-items: center; gap: 10px;" },
+			attr: {
+				style: "display:flex; align-items:center; gap:8px; position:relative; flex-wrap:wrap;",
+			},
 		});
 
 		const versionText = controlsContainer.createEl("p");
 		const strongText = versionText.createEl("strong");
 		strongText.textContent = `Agile Obsidian v${manifest.version}`;
 
-		this.viewSelect = controlsContainer.createEl("select", {
-			attr: { style: "margin-right: 10px;" },
-		});
+		this.viewSelect = controlsContainer.createEl("select");
 		this.viewSelect.innerHTML = `
       <option value="projects">🚀 Projects</option>
       <option value="completed">✅ Completed</option>
     `;
 
+		// Member dropdown (grouped and sorted)
+		this.memberSelect = controlsContainer.createEl("select");
+		this.populateMemberSelectGrouped();
+
+		this.memberSelect.addEventListener("change", () => {
+			this.restrictSelectedTeamsToUserMembership();
+			this.updateView();
+			if (this.teamsPopupEl) {
+				this.renderTeamsPopup();
+			}
+		});
+
+		// Select Teams button + popup
+		this.selectTeamsBtn = controlsContainer.createEl("button", {
+			text: "Select Teams",
+		}) as HTMLButtonElement;
+		this.selectTeamsBtn.addEventListener("click", (ev) => {
+			ev.preventDefault();
+			ev.stopPropagation();
+			this.toggleTeamsPopup(this.selectTeamsBtn!);
+		});
+
+		// Active/Inactive toggle — right next to "Select Teams"
 		const statusToggleContainer = controlsContainer.createEl("span", {
 			attr: {
-				style: "display: inline-flex; align-items: center; gap: 6px;",
+				style: "display:inline-flex; align-items:center; gap:6px;",
 			},
 		});
 		this.activeToggleLabel = statusToggleContainer.createEl("span", {
@@ -123,101 +165,21 @@ export class AgileDashboardView extends ItemView {
 			this.updateView();
 		});
 
-		// Member dropdown
-		this.memberSelect = controlsContainer.createEl("select");
-
-		const populateMemberSelect = () => {
-			this.memberSelect.innerHTML = "";
-
-			type Entry = {
-				alias: string;
-				name: string;
-				role: string;
-				rank: number;
-				label: string;
-			};
-			const entries: Entry[] = [];
-
-			const settings = this.settingsService.getRaw();
-			const teams = settings.teams || [];
-			const seen = new Set<string>();
-			for (const t of teams) {
-				for (const m of t.members || []) {
-					const alias = (m.alias || "").trim();
-					const dispName = m.name || alias;
-					if (!alias) continue;
-					if (seen.has(alias)) continue;
-					seen.add(alias);
-					const lower = alias.toLowerCase();
-					let role = m.type || "member";
-					if (lower.endsWith("-ext")) role = "external";
-					else if (lower.endsWith("-team")) role = "team";
-					else if (lower.endsWith("-int"))
-						role = "internal-team-member";
-					const rank =
-						role === "member"
-							? 0
-							: role === "internal-team-member"
-							? 1
-							: role === "team"
-							? 2
-							: 3;
-					const roleLabel =
-						role === "member"
-							? "Team Member"
-							: role === "internal-team-member"
-							? "Internal Team Member"
-							: role === "team"
-							? "Internal Team"
-							: "External Delegate";
-					const label = `${dispName} (${roleLabel} - ${alias})`;
-					entries.push({ alias, name: dispName, role, rank, label });
-				}
-			}
-
-			entries.sort(
-				(a, b) => a.rank - b.rank || a.name.localeCompare(b.name)
-			);
-
-			for (const e of entries) {
-				const opt = document.createElement("option");
-				opt.value = e.alias;
-				opt.text = e.label;
-				this.memberSelect.appendChild(opt);
-			}
-
-			const def = this.settingsService.getRaw().currentUserAlias || "";
-			if (def && entries.some((e) => e.alias === def)) {
-				this.memberSelect.value = def;
-			} else if (entries.length > 0) {
-				this.memberSelect.value = entries[0].alias;
-			}
-		};
-
-		populateMemberSelect();
-
-		this.memberSelect.addEventListener("change", () => {
-			this.updateView();
-		});
-
 		// Listen for settings changes to auto-refresh
 		this.registerEvent(
-			// @ts-ignore Obsidian typings do not include custom events
+			// @ts-ignore
 			this.app.workspace.on("agile-settings-changed", () => {
 				if (this.memberSelect) {
-					const prev = this.memberSelect.value;
-					typeof populateMemberSelect === "function" &&
-						(populateMemberSelect as any)();
-					if (
-						prev &&
-						Array.from(this.memberSelect.options).some(
-							(o) => o.value === prev
-						)
-					) {
-						this.memberSelect.value = prev;
-					}
+					const prev = this.getSelectedAlias();
+					this.populateMemberSelectGrouped();
+					const exists = Array.from(this.memberSelect.options).some(
+						(o) => o.value === prev
+					);
+					if (prev && exists) this.memberSelect.value = prev!;
 				}
+				this.restrictSelectedTeamsToUserMembership();
 				this.updateView();
+				if (this.teamsPopupEl) this.renderTeamsPopup();
 			})
 		);
 
@@ -248,20 +210,32 @@ export class AgileDashboardView extends ItemView {
 			}
 		);
 
+		// Close popup when clicking outside
+		this.outsideClickHandler = (ev: MouseEvent) => {
+			if (!this.teamsPopupEl) return;
+			const target = ev.target as Node;
+			const within =
+				this.teamsPopupEl.contains(target) ||
+				this.selectTeamsBtn?.contains(target);
+			if (!within) {
+				this.closeTeamsPopup();
+			}
+		};
+		window.addEventListener("click", this.outsideClickHandler, {
+			capture: true,
+		} as any);
+
 		// Initial render
 		await this.updateView();
 
-		// Auto-refresh on vault changes.
-		// IMPORTANT: We do not rebuild index ourselves here;
-		// We simply keep the local view current by calling updateFile/remove/rename
-		// on the shared TaskIndexService instance.
+		// Auto-refresh on vault changes
 		this.registerEvent(
 			this.app.vault.on("modify", async (file: TFile) => {
 				if (file.extension === "md") {
 					await this.taskIndexService.updateFile(file);
 					if (this.suppressedFiles.has(file.path)) {
 						this.suppressedFiles.delete(file.path);
-						return; // Suppress full rerender; local DOM already updated
+						return;
 					}
 					this.updateView();
 				}
@@ -288,7 +262,6 @@ export class AgileDashboardView extends ItemView {
 				"rename",
 				async (file: TAbstractFile, oldPath: string) => {
 					if (file instanceof TFile && file.extension === "md") {
-						// Use repository-native rename to update IDs/links immutably
 						this.taskIndexService.renameFile(oldPath, file.path);
 						this.updateView();
 					}
@@ -298,7 +271,23 @@ export class AgileDashboardView extends ItemView {
 	}
 
 	async onClose() {
-		// Cleanup if needed
+		this.closeTeamsPopup();
+		if (this.outsideClickHandler) {
+			try {
+				window.removeEventListener("click", this.outsideClickHandler, {
+					capture: true,
+				} as any);
+			} catch {}
+			this.outsideClickHandler = null;
+		}
+	}
+
+	private getSelectedAlias(): string | null {
+		return (
+			this.memberSelect?.value ||
+			this.settingsService.getRaw().currentUserAlias ||
+			null
+		);
 	}
 
 	private async updateView() {
@@ -316,10 +305,7 @@ export class AgileDashboardView extends ItemView {
 
 		const selectedView = this.viewSelect.value;
 		const isActive = this.activeToggle ? this.activeToggle.checked : true;
-		const selectedAlias =
-			this.memberSelect?.value ||
-			this.settingsService.getRaw().currentUserAlias ||
-			null;
+		const selectedAlias = this.getSelectedAlias();
 
 		if (selectedView === "projects") {
 			await this.projectView(contentContainer, isActive, selectedAlias);
@@ -338,8 +324,21 @@ export class AgileDashboardView extends ItemView {
 		status = true,
 		selectedAlias: string | null = null
 	) {
-		// Get all tasks from the shared index
-		let currentTasks: TaskNode[] = this.taskIndexService.getAllTasks();
+		// Show helpful empty state only when user explicitly cleared selection
+		if (!this.implicitAllSelected && this.selectedTeamSlugs.size === 0) {
+			const msg = container.createEl("div", {
+				attr: {
+					style: "display:flex; align-items:center; justify-content:center; min-height: 240px; text-align:center; opacity:0.8;",
+				},
+			});
+			msg.createEl("div", {
+				text: "No organizations/teams selected. Select a team or organization to view the dashboard",
+			});
+			return;
+		}
+
+		// Get tasks
+		let currentTasks: TaskItem[] = this.taskIndexService.getAllTasks();
 
 		// Clean up expired snoozes for current user before rendering
 		const settings = this.settingsService.getRaw();
@@ -358,18 +357,24 @@ export class AgileDashboardView extends ItemView {
 			currentTasks = this.taskIndexService.getAllTasks();
 		}
 
-		// Build taskMap and childrenMap
+		// Apply team selection + membership filter
+		currentTasks = currentTasks.filter((t) =>
+			this.isTaskAllowedByTeam(t as unknown as TaskItem)
+		);
+
+		// Build maps
 		const taskMap = new Map<string, TaskItem>();
 		const childrenMap = new Map<string, TaskItem[]>();
 		currentTasks.forEach((t) => {
 			if (t._uniqueId) {
-				taskMap.set(t._uniqueId, t);
+				taskMap.set(t._uniqueId, t as unknown as TaskItem);
 				childrenMap.set(t._uniqueId, []);
 			}
 		});
 		currentTasks.forEach((t) => {
-			if (t._parentId && childrenMap.has(t._parentId)) {
-				childrenMap.get(t._parentId)!.push(t);
+			const tt = t as unknown as TaskItem;
+			if (tt._parentId && childrenMap.has(tt._parentId)) {
+				childrenMap.get(tt._parentId)!.push(tt);
 			}
 		});
 
@@ -379,10 +384,11 @@ export class AgileDashboardView extends ItemView {
 			sleeping: false,
 			cancelled: false,
 		};
+
 		if (settings.showObjectives) {
 			processAndRenderObjectives(
 				container,
-				currentTasks,
+				currentTasks as unknown as TaskItem[],
 				status,
 				selectedAlias,
 				this.app,
@@ -394,7 +400,7 @@ export class AgileDashboardView extends ItemView {
 		if (settings.showResponsibilities) {
 			processAndRenderResponsibilities(
 				container,
-				currentTasks,
+				currentTasks as unknown as TaskItem[],
 				status,
 				selectedAlias,
 				this.app,
@@ -405,7 +411,7 @@ export class AgileDashboardView extends ItemView {
 		}
 		processAndRenderArtifacts(
 			container,
-			currentTasks,
+			currentTasks as unknown as TaskItem[],
 			status,
 			selectedAlias,
 			this.app,
@@ -414,11 +420,10 @@ export class AgileDashboardView extends ItemView {
 			taskParams,
 			settings
 		);
-
 		if (settings.showInitiatives) {
 			processAndRenderInitiatives(
 				container,
-				currentTasks,
+				currentTasks as unknown as TaskItem[],
 				status,
 				selectedAlias,
 				this.app,
@@ -430,7 +435,7 @@ export class AgileDashboardView extends ItemView {
 		if (settings.showPriorities) {
 			processAndRenderPriorities(
 				container,
-				currentTasks,
+				currentTasks as unknown as TaskItem[],
 				status,
 				selectedAlias,
 				this.app,
@@ -439,5 +444,486 @@ export class AgileDashboardView extends ItemView {
 				taskParams
 			);
 		}
+	}
+
+	// -----------------------
+	// Member select (grouped)
+	// -----------------------
+	private populateMemberSelectGrouped() {
+		this.memberSelect.innerHTML = "";
+
+		type Entry = {
+			alias: string;
+			name: string;
+			role: "member" | "internal-team-member" | "team" | "external";
+			label: string;
+		};
+		const entries: Entry[] = [];
+
+		const settings = this.settingsService.getRaw();
+		const teams = settings.teams || [];
+		const seen = new Set<string>();
+
+		const normalizeAlias = (input: string): string => {
+			if (!input) return "";
+			let s = String(input).trim();
+			if (s.startsWith("@")) s = s.slice(1);
+			return s.toLowerCase();
+		};
+
+		for (const t of teams) {
+			for (const m of t.members || []) {
+				const aliasRaw =
+					typeof m === "string"
+						? m
+						: (m as any)?.alias || (m as any)?.name || "";
+				const alias = normalizeAlias(aliasRaw);
+				if (!alias) continue;
+				if (seen.has(alias)) continue;
+				seen.add(alias);
+
+				const dispName =
+					(typeof m === "string" ? "" : (m as any)?.name) || alias;
+
+				const lower = alias.toLowerCase();
+				let role: Entry["role"] = "member";
+				if (lower.endsWith("-ext")) role = "external";
+				else if (lower.endsWith("-team")) role = "team";
+				else if (lower.endsWith("-int")) role = "internal-team-member";
+
+				const roleLabel =
+					role === "member"
+						? "Team Member"
+						: role === "internal-team-member"
+						? "Internal Team Member"
+						: role === "team"
+						? "Internal Team"
+						: "External Delegate";
+				const label = `${dispName} (${roleLabel} - ${alias})`;
+
+				entries.push({ alias, name: dispName, role, label });
+			}
+		}
+
+		// Split into groups and sort A–Z within each
+		const groupTeamMembers = entries
+			.filter(
+				(e) => e.role === "member" || e.role === "internal-team-member"
+			)
+			.sort((a, b) => a.name.localeCompare(b.name));
+		const groupDelegatesInternalTeams = entries
+			.filter((e) => e.role === "team")
+			.sort((a, b) => a.name.localeCompare(b.name));
+		const groupDelegatesExternal = entries
+			.filter((e) => e.role === "external")
+			.sort((a, b) => a.name.localeCompare(b.name));
+
+		const addGroup = (label: string, group: Entry[]) => {
+			if (group.length === 0) return;
+			const og = document.createElement("optgroup");
+			og.label = label;
+			group.forEach((e) => {
+				const opt = document.createElement("option");
+				opt.value = e.alias;
+				opt.text = e.label;
+				og.appendChild(opt);
+			});
+			this.memberSelect.appendChild(og);
+		};
+
+		addGroup("Team Members", groupTeamMembers);
+		addGroup("Delegates – Internal Teams", groupDelegatesInternalTeams);
+		addGroup("Delegates – External", groupDelegatesExternal);
+
+		const defRaw = this.settingsService.getRaw().currentUserAlias || "";
+		const def = normalizeAlias(defRaw);
+		const all = [
+			...groupTeamMembers,
+			...groupDelegatesInternalTeams,
+			...groupDelegatesExternal,
+		];
+		if (def && all.some((e) => e.alias === def)) {
+			this.memberSelect.value = def;
+		} else if (all.length > 0) {
+			this.memberSelect.value = all[0].alias;
+		}
+	}
+
+	// -----------------------
+	// Team selection: storage
+	// -----------------------
+	private loadSelectedTeamSlugs() {
+		try {
+			const raw = window.localStorage.getItem(this.storageKey);
+			if (raw === null) {
+				this.implicitAllSelected = true;
+				this.selectedTeamSlugs = new Set();
+				return;
+			}
+			this.implicitAllSelected = false;
+			const arr = JSON.parse(raw);
+			if (Array.isArray(arr)) {
+				this.selectedTeamSlugs = new Set(
+					arr.map((s) => String(s).toLowerCase())
+				);
+			} else {
+				this.selectedTeamSlugs = new Set();
+			}
+		} catch {
+			this.implicitAllSelected = true;
+			this.selectedTeamSlugs = new Set();
+		}
+	}
+
+	private persistSelectedTeamSlugs() {
+		try {
+			this.implicitAllSelected = false;
+			const arr = Array.from(this.selectedTeamSlugs.values());
+			window.localStorage.setItem(this.storageKey, JSON.stringify(arr));
+		} catch {}
+	}
+
+	// -----------------------------
+	// Team selection: task filtering
+	// -----------------------------
+	private isTaskAllowedByTeam(task: TaskItem): boolean {
+		const filePath =
+			task.link?.path || (task._uniqueId?.split(":")[0] ?? "");
+		if (!filePath) return false;
+
+		// Membership set for selected user (if available)
+		const allowedByUser = this.getAllowedTeamSlugsForSelectedUser();
+
+		// If implicit "all": show everything; clamp to membership only if we know it
+		if (this.implicitAllSelected) {
+			if (!this.orgStructurePort) return true;
+			const teamSlug = this.getTeamSlugForFile(filePath);
+			if (!allowedByUser) return true; // unknown => show all
+			if (!teamSlug) return false;
+			return allowedByUser.has(teamSlug);
+		}
+
+		// Custom mode: require selected team + (if known) user membership
+		if (this.selectedTeamSlugs.size === 0) return false;
+		const teamSlug = this.getTeamSlugForFile(filePath);
+		if (!teamSlug) return false;
+
+		const inSelected = this.selectedTeamSlugs.has(teamSlug);
+		if (!inSelected) return false;
+
+		// If we know membership, require membership too
+		if (allowedByUser) {
+			return allowedByUser.has(teamSlug);
+		}
+		return true;
+	}
+
+	private getTeamSlugForFile(filePath: string): string | null {
+		try {
+			if (!this.orgStructurePort) return null;
+			const { team } =
+				this.orgStructurePort.getTeamMembersForFile(filePath);
+			const slug = (team?.slug || "").toLowerCase().trim();
+			return slug || null;
+		} catch {
+			return null;
+		}
+	}
+
+	private aliasFromMemberLike(x: unknown): string {
+		const normalizeAlias = (input: string): string => {
+			if (!input) return "";
+			let s = String(input).trim();
+			if (s.startsWith("@")) s = s.slice(1);
+			return s.toLowerCase();
+		};
+		if (typeof x === "string") return normalizeAlias(x);
+		if (!x || typeof x !== "object") return "";
+		const anyObj = x as Record<string, unknown>;
+		const cand =
+			anyObj.alias ??
+			anyObj.user ??
+			anyObj.name ??
+			anyObj.id ??
+			anyObj.email;
+		return normalizeAlias(
+			typeof cand === "string" ? cand : String(cand || "")
+		);
+	}
+
+	private extractAliases(members: unknown): string[] {
+		if (!members) return [];
+		if (Array.isArray(members)) {
+			return members
+				.map((m) => this.aliasFromMemberLike(m))
+				.filter(Boolean);
+		}
+		if (typeof members === "object") {
+			return Object.values(members)
+				.map((v) => this.aliasFromMemberLike(v))
+				.filter(Boolean);
+		}
+		return [];
+	}
+
+	private teamNodeHasUser(node: any, aliasNorm: string): boolean {
+		const pools = [
+			node?.members,
+			node?.memberAliases,
+			node?.users,
+			node?.aliases,
+			node?.membersMap,
+			node?.allMembers,
+		];
+		for (const pool of pools) {
+			const aliases = this.extractAliases(pool);
+			if (aliases.includes(aliasNorm)) return true;
+		}
+		return false;
+	}
+
+	private tryPortMembershipMethods(aliasNorm: string): Set<string> | null {
+		if (!this.orgStructurePort) return null;
+		const port = this.orgStructurePort as unknown as Record<
+			string,
+			unknown
+		>;
+
+		const candidates = [
+			"getTeamsForUser",
+			"getTeamSlugsForUser",
+			"getUserTeams",
+			"getTeamsByUser",
+		];
+
+		for (const fnName of candidates) {
+			const fn = port[fnName];
+			if (typeof fn === "function") {
+				try {
+					const raw = (fn as any).call(
+						this.orgStructurePort,
+						aliasNorm
+					);
+					if (Array.isArray(raw)) {
+						const set = new Set<string>();
+						for (const item of raw) {
+							if (typeof item === "string") {
+								const slug = item.toLowerCase().trim();
+								if (slug) set.add(slug);
+							} else if (item && typeof item === "object") {
+								const cand =
+									(item as any).slug ??
+									(item as any).teamSlug ??
+									(item as any).id ??
+									(item as any).key ??
+									(item as any).code;
+								const slug =
+									typeof cand === "string"
+										? cand.toLowerCase().trim()
+										: String(cand || "")
+												.toLowerCase()
+												.trim();
+								if (slug) set.add(slug);
+							}
+						}
+						if (set.size > 0) return set;
+					}
+				} catch {
+					/* ignore and try next */
+				}
+			}
+		}
+		return null;
+	}
+
+	private deriveMembershipFromStructure(
+		aliasNorm: string
+	): Set<string> | null {
+		if (!this.orgStructurePort) return null;
+		try {
+			const { organizations, teams } =
+				this.orgStructurePort.getOrgStructure();
+			const result = new Set<string>();
+
+			const visitTeam = (node: any) => {
+				const cand =
+					node?.slug ??
+					node?.teamSlug ??
+					node?.id ??
+					node?.key ??
+					node?.code;
+				const slug =
+					typeof cand === "string"
+						? cand.toLowerCase().trim()
+						: String(cand || "")
+								.toLowerCase()
+								.trim();
+
+				if (slug && this.teamNodeHasUser(node, aliasNorm)) {
+					result.add(slug);
+				}
+				for (const st of (node.subteams as any[] | undefined) || []) {
+					visitTeam(st);
+				}
+			};
+
+			for (const org of organizations || []) {
+				for (const t of org.teams || []) visitTeam(t);
+			}
+			for (const t of teams || []) visitTeam(t);
+
+			return result.size > 0 ? result : new Set<string>();
+		} catch {
+			return null;
+		}
+	}
+
+	private deriveMembershipFromSettings(
+		aliasNorm: string
+	): Set<string> | null {
+		try {
+			const settings = this.settingsService.getRaw();
+			const teams = settings.teams || [];
+			const result = new Set<string>();
+
+			for (const t of teams) {
+				const slug = (t as any).slug ?? (t as any).teamSlug ?? "";
+				const slugNorm = String(slug || "")
+					.toLowerCase()
+					.trim();
+				if (!slugNorm) continue;
+
+				const members = (t as any).members || [];
+				const aliases = this.extractAliases(members);
+				if (aliases.includes(aliasNorm)) result.add(slugNorm);
+			}
+			return result.size > 0 ? result : new Set<string>();
+		} catch {
+			return null;
+		}
+	}
+
+	private getAllowedTeamSlugsForSelectedUser(): Set<string> | null {
+		const normalizeAlias = (input: string): string => {
+			if (!input) return "";
+			let s = String(input).trim();
+			if (s.startsWith("@")) s = s.slice(1);
+			return s.toLowerCase();
+		};
+		const aliasNorm = normalizeAlias(this.getSelectedAlias() || "");
+		if (!aliasNorm) return null;
+
+		const fromPortMethods = this.tryPortMembershipMethods(aliasNorm);
+		const fromStructure = this.deriveMembershipFromStructure(aliasNorm);
+		const fromSettings = this.deriveMembershipFromSettings(aliasNorm);
+
+		const union = new Set<string>();
+		for (const s of [fromPortMethods, fromStructure, fromSettings]) {
+			if (!s) continue;
+			for (const x of s) union.add(x);
+		}
+		return union.size > 0 ? union : null;
+	}
+
+	private isSlugSelected(slug: string): boolean {
+		if (this.implicitAllSelected) return true;
+		return this.selectedTeamSlugs.has((slug || "").toLowerCase());
+	}
+
+	private restrictSelectedTeamsToUserMembership() {
+		const allowed = this.getAllowedTeamSlugsForSelectedUser();
+		if (!allowed) return;
+		if (this.selectedTeamSlugs.size === 0) return;
+
+		const before = this.selectedTeamSlugs.size;
+		for (const s of Array.from(this.selectedTeamSlugs)) {
+			if (!allowed.has(s)) {
+				this.selectedTeamSlugs.delete(s);
+			}
+		}
+		if (this.selectedTeamSlugs.size !== before) {
+			this.persistSelectedTeamSlugs();
+		}
+	}
+
+	// ---------------------------
+	// Teams popup: open/close/render
+	// ---------------------------
+	private toggleTeamsPopup(anchor: HTMLElement) {
+		if (this.teamsPopupEl) {
+			this.closeTeamsPopup();
+			return;
+		}
+		this.openTeamsPopup(anchor);
+	}
+
+	private openTeamsPopup(anchor: HTMLElement) {
+		this.closeTeamsPopup();
+
+		const popup = document.createElement("div");
+		this.teamsPopupEl = popup;
+		popup.classList.add("agile-teams-popup");
+		popup.style.position = "absolute";
+		popup.style.right = "0";
+		popup.style.top = "calc(100% + 8px)";
+		popup.style.zIndex = "9999";
+		popup.style.minWidth = "320px";
+		popup.style.maxWidth = "520px";
+		popup.style.maxHeight = "60vh";
+		popup.style.overflow = "auto";
+		popup.style.padding = "10px";
+		popup.style.border = "1px solid var(--background-modifier-border)";
+		popup.style.borderRadius = "8px";
+		popup.style.background = "var(--background-primary)";
+		popup.style.boxShadow = "0 6px 24px rgba(0,0,0,0.2)";
+
+		anchor.parentElement?.appendChild(popup);
+
+		this.renderTeamsPopup();
+	}
+
+	private closeTeamsPopup() {
+		if (this.teamsPopupEl) {
+			try {
+				this.teamsPopupEl.remove();
+			} catch {}
+			this.teamsPopupEl = null;
+		}
+	}
+
+	private renderTeamsPopup() {
+		if (!this.teamsPopupEl) return;
+
+		const ctx: TeamsPopupContext = {
+			root: this.teamsPopupEl,
+			orgStructurePort: this.orgStructurePort,
+
+			selectedTeamSlugs: this.selectedTeamSlugs,
+			implicitAllSelected: this.implicitAllSelected,
+
+			setImplicitAllSelected: (val: boolean) => {
+				this.implicitAllSelected = val;
+			},
+			addSelectedSlugs: (slugs: string[]) => {
+				slugs.forEach((s) =>
+					this.selectedTeamSlugs.add((s || "").toLowerCase())
+				);
+				this.persistSelectedTeamSlugs();
+			},
+			removeSelectedSlugs: (slugs: string[]) => {
+				slugs.forEach((s) =>
+					this.selectedTeamSlugs.delete((s || "").toLowerCase())
+				);
+				this.persistSelectedTeamSlugs();
+			},
+			onSelectionChanged: () => {
+				this.renderTeamsPopup();
+				this.updateView();
+			},
+			getAllowedTeamSlugsForSelectedUser: () =>
+				this.getAllowedTeamSlugsForSelectedUser(),
+		};
+
+		renderTeamsPopupContent(ctx);
 	}
 }

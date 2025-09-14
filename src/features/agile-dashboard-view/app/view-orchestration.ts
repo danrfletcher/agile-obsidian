@@ -19,6 +19,8 @@ export async function registerAgileDashboardView(container: Container) {
 			new AgileDashboardView(leaf, {
 				taskIndex: container.taskIndexService, // wiring via ports
 				settings: container.settingsService, // wiring via ports
+				orgStructure: container.orgStructurePorts?.orgStructure, // NEW: org structure
+				manifestId: container.manifestId, // NEW: used for storage scoping
 			})
 	);
 
