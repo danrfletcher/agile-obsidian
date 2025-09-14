@@ -11,15 +11,44 @@ export function extractBlockId(rest: string): {
 	restSansBlockId: string;
 	blockId: string | null;
 } {
-	let blockId: string | null = null;
-	const newRest = rest.replace(
-		/\s*\^([A-Za-z0-9-]+)\s*$/g,
-		(_full, id: string) => {
-			blockId = `^${id}`;
-			return " ";
-		}
-	);
-	return { restSansBlockId: newRest, blockId };
+	// We will:
+	// 1) Find the last standalone "^id" token anywhere in the string (not just at EOL).
+	// 2) Remove ALL standalone "^id" tokens from the string (dedupe/sanitize).
+	// 3) Return that last one as the canonical blockId.
+	//
+	// "Standalone" means:
+	//   - Preceded by start or whitespace
+	//   - Followed by a non [A-Za-z0-9-] character or end
+	//
+	// This also handles cases like "^abc123/dan…" where '/dan' follows after the id.
+	const TOKEN_RE = /(^|\s)\^([A-Za-z0-9-]+)(?![A-Za-z0-9-])/g;
+
+	let lastId: string | null = null;
+	let m: RegExpExecArray | null;
+	while ((m = TOKEN_RE.exec(rest)) !== null) {
+		lastId = m[2];
+	}
+
+	if (!lastId) {
+		// Fall back to legacy behavior: end-of-line "^id" (with optional spaces) just in case.
+		let blockId: string | null = null;
+		const newRest = rest.replace(
+			/\s*\^([A-Za-z0-9-]+)\s*$/g,
+			(_full, id: string) => {
+				blockId = `^${id}`;
+				return " ";
+			}
+		);
+		return { restSansBlockId: newRest, blockId };
+	}
+
+	// Remove all standalone ^id tokens, preserving any leading whitespace capture where present.
+	const restSansBlockId = rest.replace(TOKEN_RE, (_full, leading) => {
+		// Keep the leading whitespace (if any), drop the token.
+		return leading ?? "";
+	});
+
+	return { restSansBlockId, blockId: `^${lastId}` };
 }
 
 // Collapse runs of whitespace inside but DO NOT strip trailing space.

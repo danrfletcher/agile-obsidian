@@ -76,7 +76,7 @@ function extractStableTokens(
 	s: string
 ): Array<{ text: string; start: number; end: number }> {
 	const tokens: Array<{ text: string; start: number; end: number }> = [];
-	// Remove obvious wrappers and date tokens to focus on task text and arrows
+	// Remove obvious wrappers, date tokens, block ids to focus on task text and arrows
 	const sanitized = s
 		.replace(
 			/<span\b[^>]*\bdata-template-key="[^"]+"[^>]*>[\s\S]*?<\/span>/gi,
@@ -87,6 +87,8 @@ function extractStableTokens(
 			/💤(?:⬇️)?(?:<span style="display: none">[^<]+<\/span>)?(?:\s+\d{4}-\d{2}-\d{2})?/g,
 			" "
 		)
+		// Remove standalone block id tokens anywhere in the line
+		.replace(/(^|\s)\^[A-Za-z0-9-]+(?![A-Za-z0-9-])/g, " ")
 		.replace(/→/g, " ");
 	// Split into words while tracking indices in original string
 	let i = 0;
@@ -119,7 +121,7 @@ function buildStableMap(
 }
 
 function mapPositionUsingTokens(
-	oldLine: string,
+	_oldLine: string,
 	newLine: string,
 	oldSel: { start: number; end: number },
 	mapping: Map<number, number>
