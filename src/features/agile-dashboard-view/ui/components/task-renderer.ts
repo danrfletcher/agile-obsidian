@@ -356,7 +356,8 @@ export function renderTaskTree(
 							app,
 							cancel
 						);
-						if (result === "/") {
+						if (result) {
+							// Optimistically update inline for ANY result (/, x, -)
 							rerenderTaskInline(
 								task,
 								taskItemEl,
@@ -368,8 +369,6 @@ export function renderTaskTree(
 								depth,
 								selectedAlias
 							);
-						} else if (result === "x" || result === "-") {
-							// Do not force-check; the view will re-render via events dispatched in handleStatusChange
 						}
 					} finally {
 						isUpdating = false;
@@ -590,7 +589,8 @@ function rerenderTaskInline(
 							app,
 							cancel
 						);
-						if (result === "/") {
+						if (result) {
+							// Optimistic update again for any follow-up changes
 							rerenderTaskInline(
 								task,
 								liEl,
@@ -602,8 +602,6 @@ function rerenderTaskInline(
 								depth,
 								selectedAlias
 							);
-						} else if (result === "x" || result === "-") {
-							// No immediate force-check; dashboard will re-render via events
 						}
 					} finally {
 						isUpdating = false;

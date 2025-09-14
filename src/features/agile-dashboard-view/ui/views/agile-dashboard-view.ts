@@ -63,6 +63,9 @@ export class AgileDashboardView extends ItemView {
 	// Track whether we’ve attached the dashboard assignment click handler
 	private dashboardAssignHandlerAttached = false;
 
+	// Simple render sequencing to prevent out-of-order swaps
+	private renderPass = 0;
+
 	constructor(leaf: WorkspaceLeaf, ports: AgileDashboardViewPorts) {
 		super(leaf);
 		this.settingsService = ports.settings;
@@ -471,6 +474,10 @@ export class AgileDashboardView extends ItemView {
 		);
 	}
 
+	/**
+	 * Double-buffered update: render into an off-DOM container with a fresh Component,
+	 * then atomically swap into the view. This prevents "blank flashes" during refresh.
+	 */
 	private async updateView() {
 		const viewContainer = this.containerEl.children[1] as HTMLElement;
 		const existingContent = viewContainer.querySelector(
@@ -479,20 +486,11 @@ export class AgileDashboardView extends ItemView {
 		const prevContainerScrollTop = viewContainer.scrollTop;
 		const prevContentScrollTop = existingContent?.scrollTop ?? 0;
 
-		// Dispose previous render root and create a new one
-		if (this.renderRoot) {
-			try {
-				this.renderRoot.unload();
-			} catch {}
-			this.renderRoot = null;
-		}
-		this.renderRoot = new Component();
-		this.addChild(this.renderRoot);
-
-		const contentContainer =
-			existingContent ??
-			viewContainer.createEl("div", { cls: "content-container" });
-		contentContainer.empty();
+		const myPass = ++this.renderPass;
+		const newRoot = new Component();
+		this.addChild(newRoot);
+		const newContent = document.createElement("div");
+		newContent.className = "content-container";
 
 		const selectedView = this.viewSelect.value;
 		const isActive = this.activeToggle ? this.activeToggle.checked : true;
@@ -500,19 +498,43 @@ export class AgileDashboardView extends ItemView {
 
 		if (selectedView === "projects") {
 			await this.projectView(
-				contentContainer,
+				newContent,
 				isActive,
 				selectedAlias,
-				this.renderRoot
+				newRoot
 			);
 		} else if (selectedView === "completed") {
-			contentContainer.createEl("h2", {
+			newContent.createEl("h2", {
 				text: "✅ Completed (Coming Soon)",
 			});
 		}
 
+		// If a newer render started, discard this one
+		if (myPass !== this.renderPass) {
+			try {
+				newRoot.unload();
+			} catch {}
+			return;
+		}
+
+		// Swap in the new content atomically; keep the old until this moment.
+		if (existingContent) {
+			viewContainer.replaceChild(newContent, existingContent);
+		} else {
+			viewContainer.appendChild(newContent);
+		}
+
+		// Restore scroll positions
 		viewContainer.scrollTop = prevContainerScrollTop;
-		contentContainer.scrollTop = prevContentScrollTop;
+		newContent.scrollTop = prevContentScrollTop;
+
+		// Dispose previous render root
+		if (this.renderRoot) {
+			try {
+				this.renderRoot.unload();
+			} catch {}
+		}
+		this.renderRoot = newRoot;
 	}
 
 	private async projectView(
