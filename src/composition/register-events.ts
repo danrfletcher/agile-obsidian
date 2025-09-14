@@ -23,13 +23,15 @@ import {
 } from "@features/task-canonical-formatter";
 import type { CanonicalFormatterPort } from "@features/task-canonical-formatter";
 
-// NEW: import cascade wiring
 import { wireTaskAssignmentCascade } from "@features/task-assignment-cascade";
+import {
+	wireTaskClosedCascade,
+	wireTaskClosedCascadeObserver,
+} from "@features/task-close-cascade";
 
 // Strong singleton-per-run progress UI (per view)
 class ProgressNotice {
 	private static activeForView = new WeakMap<MarkdownView, ProgressNotice>();
-
 	static getOrCreateForView(view: MarkdownView): ProgressNotice {
 		const existing = ProgressNotice.activeForView.get(view);
 		if (existing) return existing;
@@ -37,71 +39,55 @@ class ProgressNotice {
 		ProgressNotice.activeForView.set(view, created);
 		return created;
 	}
-
 	private view: MarkdownView;
 	private notice: Notice | null = null;
 	private wrapper: HTMLDivElement | null = null;
 	private bar: HTMLDivElement | null = null;
 	private label: HTMLDivElement | null = null;
-
-	private started = false; // set on first start()
-	private ended = false; // set on end()
-
+	private started = false;
+	private ended = false;
 	private rafId: number | null = null;
 	private pendingPct: number = 0;
 	private pendingText: string = "";
-
 	private constructor(view: MarkdownView) {
 		this.view = view;
 	}
-
 	private ensureElements(title: string) {
-		// Do not create another notice if one is already present for this instance
 		if (this.notice && this.wrapper && this.bar && this.label) return;
-
 		this.notice = new ObsidianNotice("", 0);
-
 		const wrapper = document.createElement("div");
 		wrapper.style.minWidth = "260px";
 		wrapper.style.maxWidth = "360px";
 		wrapper.style.display = "flex";
 		wrapper.style.flexDirection = "column";
 		wrapper.style.gap = "8px";
-
 		const titleEl = document.createElement("div");
 		titleEl.textContent = title;
 		titleEl.style.fontWeight = "600";
 		titleEl.style.fontSize = "12px";
 		wrapper.appendChild(titleEl);
-
 		const barOuter = document.createElement("div");
 		barOuter.style.height = "6px";
 		barOuter.style.background = "var(--background-modifier-border)";
 		barOuter.style.borderRadius = "3px";
 		barOuter.style.overflow = "hidden";
-
 		const barInner = document.createElement("div");
 		barInner.style.height = "100%";
 		barInner.style.width = "0%";
 		barInner.style.background = "var(--interactive-accent)";
 		barInner.style.transition = "width 140ms linear";
 		barOuter.appendChild(barInner);
-
 		const label = document.createElement("div");
 		label.style.fontSize = "11px";
 		label.style.opacity = "0.8";
-
 		wrapper.appendChild(barOuter);
 		wrapper.appendChild(label);
-
 		(this.notice as any).noticeEl?.empty?.();
 		(this.notice as any).noticeEl?.appendChild(wrapper);
-
 		this.wrapper = wrapper;
 		this.bar = barInner;
 		this.label = label;
 	}
-
 	private schedulePaint() {
 		if (this.rafId != null) return;
 		this.rafId = requestAnimationFrame(() => {
@@ -110,24 +96,17 @@ class ProgressNotice {
 			if (this.label) this.label.textContent = this.pendingText;
 		});
 	}
-
 	start(title: string, total: number) {
-		if (this.ended) return; // run already ended
-		if (this.started) {
-			// Already started for this run; do not create or re-start another notice
-			return;
-		}
+		if (this.ended) return;
+		if (this.started) return;
 		this.started = true;
-
 		this.ensureElements(title);
 		this.pendingPct = 0;
 		this.pendingText = `0 / ${Math.max(0, total)}`;
 		this.schedulePaint();
 	}
-
 	update(current: number, total: number, message?: string) {
 		if (!this.started || this.ended) return;
-
 		const clampedTotal = Math.max(1, total);
 		const clampedCur = Math.max(0, Math.min(current, clampedTotal));
 		const pct = Math.floor((clampedCur / clampedTotal) * 100);
@@ -136,16 +115,12 @@ class ProgressNotice {
 			message ?? `${clampedCur} / ${clampedTotal} (${pct}%)`;
 		this.schedulePaint();
 	}
-
 	end() {
 		if (this.ended) return;
 		this.ended = true;
-		if (this.notice) {
-			this.notice.hide();
-		}
+		if (this.notice) this.notice.hide();
 		this.cleanup();
 	}
-
 	private cleanup() {
 		if (this.rafId != null) {
 			cancelAnimationFrame(this.rafId);
@@ -155,38 +130,24 @@ class ProgressNotice {
 		this.wrapper = null;
 		this.bar = null;
 		this.label = null;
-
 		this.started = false;
-
-		// Drop singleton reference for this view
 		ProgressNotice.activeForView.delete(this.view);
 	}
 }
 
-/**
- * Registers Obsidian vault and view events
- * Called from plugin's onload after Container created.
- */
 export async function registerEvents(container: Container) {
 	const { plugin, app, settings } = container;
-
 	const appAdapter = createObsidianAppAdapter(app);
 
 	// Task index setup
 	const taskIndexService = createTaskIndexService({ appAdapter });
 	const taskIndexOrchestrator = createTaskIndexOrchestrator(taskIndexService);
-
-	// Expose service on container for other wiring (typed)
 	container.taskIndexService = taskIndexService;
-
-	// Build initial task index
 	await taskIndexOrchestrator.buildAll();
 
-	// Helper to narrow TAbstractFile to TFile
 	const asFile = (f: TAbstractFile | null): f is TFile =>
 		!!f && (f as TFile).extension !== undefined;
 
-	// Vault events -> keep index in sync
 	plugin.registerEvent(
 		app.vault.on("create", async (file) => {
 			if (asFile(file) && file.extension === "md") {
@@ -194,7 +155,6 @@ export async function registerEvents(container: Container) {
 			}
 		})
 	);
-
 	plugin.registerEvent(
 		app.vault.on("modify", async (file) => {
 			if (asFile(file) && file.extension === "md") {
@@ -202,7 +162,6 @@ export async function registerEvents(container: Container) {
 			}
 		})
 	);
-
 	plugin.registerEvent(
 		app.vault.on("delete", async (abstractFile) => {
 			if (asFile(abstractFile)) {
@@ -210,7 +169,6 @@ export async function registerEvents(container: Container) {
 			}
 		})
 	);
-
 	plugin.registerEvent(
 		app.vault.on("rename", async (file, oldPath) => {
 			if (asFile(file)) {
@@ -219,51 +177,40 @@ export async function registerEvents(container: Container) {
 		})
 	);
 
-	// Build templating ports
+	// Ports for templating
 	const templatingPorts: { taskIndex: TaskIndexPort } = {
 		taskIndex: {
-			getItemAtCursor: (cursor) => {
-				return taskIndexService.getItemAtCursor(cursor);
-			},
+			getItemAtCursor: (cursor) =>
+				taskIndexService.getItemAtCursor(cursor),
 		},
 	};
 	(container as any).templatingPorts = templatingPorts;
 
-	// Per-view canonical orchestrators
+	// Canonical formatter per-view
 	const canonicalOrchestrators = new WeakMap<
 		MarkdownView,
 		ReturnType<typeof createCanonicalFormatterOrchestrator>
 	>();
 	const editorUnsubs = new WeakMap<MarkdownView, Array<() => void>>();
 
-	// Wire canonical formatter for a view using Obsidian Editor API
 	const wireCanonicalFormatter = (view: MarkdownView | null) => {
 		if (!view) return;
-
 		try {
 			const editor = view.editor;
 			if (!editor) return;
-
-			// Track last-known values to synthesize structural events
 			let lastDocLineCount = editor.lineCount();
 			let lastCursorLine = editor.getCursor().line;
-
-			// Strong singleton progress controller per view
 			const progress = ProgressNotice.getOrCreateForView(view);
-
-			// Build port for Canonical Formatter
 			const port: CanonicalFormatterPort = {
 				getCurrentLine: () => {
 					const cursor = editor.getCursor();
 					const lineNumber = cursor.line;
 					const line = editor.getLine(lineNumber);
 					if (typeof line !== "string") return null;
-
 					const from = editor.getCursor("from");
 					const to = editor.getCursor("to");
 					const hasRange = from.line !== to.line || from.ch !== to.ch;
 					let selection: { start: number; end: number } | undefined;
-
 					if (
 						hasRange &&
 						from.line === lineNumber &&
@@ -275,7 +222,6 @@ export async function registerEvents(container: Container) {
 					}
 					return { line, lineNumber, selection };
 				},
-
 				replaceLineWithSelection: (lineNumber, newLine, newSel) => {
 					const oldLine = editor.getLine(lineNumber);
 					if (oldLine === newLine) return;
@@ -289,7 +235,6 @@ export async function registerEvents(container: Container) {
 						{ line: lineNumber, ch: newSel.end }
 					);
 				},
-
 				replaceLine: (lineNumber, newLine) => {
 					const oldLine = editor.getLine(lineNumber);
 					if (oldLine === newLine) return;
@@ -299,30 +244,18 @@ export async function registerEvents(container: Container) {
 						{ line: lineNumber, ch: oldLine.length }
 					);
 				},
-
-				getCursorLine: () => {
-					return editor.getCursor().line;
-				},
-
+				getCursorLine: () => editor.getCursor().line,
 				getAllLines: () => {
 					const lc = editor.lineCount();
 					const lines: string[] = [];
 					for (let i = 0; i < lc; i++) lines.push(editor.getLine(i));
 					return lines;
 				},
-
-				// Progress UI hooks: the service defers start until 1s passed; we ensure singleton
-				onProgressStart: ({ title, total }) => {
-					progress.start(title, total);
-				},
-				onProgressUpdate: ({ current, total, message }) => {
-					progress.update(current, total, message);
-				},
-				onProgressEnd: () => {
-					progress.end();
-				},
-
-				// Structural event hooks (synthesized)
+				onProgressStart: ({ title, total }) =>
+					progress.start(title, total),
+				onProgressUpdate: ({ current, total, message }) =>
+					progress.update(current, total, message),
+				onProgressEnd: () => progress.end(),
 				onLineCommitted: (cb) => {
 					let detachDom: (() => void) | null = null;
 					// @ts-ignore
@@ -332,25 +265,19 @@ export async function registerEvents(container: Container) {
 					const el: HTMLElement | null = cmHasWrapper
 						? cm.getWrapperElement()
 						: (view as any).contentEl || null;
-
 					const keyHandler = (ev: KeyboardEvent) => {
-						if (ev.key === "Enter" && !ev.isComposing) {
-							cb();
-						}
+						if (ev.key === "Enter" && !ev.isComposing) cb();
 					};
 					if (el && typeof el.addEventListener === "function") {
 						el.addEventListener("keydown", keyHandler);
 						detachDom = () =>
 							el.removeEventListener("keydown", keyHandler);
 					}
-
 					const off = app.workspace.on("editor-change", (mdView) => {
 						if (!(mdView instanceof MarkdownView)) return;
 						if (mdView !== view) return;
 						const currentCount = editor.lineCount();
-						if (currentCount > lastDocLineCount) {
-							cb();
-						}
+						if (currentCount > lastDocLineCount) cb();
 						lastDocLineCount = currentCount;
 					});
 					return () => {
@@ -358,7 +285,6 @@ export async function registerEvents(container: Container) {
 						app.workspace.offref(off);
 					};
 				},
-
 				onCursorLineChanged: (cb) => {
 					const handler = () => {
 						const cl = editor.getCursor().line;
@@ -367,9 +293,7 @@ export async function registerEvents(container: Container) {
 							cb();
 						}
 					};
-
 					let detachFns: Array<() => void> = [];
-
 					// @ts-ignore
 					const cm = (editor as any).cm;
 					const hasCM =
@@ -385,7 +309,6 @@ export async function registerEvents(container: Container) {
 							);
 						} catch {}
 					}
-
 					const offEdit = app.workspace.on(
 						"editor-change",
 						(mdView) => {
@@ -395,7 +318,6 @@ export async function registerEvents(container: Container) {
 						}
 					);
 					detachFns.push(() => app.workspace.offref(offEdit));
-
 					let el: HTMLElement | null = null;
 					try {
 						el =
@@ -405,14 +327,11 @@ export async function registerEvents(container: Container) {
 					} catch {
 						el = (view as any).contentEl || null;
 					}
-
 					if (el && typeof el.addEventListener === "function") {
 						const domKeyup = () => handler();
 						const domMouseup = () => handler();
-
 						el.addEventListener("keyup", domKeyup);
 						el.addEventListener("mouseup", domMouseup);
-
 						detachFns.push(() =>
 							el?.removeEventListener("keyup", domKeyup)
 						);
@@ -420,7 +339,6 @@ export async function registerEvents(container: Container) {
 							el?.removeEventListener("mouseup", domMouseup)
 						);
 					}
-
 					return () => {
 						for (const off of detachFns) {
 							try {
@@ -430,22 +348,19 @@ export async function registerEvents(container: Container) {
 						detachFns = [];
 					};
 				},
-
 				onLeafOrFileChanged: (cb) => {
 					const off1 = app.workspace.on(
 						"active-leaf-change",
 						(_leaf) => {
 							const active =
 								app.workspace.getActiveViewOfType(MarkdownView);
-							const isThis = active === view;
-							if (isThis) cb();
+							if (active === view) cb();
 						}
 					);
 					const off2 = app.workspace.on("file-open", (_file) => {
 						const active =
 							app.workspace.getActiveViewOfType(MarkdownView);
-						const isThis = active === view;
-						if (isThis) cb();
+						if (active === view) cb();
 					});
 					return () => {
 						app.workspace.offref(off1);
@@ -453,18 +368,14 @@ export async function registerEvents(container: Container) {
 					};
 				},
 			};
-
-			// Service + orchestrator
 			const svc = createCanonicalFormatterService(port);
 			const orchestrator = createCanonicalFormatterOrchestrator(svc, {
 				port,
 				debounceMs: 250,
 			});
-
 			(view as any).__canonicalProbe = () => {
 				orchestrator.triggerOnceNow("manual", "line");
 			};
-
 			canonicalOrchestrators.set(view, orchestrator);
 			editorUnsubs.set(view, []);
 		} catch {}
@@ -488,23 +399,19 @@ export async function registerEvents(container: Container) {
 			}
 			editorUnsubs.delete(view);
 		}
-
-		// Ensure any lingering progress controller for this view is cleaned up
 		const lingering = (ProgressNotice as any).activeForView?.get?.(view);
 		if (lingering) {
 			try {
-				(lingering as ProgressNotice).end();
+				(lingering as any).end?.();
 			} catch {}
 		}
 	};
 
 	const tryWireView = (view: MarkdownView | null) => {
 		if (!view) return;
-
 		try {
 			wireTemplatingDomHandlers(app, view, plugin, templatingPorts);
 		} catch {}
-
 		try {
 			const orgPorts = (container as any).orgStructurePorts as
 				| { orgStructure: OrgStructurePort }
@@ -515,14 +422,11 @@ export async function registerEvents(container: Container) {
 				});
 			}
 		} catch {}
-
 		wireCanonicalFormatter(view);
 	};
 
-	// Wire on current active view (if any)
 	tryWireView(app.workspace.getActiveViewOfType(MarkdownView) ?? null);
 
-	// Leaf changes: unwire old, wire new
 	plugin.registerEvent(
 		app.workspace.on("active-leaf-change", (leaf) => {
 			const prevActive = app.workspace.getActiveViewOfType(MarkdownView);
@@ -538,7 +442,6 @@ export async function registerEvents(container: Container) {
 		})
 	);
 
-	// File open: re-wire view
 	plugin.registerEvent(
 		app.workspace.on("file-open", (_file) => {
 			const view = app.workspace.getActiveViewOfType(MarkdownView);
@@ -546,10 +449,8 @@ export async function registerEvents(container: Container) {
 		})
 	);
 
-	// Org-Structure service: keep org model up to date and expose a port
 	const orgStructureService = createOrgStructureService({ app, settings });
 	await orgStructureService.buildAll();
-
 	plugin.registerEvent(
 		app.vault.on("create", (_f) => orgStructureService["buildAll"]())
 	);
@@ -562,7 +463,6 @@ export async function registerEvents(container: Container) {
 	plugin.registerEvent(
 		app.vault.on("rename", (_f, _old) => orgStructureService["buildAll"]())
 	);
-
 	const orgStructurePort: OrgStructurePort = {
 		getOrgStructure: orgStructureService.getOrgStructure,
 		getTeamMembersForFile: orgStructureService.getTeamMembersForPath,
@@ -570,25 +470,33 @@ export async function registerEvents(container: Container) {
 	(container as any).orgStructureService = orgStructureService;
 	(container as any).orgStructurePorts = { orgStructure: orgStructurePort };
 
-	// Register dynamic assignment commands (once)
 	try {
 		await registerTaskAssignmentDynamicCommands(
 			app,
 			plugin,
 			plugin.manifest.id,
-			{ orgStructure: orgStructurePort }
+			{
+				orgStructure: orgStructurePort,
+			}
 		);
 	} catch (e) {
 		console.error("[boot] assignment commands failed", e);
 	}
 
-	// NEW: Wire the cascade listener with TaskIndex port (hybrid mode)
 	try {
 		wireTaskAssignmentCascade(app, plugin, { taskIndex: taskIndexService });
 	} catch (e) {
-		console.error("[boot] cascade wiring failed", e);
+		console.error("[boot] assignment cascade wiring failed", e);
 	}
 
-	// Re-wire active view now that org ports exist, so the click menu is live immediately
+	try {
+		// Optional custom-event adapter (for your own commands)
+		wireTaskClosedCascade(app, plugin);
+		// Passive observer adapter (works with Obsidian Tasks)
+		wireTaskClosedCascadeObserver(app, plugin);
+	} catch (e) {
+		console.error("[boot] closed cascade wiring failed", e);
+	}
+
 	tryWireView(app.workspace.getActiveViewOfType(MarkdownView) ?? null);
 }
