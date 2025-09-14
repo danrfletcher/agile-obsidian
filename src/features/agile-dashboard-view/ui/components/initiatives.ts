@@ -1,4 +1,4 @@
-import { App } from "obsidian";
+import { App, Component } from "obsidian";
 import { TaskItem, TaskParams } from "@features/task-index";
 import { renderTaskTree } from "./task-renderer";
 import {
@@ -23,7 +23,8 @@ export function processAndRenderInitiatives(
 	app: App,
 	taskMap: Map<string, TaskItem>,
 	childrenMap: Map<string, TaskItem[]>,
-	taskParams: TaskParams
+	taskParams: TaskParams,
+	owner: Component
 ) {
 	const { inProgress, completed, sleeping, cancelled } = taskParams;
 	const sectionTasks = currentTasks.filter((task) => {
@@ -84,6 +85,7 @@ export function processAndRenderInitiatives(
 		renderTaskTree(
 			prunedTasks,
 			container,
+			owner,
 			app,
 			0,
 			false,

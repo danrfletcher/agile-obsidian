@@ -2,22 +2,12 @@ import { App, Component, MarkdownRenderer, TFile } from "obsidian";
 import { TaskItem } from "@features/task-index";
 import { appendSnoozeButtonIfEligible } from "./task-buttons";
 import { handleStatusChange } from "../../app/status-update";
+import { normalizeSection } from "./ui-policy";
 
 function isLeaf(task: TaskItem): boolean {
 	return !task.children || task.children.length === 0;
 }
 
-function normalizeSection(sectionType: string) {
-	const s = (sectionType || "").toLowerCase();
-	if (s.includes("initiative")) return "initiatives";
-	if (s.includes("objective")) return "objectives";
-	if (s.includes("task")) return "tasks";
-	if (s.includes("story")) return "stories";
-	if (s.includes("epic")) return "epics";
-	if (s.includes("priorit")) return "priorities";
-	if (s.includes("responsibil")) return "responsibilities";
-	return "tasks";
-}
 function shouldEnableCheckbox(
 	sectionType: string,
 	depth: number,
@@ -230,10 +220,12 @@ function attachOpenOnLongPress(
 
 /**
  * Render a tree of tasks into the given container.
+ * All MarkdownRenderer calls use an owner Component (renderRoot) that is cleaned up on re-render.
  */
 export function renderTaskTree(
 	tasks: TaskItem[],
 	container: HTMLElement,
+	owner: Component,
 	app: App,
 	depth: number,
 	isRoot: boolean,
@@ -258,14 +250,12 @@ export function renderTaskTree(
 			return;
 
 		const tempEl = document.createElement("div");
-		const renderComponent = new Component();
 		MarkdownRenderer.renderMarkdown(
 			(task.visual || task.text || "").trim(),
 			tempEl,
 			task.link?.path || "",
-			renderComponent
+			owner
 		);
-		renderComponent.load();
 
 		const firstEl = tempEl.firstElementChild as HTMLElement | null;
 		let taskItemEl: HTMLElement;
@@ -303,7 +293,7 @@ export function renderTaskTree(
 		if (filePath) {
 			taskItemEl.setAttribute("data-file-path", filePath);
 		}
-		// NEW: stamp with source line when known (helps headless updates)
+		// stamp with source line when known (helps headless updates)
 		const line = getTaskLine(task);
 		if (line != null) {
 			taskItemEl.setAttribute("data-line", String(line));
@@ -370,6 +360,7 @@ export function renderTaskTree(
 							rerenderTaskInline(
 								task,
 								taskItemEl,
+								owner,
 								app,
 								sectionType,
 								result,
@@ -377,9 +368,8 @@ export function renderTaskTree(
 								depth,
 								selectedAlias
 							);
-						} else if (result === "x") {
-							checkbox.checked = true;
-							initialChecked = true;
+						} else if (result === "x" || result === "-") {
+							// Do not force-check; the view will re-render via events dispatched in handleStatusChange
 						}
 					} finally {
 						isUpdating = false;
@@ -446,6 +436,7 @@ export function renderTaskTree(
 			renderTaskTree(
 				task.children,
 				taskItemEl,
+				owner,
 				app,
 				depth + 1,
 				false,
@@ -459,6 +450,7 @@ export function renderTaskTree(
 function rerenderTaskInline(
 	task: TaskItem,
 	liEl: HTMLElement,
+	owner: Component,
 	app: App,
 	sectionType: string,
 	newStatus: string,
@@ -491,14 +483,12 @@ function rerenderTaskInline(
 		liEl.innerHTML = "";
 
 		const tempEl = document.createElement("div");
-		const renderComponent = new Component();
 		MarkdownRenderer.renderMarkdown(
 			lineMd,
 			tempEl,
 			task.link?.path || "",
-			renderComponent
+			owner
 		);
-		renderComponent.load();
 
 		const firstEl = tempEl.firstElementChild as HTMLElement | null;
 		if (
@@ -604,6 +594,7 @@ function rerenderTaskInline(
 							rerenderTaskInline(
 								task,
 								liEl,
+								owner,
 								app,
 								sectionType,
 								result,
@@ -611,9 +602,8 @@ function rerenderTaskInline(
 								depth,
 								selectedAlias
 							);
-						} else if (result === "x") {
-							checkbox.checked = true;
-							initialChecked = true;
+						} else if (result === "x" || result === "-") {
+							// No immediate force-check; dashboard will re-render via events
 						}
 					} finally {
 						isUpdating = false;

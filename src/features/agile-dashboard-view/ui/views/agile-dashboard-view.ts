@@ -1,4 +1,10 @@
-import { ItemView, WorkspaceLeaf, TFile, TAbstractFile } from "obsidian";
+import {
+	ItemView,
+	WorkspaceLeaf,
+	TFile,
+	TAbstractFile,
+	Component,
+} from "obsidian";
 import manifest from "manifest.json";
 import { cleanupExpiredSnoozes } from "@features/task-snooze";
 import { getCurrentUserDisplayName } from "@settings/index";
@@ -39,6 +45,9 @@ export class AgileDashboardView extends ItemView {
 	private activeToggleLabel!: HTMLSpanElement;
 	private memberSelect!: HTMLSelectElement;
 	private suppressedFiles = new Set<string>();
+
+	// Render ownership for MarkdownRenderer
+	private renderRoot: Component | null = null;
 
 	// Team selection UI
 	private orgStructurePort?: OrgStructurePort;
@@ -198,7 +207,7 @@ export class AgileDashboardView extends ItemView {
 			}
 		);
 
-		// Listen for assignment changes: FULL view rerender
+		// Respond to assignment changes: full re-render
 		this.registerDomEvent(
 			window,
 			"agile:assignee-changed" as any,
@@ -226,12 +235,11 @@ export class AgileDashboardView extends ItemView {
 					/* ignore */
 				}
 
-				// Rerender entire dashboard (instead of localized subtree refresh)
 				await this.updateView();
 			}
 		);
 
-		// Also respond to the legacy/general event that's dispatched elsewhere
+		// Legacy/general event dispatched elsewhere
 		this.registerDomEvent(
 			window,
 			"agile:assignment-changed" as any,
@@ -256,8 +264,53 @@ export class AgileDashboardView extends ItemView {
 					/* ignore */
 				}
 
-				// Full view rerender to reflect assignment changes across sections
 				await this.updateView();
+			}
+		);
+
+		// New: respond to status updates and snoozes with a single refresh pass
+		const refreshForFile = async (filePath?: string | null) => {
+			try {
+				if (filePath) {
+					this.suppressedFiles.add(filePath);
+					const af = this.app.vault.getAbstractFileByPath(filePath);
+					if (af instanceof TFile) {
+						await this.taskIndexService.updateFile(af);
+					}
+				}
+			} catch {}
+			await this.updateView();
+		};
+
+		this.registerDomEvent(
+			window,
+			"agile:task-status-updated" as any,
+			async (e: Event) => {
+				const ev = e as CustomEvent<{
+					uid?: string;
+					filePath?: string;
+					newStatus?: string;
+				}>;
+				await refreshForFile(ev.detail?.filePath || null);
+			}
+		);
+		this.registerDomEvent(
+			window,
+			"agile:task-snoozed" as any,
+			async (e: Event) => {
+				const ev = e as CustomEvent<{
+					uid?: string;
+					filePath?: string;
+				}>;
+				await refreshForFile(ev.detail?.filePath || null);
+			}
+		);
+		this.registerDomEvent(
+			window,
+			"agile:task-updated" as any,
+			async (e: Event) => {
+				const ev = e as CustomEvent<{ filePath?: string }>;
+				await refreshForFile(ev.detail?.filePath || null);
 			}
 		);
 
@@ -318,6 +371,13 @@ export class AgileDashboardView extends ItemView {
 				} as any);
 			} catch {}
 			this.outsideClickHandler = null;
+		}
+		// Ensure any lingering render root is disposed
+		if (this.renderRoot) {
+			try {
+				this.renderRoot.unload();
+			} catch {}
+			this.renderRoot = null;
 		}
 	}
 
@@ -419,6 +479,16 @@ export class AgileDashboardView extends ItemView {
 		const prevContainerScrollTop = viewContainer.scrollTop;
 		const prevContentScrollTop = existingContent?.scrollTop ?? 0;
 
+		// Dispose previous render root and create a new one
+		if (this.renderRoot) {
+			try {
+				this.renderRoot.unload();
+			} catch {}
+			this.renderRoot = null;
+		}
+		this.renderRoot = new Component();
+		this.addChild(this.renderRoot);
+
 		const contentContainer =
 			existingContent ??
 			viewContainer.createEl("div", { cls: "content-container" });
@@ -429,7 +499,12 @@ export class AgileDashboardView extends ItemView {
 		const selectedAlias = this.getSelectedAlias();
 
 		if (selectedView === "projects") {
-			await this.projectView(contentContainer, isActive, selectedAlias);
+			await this.projectView(
+				contentContainer,
+				isActive,
+				selectedAlias,
+				this.renderRoot
+			);
 		} else if (selectedView === "completed") {
 			contentContainer.createEl("h2", {
 				text: "✅ Completed (Coming Soon)",
@@ -443,7 +518,8 @@ export class AgileDashboardView extends ItemView {
 	private async projectView(
 		container: HTMLElement,
 		status = true,
-		selectedAlias: string | null = null
+		selectedAlias: string | null = null,
+		owner: Component
 	) {
 		if (!this.implicitAllSelected && this.selectedTeamSlugs.size === 0) {
 			const msg = container.createEl("div", {
@@ -510,7 +586,8 @@ export class AgileDashboardView extends ItemView {
 				this.app,
 				taskMap,
 				childrenMap,
-				taskParams
+				taskParams,
+				owner
 			);
 		}
 		if (settings.showResponsibilities) {
@@ -522,7 +599,8 @@ export class AgileDashboardView extends ItemView {
 				this.app,
 				taskMap,
 				childrenMap,
-				taskParams
+				taskParams,
+				owner
 			);
 		}
 		processAndRenderArtifacts(
@@ -534,7 +612,8 @@ export class AgileDashboardView extends ItemView {
 			taskMap,
 			childrenMap,
 			taskParams,
-			settings
+			settings,
+			owner
 		);
 		if (settings.showInitiatives) {
 			processAndRenderInitiatives(
@@ -545,7 +624,8 @@ export class AgileDashboardView extends ItemView {
 				this.app,
 				taskMap,
 				childrenMap,
-				taskParams
+				taskParams,
+				owner
 			);
 		}
 		if (settings.showPriorities) {
@@ -557,7 +637,8 @@ export class AgileDashboardView extends ItemView {
 				this.app,
 				taskMap,
 				childrenMap,
-				taskParams
+				taskParams,
+				owner
 			);
 		}
 	}
@@ -588,9 +669,12 @@ export class AgileDashboardView extends ItemView {
 		if (!task) return;
 
 		const tmp = document.createElement("div");
+		const owner = this.renderRoot ?? new Component();
+		if (!this.renderRoot) this.addChild(owner);
 		renderTaskTree(
 			[task],
 			tmp,
+			owner,
 			this.app,
 			0,
 			false,
@@ -707,8 +791,7 @@ export class AgileDashboardView extends ItemView {
 		}
 	}
 
-	// storage/membership/team selection helpers as before...
-	// [unchanged code omitted for brevity in this comment-only section; everything below remains identical to your version]
+	// storage/membership/team selection helpers (unchanged) ...
 	private loadSelectedTeamSlugs() {
 		try {
 			const raw = window.localStorage.getItem(this.storageKey);

@@ -1,4 +1,4 @@
-import { App } from "obsidian";
+import { App, Component } from "obsidian";
 import { TaskItem, TaskParams } from "@features/task-index";
 import { renderTaskTree } from "./task-renderer";
 import {
@@ -31,20 +31,11 @@ function findLinkedTasksForOKR(
 		return [];
 	}
 
-	// Loosen constraints: accept any non-whitespace block id (letters, digits, dashes/underscores allowed)
-	// but we'll just escape exactly the given blockId and search for anchor matches.
 	const e = escapeRegExp(blockId);
 
-	// Support:
-	// - Wiki links: [[...#^blockId|...🔗🎯...]]
-	// - Markdown links: [🔗🎯](...#^blockId) or [something with 🔗🎯](...#^blockId)
-	// - Fallback HTML-ish: '#^blockId"...🔗🎯' if raw HTML ends up in text
 	const patterns = [
-		// Wiki link with optional alias that includes the marker
 		new RegExp(`\\[\\[[^\\]]*#\\^${e}(?:\\|[^\\]]*🔗\\s*🎯[^\\]]*)?\\]\\]`),
-		// Markdown link with marker text and anchor
 		new RegExp(`\\[[^\\]]*🔗\\s*🎯[^\\]]*\\]\\([^\\)]*#\\^${e}[^\\)]*\\)`),
-		// Very loose: an anchor occurrence followed by marker in same chunk
 		new RegExp(`#\\^${e}[^\\n]*🔗\\s*🎯`),
 	];
 
@@ -66,11 +57,11 @@ export function processAndRenderObjectives(
 	app: App,
 	taskMap: Map<string, TaskItem>,
 	childrenMap: Map<string, TaskItem[]>,
-	taskParams: TaskParams
+	taskParams: TaskParams,
+	owner: Component
 ) {
 	const { inProgress, completed, sleeping, cancelled } = taskParams;
 
-	// Apply status visibility filters to the universe we consider
 	const sectionTasks = currentTasks.filter((task) => {
 		return (
 			(inProgress && isInProgress(task, taskMap)) ||
@@ -80,22 +71,17 @@ export function processAndRenderObjectives(
 		);
 	});
 
-	// Find OKRs assigned/active for the selected member
 	const assignedOKRs = sectionTasks.filter(
 		(task) =>
 			getAgileArtifactType(task) === "okr" &&
 			activeForMember(task, status, selectedAlias)
 	);
 
-	// Build entries for all assigned OKRs (linked items are optional)
 	const okrEntries = assignedOKRs
 		.map((okr) => {
 			const linkedTasks = findLinkedTasksForOKR(okr, currentTasks);
-
-			// Build merged/pruned trees for linked tasks (may be empty)
 			const linkedTrees = buildPrunedMergedTrees(linkedTasks, taskMap);
 
-			// Mark directly-linked items as "p" (planned/in-progress) within the linked subtrees
 			const linkedIds = new Set(
 				linkedTasks.map((t) => t._uniqueId ?? "")
 			);
@@ -113,7 +99,6 @@ export function processAndRenderObjectives(
 			};
 			linkedTrees.forEach((tree) => updateStatusDFS(tree));
 
-			// Sort linked trees by priority:
 			const getTreeLeaves = (
 				node: TaskItem,
 				leaves: TaskItem[] = []
@@ -148,17 +133,14 @@ export function processAndRenderObjectives(
 				item.okr != null
 		);
 
-	// Only render the section when:
-	// - there are OKRs to show, and
-	// - the "Active/Inactive" toggle allows it (status)
 	if (okrEntries.length > 0 && status) {
 		container.createEl("h2", { text: "🎯 Objectives" });
 
 		okrEntries.forEach(({ okr, linkedTrees }) => {
-			// Render the OKR itself
 			renderTaskTree(
 				[okr],
 				container,
+				owner,
 				app,
 				0,
 				false,
@@ -166,7 +148,6 @@ export function processAndRenderObjectives(
 				selectedAlias
 			);
 
-			// Render linked items only if any exist
 			if (linkedTrees.length > 0) {
 				container.createEl("h5", {
 					text: "🔗 Linked Items",
@@ -178,6 +159,7 @@ export function processAndRenderObjectives(
 				renderTaskTree(
 					linkedTrees,
 					indentedWrapper,
+					owner,
 					app,
 					0,
 					false,

@@ -1,86 +1,15 @@
 import { App } from "obsidian";
 import { TaskItem } from "@features/task-index";
-import { snoozeTask } from "@features/task-snooze"
-import { TaskUIPolicy } from "./ui-policy";
+import { snoozeTask } from "@features/task-snooze";
+import { normalizeSection } from "./ui-policy";
 
 /**
  * Hide a task's LI and collapse empty ancestors/sections afterward.
- * Kept as-is but slightly annotated; exported for reuse.
+ * NOTE: Kept exported for compatibility, but not used by the dashboard anymore.
+ * We now prefer event-driven re-rendering at the view level instead of DOM-hiding here.
  */
-export function hideTaskAndCollapseAncestors(liEl: HTMLElement): void {
-	if (!liEl) return;
-
-	const hide = (el: HTMLElement) => {
-		el.style.display = "none";
-		el.setAttribute("aria-hidden", "true");
-	};
-
-	const isVisible = (el: HTMLElement) => {
-		if (!el) return false;
-		if (el.style.display === "none") return false;
-		const cs = getComputedStyle(el);
-		if (cs.visibility === "hidden" || cs.display === "none") return false;
-		return el.offsetParent !== null;
-	};
-
-	// Hide the affected task
-	hide(liEl);
-
-	// Walk up and collapse single-child ancestors
-	let current: HTMLElement | null = liEl;
-	while (current) {
-		const ul = current.parentElement as HTMLElement | null;
-		if (!ul || ul.tagName !== "UL") break;
-
-		const parentLi = ul.parentElement as HTMLElement | null;
-		if (!parentLi || parentLi.tagName !== "LI") break;
-
-		const childLis = Array.from(ul.children).filter(
-			(n) => n instanceof HTMLElement && n.tagName === "LI"
-		) as HTMLElement[];
-		const visibleChildren = childLis.filter((li) => isVisible(li));
-
-		if (childLis.length === 1 || visibleChildren.length === 0) {
-			hide(parentLi);
-			current = parentLi;
-			continue;
-		}
-		break;
-	}
-
-	// If no visible tasks remain in the section, hide the section (including its header)
-	const findSectionRoot = (el: HTMLElement): HTMLElement | null => {
-		let cur: HTMLElement | null = el;
-		while (cur && cur.parentElement) {
-			const parent = cur.parentElement as HTMLElement;
-			if (
-				parent.classList &&
-				parent.classList.contains("content-container")
-			) {
-				return cur;
-			}
-			cur = parent;
-		}
-		return null;
-	};
-
-	const maybeHideAdjacentHeader = (el: HTMLElement) => {
-		const prev = el.previousElementSibling as HTMLElement | null;
-		if (prev && /^H[1-6]$/.test(prev.tagName)) {
-			hide(prev);
-		}
-	};
-
-	const sectionRoot = findSectionRoot(liEl);
-	if (sectionRoot) {
-		const visibleLis = Array.from(
-			sectionRoot.querySelectorAll("li")
-		).filter((node) => isVisible(node as HTMLElement));
-		if (visibleLis.length === 0) {
-			hide(sectionRoot);
-			maybeHideAdjacentHeader(sectionRoot);
-		}
-	}
+export function hideTaskAndCollapseAncestors(_liEl: HTMLElement): void {
+	// Intentionally no-op in the refactored flow
 }
 
 // Internal: determine if task has direct assignment to provided userSlug
@@ -89,18 +18,6 @@ function isAssignedToUser(text: string, userSlug: string) {
 	const activeRe = new RegExp(`\\bactive-${userSlug}\\b`, "i");
 	const inactiveRe = new RegExp(`\\binactive-${userSlug}\\b`, "i");
 	return activeRe.test(text) && !inactiveRe.test(text);
-}
-
-// Convert sectionType to normalized key for policy checks
-function normalizeSection(sectionType: string): TaskUIPolicy["section"] {
-	const s = (sectionType || "").toLowerCase();
-	if (s.includes("objective")) return "objectives";
-	if (s.includes("responsibil")) return "responsibilities";
-	if (s.includes("priorit")) return "priorities";
-	if (s.includes("epic")) return "epics";
-	if (s.includes("story")) return "stories";
-	if (s.includes("initiative")) return "initiatives";
-	return "tasks";
 }
 
 // Decide if a snooze button should be shown for a task in a given section
@@ -207,7 +124,7 @@ function createSnoozeButton(
 						})
 					);
 				}
-				hideTaskAndCollapseAncestors(liEl);
+				// No DOM-hiding; the view re-renders when it catches agile:task-snoozed
 			} catch (err) {
 				btn.textContent = "💤";
 				throw err;
@@ -262,7 +179,7 @@ function createSnoozeButton(
 					})
 				);
 			}
-			hideTaskAndCollapseAncestors(liEl);
+			// No DOM-hiding; let the dashboard re-render
 		} catch (err) {
 			btn.textContent = "💤";
 			throw err;
