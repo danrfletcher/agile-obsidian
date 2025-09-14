@@ -1,17 +1,20 @@
 import { App, TFile } from "obsidian";
 import { TaskItem } from "@features/task-index";
-import { hideTaskAndCollapseAncestors } from "../ui/components/task-buttons";
 
 /**
- * Toggle or cancel a task's status in the source file and update the UI optimistically.
+ * Toggle or cancel a task's status in the source file and update the UI via events.
  * - Short press toggles between "/" and "x"
  * - Long press cancels to "-"
  *
  * Returns the new status if updated, otherwise null.
+ *
+ * Notes:
+ * - We still suppress the modify-triggered refresh (to avoid double-refresh),
+ *   but we now dispatch a post-write event to have the view re-render cleanly.
  */
 export const handleStatusChange = async (
 	task: TaskItem,
-	liEl: HTMLElement,
+	_liEl: HTMLElement, // no longer used for DOM-hiding
 	app: App,
 	isCancel = false
 ): Promise<string | null> => {
@@ -22,6 +25,7 @@ export const handleStatusChange = async (
 		const file = app.vault.getAbstractFileByPath(filePath) as TFile;
 		if (!file) throw new Error(`File not found: ${filePath}`);
 
+		// Suppress the modify-event auto-refresh; we'll trigger our own refresh
 		window.dispatchEvent(
 			new CustomEvent("agile:prepare-optimistic-file-change", {
 				detail: { filePath },
@@ -199,13 +203,13 @@ export const handleStatusChange = async (
 		await app.vault.modify(file, newContent);
 		(task as any).status = newStatus;
 
-		if (newStatus === "x" || newStatus === "-") {
-			try {
-				hideTaskAndCollapseAncestors(liEl);
-			} catch {
-				/* ignore */
-			}
-		}
+		// Notify the dashboard to do a proper refresh (we suppressed the modify auto-refresh)
+		const uid = task._uniqueId ?? "";
+		window.dispatchEvent(
+			new CustomEvent("agile:task-status-updated", {
+				detail: { uid, filePath, newStatus },
+			})
+		);
 
 		return newStatus;
 	} catch {

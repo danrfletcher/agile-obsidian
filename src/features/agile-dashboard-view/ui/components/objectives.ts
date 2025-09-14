@@ -1,4 +1,4 @@
-import { App } from "obsidian";
+import { App, Component } from "obsidian";
 import { TaskItem, TaskParams } from "@features/task-index";
 import { renderTaskTree } from "./task-renderer";
 import {
@@ -10,6 +10,41 @@ import {
 	getAgileArtifactType,
 } from "@features/task-filter";
 import { buildPrunedMergedTrees } from "@features/task-tree-builder";
+import { escapeRegExp } from "@utils";
+
+/**
+ * Given an OKR task, find tasks that link to it using the 🔗🎯 marker.
+ * Works with or without a blockId. If no blockId is present, we don't attempt
+ * to match by anchor — we simply return an empty list (OKR will still render).
+ */
+function findLinkedTasksForOKR(
+	okrTask: TaskItem,
+	currentTasks: TaskItem[]
+): TaskItem[] {
+	const textOf = (t: TaskItem) => t.text || t.visual || "";
+
+	const blockIdRaw = (okrTask as any)?.blockId as string | undefined;
+	const blockId = (blockIdRaw || "").trim();
+
+	if (!blockId) {
+		// No blockId: do not try to infer links; return none.
+		return [];
+	}
+
+	const e = escapeRegExp(blockId);
+
+	const patterns = [
+		new RegExp(`\\[\\[[^\\]]*#\\^${e}(?:\\|[^\\]]*🔗\\s*🎯[^\\]]*)?\\]\\]`),
+		new RegExp(`\\[[^\\]]*🔗\\s*🎯[^\\]]*\\]\\([^\\)]*#\\^${e}[^\\)]*\\)`),
+		new RegExp(`#\\^${e}[^\\n]*🔗\\s*🎯`),
+	];
+
+	return currentTasks.filter((t) => {
+		const s = textOf(t);
+		if (!s) return false;
+		return patterns.some((re) => re.test(s));
+	});
+}
 
 /**
  * Process and render Objectives (OKRs) and their linked item trees.
@@ -22,9 +57,11 @@ export function processAndRenderObjectives(
 	app: App,
 	taskMap: Map<string, TaskItem>,
 	childrenMap: Map<string, TaskItem[]>,
-	taskParams: TaskParams
+	taskParams: TaskParams,
+	owner: Component
 ) {
 	const { inProgress, completed, sleeping, cancelled } = taskParams;
+
 	const sectionTasks = currentTasks.filter((task) => {
 		return (
 			(inProgress && isInProgress(task, taskMap)) ||
@@ -39,47 +76,15 @@ export function processAndRenderObjectives(
 			getAgileArtifactType(task) === "okr" &&
 			activeForMember(task, status, selectedAlias)
 	);
-	const assignedOKRSet = new Set(assignedOKRs.map((t) => t._uniqueId ?? ""));
 
-	const findLinkedOKRs = (okrSet: Set<string>) => {
-		const linkedOKRs: { _uniqueId: string; linkedTasks: TaskItem[] }[] = [];
-		const assignedOKRIds = Array.from(okrSet);
-
-		assignedOKRIds.forEach((okrId) => {
-			const okrTask = taskMap.get(okrId);
-			if (!okrTask) return;
-
-			const sixDigitCode = okrTask.blockId;
-			if (!sixDigitCode || !/^[A-Za-z0-9]{6}$/.test(sixDigitCode)) {
-				return;
-			}
-
-			const linkedPattern = new RegExp(`${sixDigitCode}">🔗🎯`);
-			const rawLinked = currentTasks.filter((t) =>
-				linkedPattern.test(t.text)
-			);
-			if (!rawLinked.length) return;
-			linkedOKRs.push({ _uniqueId: okrId, linkedTasks: rawLinked });
-		});
-
-		return linkedOKRs;
-	};
-	const linkedOKRs = findLinkedOKRs(assignedOKRSet);
-
-	const prunedOKRs = linkedOKRs
-		.map((entry) => {
-			const okr = taskMap.get(entry._uniqueId);
-			if (!okr) return null;
-
-			const linkedTrees = buildPrunedMergedTrees(
-				entry.linkedTasks,
-				taskMap
-			);
+	const okrEntries = assignedOKRs
+		.map((okr) => {
+			const linkedTasks = findLinkedTasksForOKR(okr, currentTasks);
+			const linkedTrees = buildPrunedMergedTrees(linkedTasks, taskMap);
 
 			const linkedIds = new Set(
-				entry.linkedTasks.map((t) => t._uniqueId ?? "")
+				linkedTasks.map((t) => t._uniqueId ?? "")
 			);
-
 			const updateStatusDFS = (node: TaskItem) => {
 				if (linkedIds.has(node._uniqueId ?? "")) {
 					node.status = "p";
@@ -107,7 +112,6 @@ export function processAndRenderObjectives(
 				}
 				return leaves;
 			};
-
 			const getTreePriority = (tree: TaskItem): number => {
 				const leaves = getTreeLeaves(tree);
 				const hasActive = leaves.some((leaf) =>
@@ -120,46 +124,49 @@ export function processAndRenderObjectives(
 				if (hasInactive) return 2;
 				return 3;
 			};
-
 			linkedTrees.sort((a, b) => getTreePriority(a) - getTreePriority(b));
 
 			return { okr, linkedTrees };
 		})
 		.filter(
 			(item): item is { okr: TaskItem; linkedTrees: TaskItem[] } =>
-				item !== null
+				item.okr != null
 		);
 
-	if (prunedOKRs.length > 0 && status) {
+	if (okrEntries.length > 0 && status) {
 		container.createEl("h2", { text: "🎯 Objectives" });
 
-		prunedOKRs.forEach(({ okr, linkedTrees }) => {
+		okrEntries.forEach(({ okr, linkedTrees }) => {
 			renderTaskTree(
 				[okr],
 				container,
+				owner,
 				app,
 				0,
 				false,
 				"objectives",
 				selectedAlias
 			);
-			container.createEl("h5", {
-				text: "🔗 Linked Items",
-				attr: { style: "margin-left: 20px;" },
-			});
 
-			const indentedWrapper = container.createEl("div", {
-				attr: { style: "padding-left: 20px;" },
-			});
-			renderTaskTree(
-				linkedTrees,
-				indentedWrapper,
-				app,
-				0,
-				false,
-				"objectives",
-				selectedAlias
-			);
+			if (linkedTrees.length > 0) {
+				container.createEl("h5", {
+					text: "🔗 Linked Items",
+					attr: { style: "margin-left: 20px;" },
+				});
+				const indentedWrapper = container.createEl("div", {
+					attr: { style: "padding-left: 20px;" },
+				});
+				renderTaskTree(
+					linkedTrees,
+					indentedWrapper,
+					owner,
+					app,
+					0,
+					false,
+					"objectives",
+					selectedAlias
+				);
+			}
 		});
 	}
 }

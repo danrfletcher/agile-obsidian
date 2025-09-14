@@ -1,4 +1,4 @@
-import { App } from "obsidian";
+import { App, Component } from "obsidian";
 import { TaskItem, TaskParams } from "@features/task-index";
 import { renderTaskTree } from "./task-renderer";
 import {
@@ -35,7 +35,8 @@ export function processAndRenderArtifact(
 	taskMap: Map<string, TaskItem>,
 	childrenMap: Map<string, TaskItem[]>,
 	taskParams: TaskParams,
-	options: ArtifactOptions
+	options: ArtifactOptions,
+	owner: Component
 ) {
 	const { inProgress, completed, sleeping, cancelled } = taskParams;
 
@@ -61,6 +62,7 @@ export function processAndRenderArtifact(
 		renderTaskTree(
 			prunedTasks,
 			container,
+			owner,
 			app,
 			0,
 			false,
@@ -82,7 +84,8 @@ export function processAndRenderArtifacts(
 	taskMap: Map<string, TaskItem>,
 	childrenMap: Map<string, TaskItem[]>,
 	taskParams: TaskParams,
-	settings: AgileObsidianSettings
+	settings: AgileObsidianSettings,
+	owner: Component
 ) {
 	if (settings.showTasks) {
 		processAndRenderArtifact(
@@ -98,7 +101,8 @@ export function processAndRenderArtifacts(
 				title: "🔨 Tasks",
 				renderType: "tasks",
 				predicate: (t) => getAgileArtifactType(t) === "task",
-			}
+			},
+			owner
 		);
 	}
 	if (settings.showStories) {
@@ -115,7 +119,8 @@ export function processAndRenderArtifacts(
 				title: "📝 Stories",
 				renderType: "tasks",
 				predicate: (t) => getAgileArtifactType(t) === "story",
-			}
+			},
+			owner
 		);
 	}
 	if (settings.showEpics) {
@@ -132,7 +137,8 @@ export function processAndRenderArtifacts(
 				title: "🏆 Epics",
 				renderType: "epics",
 				predicate: (t) => getAgileArtifactType(t) === "epic",
-			}
+			},
+			owner
 		);
 	}
 }

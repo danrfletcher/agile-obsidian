@@ -4,14 +4,17 @@ import {
 	indentWidth,
 	isListLine,
 } from "@platform/obsidian/editor/editor-context-utils";
+import type { TemplateContext } from "./types";
 
 /**
  * Extract a template id from a rendered mark on the given line.
- * Prefers machine-readable data-template-id. Falls back to nothing (we no longer rely on class).
+ * Prefer data-template-key (actual wrapper attribute). Fallback to data-template-id for backward-compat.
  */
 function detectTemplateIdOnLine(line: string): string | undefined {
-	const m = line.match(/data-template-id="([^"]+)"/);
-	return m ? m[1] : undefined;
+	const mKey = line.match(/data-template-key="([^"]+)"/);
+	if (mKey) return mKey[1];
+	const mId = line.match(/data-template-id="([^"]+)"/);
+	return mId ? mId[1] : undefined;
 }
 
 /**
@@ -54,14 +57,12 @@ function getAncestorTemplateIdsAtCursor(editor: any): string[] {
  * Provide a context-compatible function to fetch parent chain for the current ctx.
  * If ctx.editor exists, use it. Otherwise, attempt a best-effort using ctx.file text.
  *
- * Avoids importing the Obsidian Editor type directly.
+ * Signature matches isAllowedInContext's expected callback: (ctx: TemplateContext) => string[]
  */
-export function getArtifactParentChainTemplateIds(ctx: {
-	line: string;
-	file: unknown;
-	editor?: any;
-}): string[] {
-	const editor = ctx.editor;
+export function getArtifactParentChainTemplateIds(
+	ctx: TemplateContext
+): string[] {
+	const editor = ctx.editor as any | undefined;
 	if (editor) return getAncestorTemplateIdsAtCursor(editor);
 
 	// Fallback: scan the provided file text
@@ -90,10 +91,11 @@ export function getArtifactParentChainTemplateIds(ctx: {
 	for (let i = idx - 1; i >= 0; i--) {
 		const line = lines[i];
 		if (!isListLine(line)) continue;
+
 		const iw = indentWidth(line);
 		if (iw < Math.min(nextThreshold, curIndent)) {
-			const m = line.match(/data-template-id="([^"]+)"/);
-			if (m) ancestors.push(m[1]);
+			const id = detectTemplateIdOnLine(line);
+			if (id) ancestors.push(id);
 			nextThreshold = iw;
 			if (iw === 0) break;
 		}
