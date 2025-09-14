@@ -1,0 +1,3678 @@
+]633;E;[ -s output.txt ];9dede505-b571-455c-9e66-0eef8ad33e40]633;C
+./src/features/agile-dashboard-view/app/view-orchestration.ts
+import type { Container } from "src/composition/container";
+import {
+	AgileDashboardView,
+	VIEW_TYPE_AGILE_DASHBOARD,
+} from "src/features/agile-dashboard-view/ui/views/agile-dashboard-view";
+import { WorkspaceLeaf } from "obsidian";
+
+/**
+ * Register the Agile Dashboard view and associated commands.
+ * Keeps registration self-contained so additional feature registrations
+ * can be added the same way in the future.
+ */
+export async function registerAgileDashboardView(container: Container) {
+	const { app, plugin } = container;
+
+	plugin.registerView(
+		VIEW_TYPE_AGILE_DASHBOARD,
+		(leaf: WorkspaceLeaf) =>
+			new AgileDashboardView(leaf, {
+				taskIndex: container.taskIndexService, // wiring via ports
+				settings: container.settingsService, // wiring via ports
+				orgStructure: container.orgStructurePorts?.orgStructure, // NEW: org structure
+				manifestId: container.manifestId, // NEW: used for storage scoping
+			})
+	);
+
+	// Helper: open or reveal singleton dashboard leaf
+	const openOrRevealDashboard = async () => {
+		const existing = app.workspace.getLeavesOfType(
+			VIEW_TYPE_AGILE_DASHBOARD
+		);
+		if (existing.length > 0) {
+			// Reveal the first existing dashboard leaf
+			app.workspace.revealLeaf(existing[0]);
+			return;
+		}
+		// No existing leaf — create one
+		const leaf = app.workspace.getLeaf(true); // create a new leaf only the first time
+		await leaf.setViewState({ type: VIEW_TYPE_AGILE_DASHBOARD });
+		app.workspace.revealLeaf(leaf);
+	};
+
+	// Ensure any open leaves are detached when the plugin unloads
+	plugin.register(() => {
+		app.workspace.detachLeavesOfType(VIEW_TYPE_AGILE_DASHBOARD);
+	});
+
+	// Prune duplicates if they somehow exist (keep the first one)
+	const pruneDuplicateDashboardLeaves = () => {
+		const leaves = app.workspace.getLeavesOfType(VIEW_TYPE_AGILE_DASHBOARD);
+		if (leaves.length > 1) {
+			// Keep the first, detach the rest
+			for (let i = 1; i < leaves.length; i++) {
+				try {
+					leaves[i].detach();
+				} catch (e) {
+					console.warn(
+						"Failed to detach duplicate Agile Dashboard leaf",
+						e
+					);
+				}
+			}
+		}
+	};
+
+	// Also run pruning on layout changes as a safety net
+	plugin.registerEvent(
+		app.workspace.on("layout-change", () => {
+			pruneDuplicateDashboardLeaves();
+		})
+	);
+
+	// Register a simple command to open the dashboard (can be triggered by a status bar click)
+	plugin.addCommand({
+		id: "agile-open-dashboard",
+		name: "Open Agile Dashboard",
+		callback: async () => {
+			await openOrRevealDashboard();
+		},
+	});
+
+	// Add a ribbon icon (left sidebar) to open the dashboard
+	try {
+		const ribbonEl = plugin.addRibbonIcon(
+			"list",
+			"Open Agile Dashboard",
+			async () => {
+				await openOrRevealDashboard();
+			}
+		);
+		// Ensure removal on unload
+		plugin.register(() => ribbonEl.remove());
+	} catch (e) {
+		// Not all host environments expose addRibbonIcon; ignore if absent
+		console.warn("Could not add ribbon icon for Agile Dashboard", e);
+	}
+
+	// Add a status bar item to open the dashboard
+	try {
+		const statusEl = plugin.addStatusBarItem();
+		statusEl.classList.add("agile-dashboard-status");
+		statusEl.setAttribute("title", "Open Agile Dashboard");
+		statusEl.textContent = "⚡"; // Simple icon — replace with desired markup
+
+		// Use registerDomEvent so it is cleaned up on unload
+		plugin.registerDomEvent(statusEl, "click", async () => {
+			await openOrRevealDashboard();
+		});
+
+		// Also ensure removal on unload
+		plugin.register(() => statusEl.remove());
+	} catch (e) {
+		// addStatusBarItem may not be available in some host environments; ignore gracefully
+		console.warn("Could not add status bar item for Agile Dashboard", e);
+	}
+}
+
+./src/features/agile-dashboard-view/index.ts
+export { registerAgileDashboardView } from "./app/view-orchestration";
+./src/features/agile-dashboard-view/ui/components/artifacts.ts
+import { App } from "obsidian";
+import { TaskItem, TaskParams } from "@features/task-index";
+import { renderTaskTree } from "./task-renderer";
+import {
+	activeForMember,
+	isCancelled,
+	isInProgress,
+	isCompleted,
+	isSnoozed,
+	getAgileArtifactType,
+} from "@features/task-filter";
+import { buildPrunedMergedTrees } from "@features/task-tree-builder";
+import type { AgileObsidianSettings } from "@settings/index";
+
+export type ArtifactPredicate = (
+	task: TaskItem,
+	taskMap: Map<string, TaskItem>
+) => boolean;
+
+export interface ArtifactOptions {
+	title: string;
+	renderType: string; // passed to renderTaskTree
+	predicate: ArtifactPredicate;
+}
+
+export function processAndRenderArtifact(
+	container: HTMLElement,
+	currentTasks: TaskItem[],
+	status: boolean,
+	selectedAlias: string | null,
+	app: App,
+	taskMap: Map<string, TaskItem>,
+	childrenMap: Map<string, TaskItem[]>,
+	taskParams: TaskParams,
+	options: ArtifactOptions
+) {
+	const { inProgress, completed, sleeping, cancelled } = taskParams;
+
+	const sectionTasks = currentTasks.filter((task) => {
+		return (
+			(inProgress && isInProgress(task, taskMap)) ||
+			(completed && isCompleted(task)) ||
+			(sleeping && isSnoozed(task, taskMap)) ||
+			(cancelled && isCancelled(task))
+		);
+	});
+
+	const directlyAssigned = sectionTasks.filter(
+		(task) =>
+			activeForMember(task, status, selectedAlias) &&
+			options.predicate(task, taskMap)
+	);
+
+	const prunedTasks = buildPrunedMergedTrees(directlyAssigned, taskMap);
+
+	if (prunedTasks.length > 0) {
+		container.createEl("h2", { text: options.title });
+		renderTaskTree(
+			prunedTasks,
+			container,
+			app,
+			0,
+			false,
+			options.renderType,
+			selectedAlias
+		);
+	}
+}
+
+export function processAndRenderArtifacts(
+	container: HTMLElement,
+	currentTasks: TaskItem[],
+	status: boolean,
+	selectedAlias: string | null,
+	app: App,
+	taskMap: Map<string, TaskItem>,
+	childrenMap: Map<string, TaskItem[]>,
+	taskParams: TaskParams,
+	settings: AgileObsidianSettings
+) {
+	if (settings.showTasks) {
+		processAndRenderArtifact(
+			container,
+			currentTasks,
+			status,
+			selectedAlias,
+			app,
+			taskMap,
+			childrenMap,
+			taskParams,
+			{
+				title: "🔨 Tasks",
+				renderType: "tasks",
+				predicate: (t) => getAgileArtifactType(t) === "task",
+			}
+		);
+	}
+	if (settings.showStories) {
+		processAndRenderArtifact(
+			container,
+			currentTasks,
+			status,
+			selectedAlias,
+			app,
+			taskMap,
+			childrenMap,
+			taskParams,
+			{
+				title: "📝 Stories",
+				renderType: "tasks",
+				predicate: (t) => getAgileArtifactType(t) === "story",
+			}
+		);
+	}
+	if (settings.showEpics) {
+		processAndRenderArtifact(
+			container,
+			currentTasks,
+			status,
+			selectedAlias,
+			app,
+			taskMap,
+			childrenMap,
+			taskParams,
+			{
+				title: "🏆 Epics",
+				renderType: "epics",
+				predicate: (t) => getAgileArtifactType(t) === "epic",
+			}
+		);
+	}
+}
+
+./src/features/agile-dashboard-view/ui/components/initiatives.ts
+import { App } from "obsidian";
+import { TaskItem, TaskParams } from "@features/task-index";
+import { renderTaskTree } from "./task-renderer";
+import {
+	activeForMember,
+	isCancelled,
+	isInProgress,
+	isCompleted,
+	isSnoozed,
+	getAgileArtifactType,
+} from "@features/task-filter";
+import { buildPrunedMergedTrees } from "@features/task-tree-builder";
+
+export function processAndRenderInitiatives(
+	container: HTMLElement,
+	currentTasks: TaskItem[],
+	status: boolean,
+	selectedAlias: string | null,
+	app: App,
+	taskMap: Map<string, TaskItem>,
+	childrenMap: Map<string, TaskItem[]>,
+	taskParams: TaskParams
+) {
+	const { inProgress, completed, sleeping, cancelled } = taskParams;
+	const sectionTasks = currentTasks.filter((task) => {
+		return (
+			(inProgress && isInProgress(task, taskMap)) ||
+			(completed && isCompleted(task)) ||
+			(sleeping && isSnoozed(task, taskMap)) ||
+			(cancelled && isCancelled(task))
+		);
+	});
+
+	const directlyAssigned = sectionTasks.filter(
+		(task) =>
+			activeForMember(task, status, selectedAlias) &&
+			getAgileArtifactType(task) === "initiative"
+	);
+
+	const statusFilterCallback = (task: TaskItem) =>
+		(task.status !== "I" && inProgress && isInProgress(task, taskMap)) ||
+		(completed && isCompleted(task)) ||
+		(sleeping && isSnoozed(task, taskMap)) ||
+		(cancelled && isCancelled(task));
+
+	let prunedTasks = buildPrunedMergedTrees(
+		directlyAssigned,
+		taskMap,
+		undefined,
+		childrenMap,
+		{ depth: 1, filterCallback: statusFilterCallback }
+	);
+
+	const lineOf = (t: TaskItem) =>
+		t.position?.start?.line ?? Number.MAX_SAFE_INTEGER;
+
+	prunedTasks = prunedTasks.map((initiative) => {
+		const filteredChildren: TaskItem[] = initiative.children;
+		const slashEpics = filteredChildren.filter(
+			(child) => child.status === "/"
+		);
+		const spaceEpics = filteredChildren.filter(
+			(child) => child.status === " "
+		);
+
+		slashEpics.sort((a, b) => lineOf(a) - lineOf(b));
+		spaceEpics.sort((a, b) => lineOf(a) - lineOf(b));
+
+		let limitedChildren = slashEpics;
+		if (limitedChildren.length === 0 && spaceEpics.length > 0) {
+			limitedChildren = spaceEpics.slice(0, 1);
+		}
+		return { ...initiative, children: limitedChildren };
+	});
+
+	if (prunedTasks.length > 0) {
+		container.createEl("h2", { text: "🎖️ Initiatives" });
+		renderTaskTree(prunedTasks, container, app, 0, false, "initiatives", selectedAlias);
+	}
+}
+
+./src/features/agile-dashboard-view/ui/components/objectives.ts
+import { App } from "obsidian";
+import { TaskItem, TaskParams } from "@features/task-index";
+import { renderTaskTree } from "./task-renderer";
+import {
+	activeForMember,
+	isCancelled,
+	isInProgress,
+	isCompleted,
+	isSnoozed,
+	getAgileArtifactType,
+} from "@features/task-filter";
+import { buildPrunedMergedTrees } from "@features/task-tree-builder";
+
+export function processAndRenderObjectives(
+	container: HTMLElement,
+	currentTasks: TaskItem[],
+	status: boolean,
+	selectedAlias: string | null,
+	app: App,
+	taskMap: Map<string, TaskItem>,
+	childrenMap: Map<string, TaskItem[]>,
+	taskParams: TaskParams
+) {
+	const { inProgress, completed, sleeping, cancelled } = taskParams;
+	const sectionTasks = currentTasks.filter((task) => {
+		return (
+			(inProgress && isInProgress(task, taskMap)) ||
+			(completed && isCompleted(task)) ||
+			(sleeping && isSnoozed(task, taskMap)) ||
+			(cancelled && isCancelled(task))
+		);
+	});
+
+	const assignedOKRs = sectionTasks.filter(
+		(task) =>
+			getAgileArtifactType(task) === "okr" &&
+			activeForMember(task, status, selectedAlias)
+	);
+	const assignedOKRSet = new Set(assignedOKRs.map((t) => t._uniqueId ?? ""));
+
+	const findLinkedOKRs = (okrSet: Set<string>) => {
+		const linkedOKRs: { _uniqueId: string; linkedTasks: TaskItem[] }[] = [];
+		const assignedOKRIds = Array.from(okrSet);
+
+		assignedOKRIds.forEach((okrId) => {
+			const okrTask = taskMap.get(okrId);
+			if (!okrTask) return;
+
+			const sixDigitCode = okrTask.blockId;
+			if (!sixDigitCode || !/^[A-Za-z0-9]{6}$/.test(sixDigitCode)) {
+				// No linked items for OKR - no block ID
+				return;
+			}
+
+			const linkedPattern = new RegExp(`${sixDigitCode}">🔗🎯`);
+			const rawLinked = currentTasks.filter((t) =>
+				linkedPattern.test(t.text)
+			);
+			if (!rawLinked.length) return;
+			linkedOKRs.push({ _uniqueId: okrId, linkedTasks: rawLinked });
+		});
+
+		return linkedOKRs;
+	};
+	const linkedOKRs = findLinkedOKRs(assignedOKRSet);
+
+	const prunedOKRs = linkedOKRs
+		.map((entry) => {
+			const okr = taskMap.get(entry._uniqueId);
+			if (!okr) {
+				// No linked items for OKR - no items linked to block ID
+				return null;
+			}
+			const linkedTrees = buildPrunedMergedTrees(
+				entry.linkedTasks,
+				taskMap
+			);
+
+			const linkedIds = new Set(
+				entry.linkedTasks.map((t) => t._uniqueId ?? "")
+			);
+
+			const updateStatusDFS = (node: TaskItem) => {
+				if (linkedIds.has(node._uniqueId ?? "")) {
+					node.status = "p";
+					if (node.visual) {
+						node.visual = node.visual.replace(
+							/-\s*\[\s*.\s*\]/,
+							"- [p]"
+						);
+					}
+				}
+				node.children?.forEach((child) => updateStatusDFS(child));
+			};
+			linkedTrees.forEach((tree) => updateStatusDFS(tree));
+
+			const getTreeLeaves = (
+				node: TaskItem,
+				leaves: TaskItem[] = []
+			): TaskItem[] => {
+				if (!node.children || node.children.length === 0) {
+					leaves.push(node);
+				} else {
+					node.children.forEach((child) =>
+						getTreeLeaves(child, leaves)
+					);
+				}
+				return leaves;
+			};
+
+			const getTreePriority = (tree: TaskItem): number => {
+				const leaves = getTreeLeaves(tree);
+				const hasActive = leaves.some((leaf) =>
+					activeForMember(leaf, true)
+				);
+				if (hasActive) return 1;
+				const hasInactive = leaves.some((leaf) =>
+					activeForMember(leaf, false)
+				);
+				if (hasInactive) return 2;
+				return 3;
+			};
+
+			linkedTrees.sort((a, b) => getTreePriority(a) - getTreePriority(b));
+
+			return { okr, linkedTrees };
+		})
+		.filter(
+			(item): item is { okr: TaskItem; linkedTrees: TaskItem[] } =>
+				item !== null
+		);
+
+	if (prunedOKRs.length > 0 && status) {
+		container.createEl("h2", { text: "🎯 Objectives" });
+
+		prunedOKRs.forEach(({ okr, linkedTrees }) => {
+			renderTaskTree([okr], container, app, 0, false, "objectives", selectedAlias);
+			container.createEl("h5", {
+				text: "🔗 Linked Items",
+				attr: { style: "margin-left: 20px;" },
+			});
+
+			const indentedWrapper = container.createEl("div", {
+				attr: { style: "padding-left: 20px;" },
+			});
+			renderTaskTree(
+				linkedTrees,
+				indentedWrapper,
+				app,
+				0,
+				false,
+				"objectives",
+				selectedAlias
+			);
+		});
+	}
+}
+
+./src/features/agile-dashboard-view/ui/components/priorities.ts
+import { App } from "obsidian";
+import { TaskItem, TaskParams } from "@features/task-index";
+import { renderTaskTree } from "./task-renderer";
+import {
+	activeForMember,
+	isCancelled,
+	isInProgress,
+	isCompleted,
+	isSnoozed,
+	getAgileArtifactType,
+} from "@features/task-filter";
+import { isRelevantToday } from "@features/task-date-manager";
+import { stripListItems } from "@features/task-tree-builder";
+
+export function processAndRenderPriorities(
+	container: HTMLElement,
+	currentTasks: TaskItem[],
+	status: boolean,
+	selectedAlias: string | null,
+	app: App,
+	taskMap: Map<string, TaskItem>,
+	childrenMap: Map<string, TaskItem[]>,
+	taskParams: TaskParams
+) {
+	const { inProgress, completed, sleeping, cancelled } = taskParams;
+
+	const buildPriorityTree = (
+		task: TaskItem,
+		isRoot = false
+	): TaskItem | null => {
+		if (isSnoozed(task, taskMap)) return null;
+
+		const allowedMarkers = ["🚀", "📦", "⚡", "⭐", "💝", "⬇️", "🪣"];
+		const disallowedMarkers = ["❌", "🛠️", "📂", "🏆", "📝", "🎖️"];
+
+		if (disallowedMarkers.some((m) => task.text.includes(m))) return null;
+		if (
+			getAgileArtifactType(task) === "learning-initiative" ||
+			getAgileArtifactType(task) === "learning-epic"
+		)
+			return null;
+
+		const hasAllowedMarker = allowedMarkers.some((m) =>
+			task.text.includes(m)
+		);
+		const hasAllowedStatus = task.status === "d" || task.status === "A";
+
+		if (!isRoot && !hasAllowedMarker && !hasAllowedStatus) return null;
+
+		const children = (task.children || [])
+			.map((child: TaskItem) => buildPriorityTree(child, false))
+			.filter((c): c is TaskItem => c !== null);
+
+		if (task.task === false) {
+			return children.length > 0 ? { ...task, children } : null;
+		}
+
+		const hasAllowed = hasAllowedMarker || hasAllowedStatus;
+		const assignedToMe = activeForMember(task, status, selectedAlias);
+		if (!hasAllowed && children.length === 0 && !assignedToMe) {
+			return null;
+		}
+
+		return { ...task, children };
+	};
+
+	const priorityRoots = currentTasks.filter(
+		(task: TaskItem) =>
+			task.status === "O" &&
+			!task.completed &&
+			isRelevantToday(task) &&
+			!isCancelled(task) &&
+			!task.text.includes("🎖️") &&
+			!task.text.includes("🏆") &&
+			!task.text.includes("📝") &&
+			!isSnoozed(task, taskMap) &&
+			getAgileArtifactType(task) !== "recurring-responsibility"
+	);
+
+	const rawTreesPriorities = priorityRoots
+		.map((task: TaskItem) => buildPriorityTree(task, true))
+		.filter((tree): tree is TaskItem => tree !== null);
+
+	const prunePriorities = (
+		node: TaskItem,
+		inherited = false
+	): TaskItem | null => {
+		const assignedToSelected = activeForMember(node, status, selectedAlias);
+		const isInherited = inherited || assignedToSelected;
+		const children = (node.children || [])
+			.map((child: TaskItem) => prunePriorities(child, isInherited))
+			.filter((c): c is TaskItem => c !== null);
+		if (isInherited || children.length > 0) {
+			return { ...node, children };
+		}
+		return null;
+	};
+
+	const priorityTasks = rawTreesPriorities
+		.map((tree: TaskItem) => prunePriorities(tree))
+		.filter((tree): tree is TaskItem => tree !== null)
+		.filter((tree: TaskItem) => {
+			if (!selectedAlias) return true;
+			const isSelected = activeForMember(tree, status, selectedAlias);
+			return isSelected || (tree.children?.length ?? 0) > 0;
+		});
+
+	const strippedPriorityTasks = stripListItems(priorityTasks);
+
+	const filteredPriorityTasks = strippedPriorityTasks.filter((task) => {
+		return (
+			(inProgress && isInProgress(task, taskMap)) ||
+			(completed && isCompleted(task)) ||
+			(sleeping && isSnoozed(task, taskMap)) ||
+			(cancelled && isCancelled(task))
+		);
+	});
+
+	if (filteredPriorityTasks.length > 0 && status) {
+		container.createEl("h2", { text: "📂 Priorities" });
+		renderTaskTree(
+			filteredPriorityTasks,
+			container,
+			app,
+			0,
+			false,
+			"priorities",
+			selectedAlias
+		);
+	}
+}
+
+./src/features/agile-dashboard-view/ui/components/responsibilities.ts
+import { App } from "obsidian";
+import { TaskItem, TaskParams } from "@features/task-index";
+import { renderTaskTree } from "./task-renderer";
+import {
+	activeForMember,
+	isCancelled,
+	isInProgress,
+	isCompleted,
+	isSnoozed,
+	getAgileArtifactType,
+	isAssignedToMemberOrTeam,
+	isAssignedToAnyUser,
+	isScheduledForToday, // NEW: use DOW schedule helper (🗓️ Sundays, etc.)
+} from "@features/task-filter";
+import {
+	isRelevantToday, // keep: used for priorityRoots
+} from "@features/task-date-manager";
+import {
+	buildHierarchyFromPath,
+	getPathToAncestor,
+	buildFullSubtree,
+	findAncestor,
+} from "@features/task-tree-builder";
+
+export function processAndRenderResponsibilities(
+	container: HTMLElement,
+	currentTasks: TaskItem[],
+	status: boolean,
+	selectedAlias: string | null,
+	app: App,
+	taskMap: Map<string, TaskItem>,
+	childrenMap: Map<string, TaskItem[]>,
+	taskParams: TaskParams
+) {
+	void childrenMap;
+
+	const { inProgress, completed, sleeping, cancelled } = taskParams;
+
+	// Direct or inferred assignment to selectedAlias (or team)
+	const isAssignedToMemberIncludingInferred = (task: TaskItem) => {
+		// FIX: pass selectedAlias so direct assignments match correctly
+		if (isAssignedToMemberOrTeam(task, selectedAlias)) return true;
+
+		// Inherit from ancestors: if any ancestor has an assignee wrapper, respect it
+		let cur: TaskItem | undefined = task;
+		while (cur?._parentId) {
+			const parentId = cur._parentId;
+			if (!parentId) return false;
+			cur = taskMap.get(parentId);
+			if (!cur) return false;
+
+			if (isAssignedToAnyUser(cur)) {
+				return activeForMember(cur, status, selectedAlias);
+			}
+		}
+		return false;
+	};
+
+	// Collect recurring responsibilities from a subtree if assigned and not snoozed
+	const collectRecurring = (node: TaskItem, collector: TaskItem[]) => {
+		if (
+			getAgileArtifactType(node) === "recurring-responsibility" &&
+			isAssignedToMemberIncludingInferred(node) &&
+			!isSnoozed(node, taskMap)
+		) {
+			collector.push(node);
+		}
+		(node.children || []).forEach((child: TaskItem) =>
+			collectRecurring(child, collector)
+		);
+	};
+
+	// Build a displayable subtree (prunes unrelated nodes)
+	const buildResponsibilitySubtree = (
+		task: TaskItem,
+		isRoot = false
+	): TaskItem | null => {
+		if (isSnoozed(task, taskMap)) return null;
+
+		const allowedMarkers = ["🚀", "📦", "⚡", "⭐", "💝", "🔁", "⬇️", "🪣"];
+		const disallowedMarkers = ["❌", "🛠️", "📂", "🏆", "📝", "🎖️"];
+
+		if (disallowedMarkers.some((m) => task.text.includes(m))) return null;
+		if (
+			getAgileArtifactType(task) === "learning-initiative" ||
+			getAgileArtifactType(task) === "learning-epic"
+		)
+			return null;
+
+		const hasAllowedMarker = allowedMarkers.some((m) =>
+			task.text.includes(m)
+		);
+		const hasAllowedStatus = task.status === "d" || task.status === "A";
+
+		if (!isRoot && !hasAllowedMarker && !hasAllowedStatus) return null;
+
+		const children = (task.children || [])
+			.map((child: TaskItem) => buildResponsibilitySubtree(child, false))
+			.filter((c): c is TaskItem => c !== null);
+
+		if (task.task === false) {
+			return children.length > 0 ? { ...task, children } : null;
+		}
+
+		const hasAllowed = hasAllowedMarker || hasAllowedStatus;
+		// FIX: pass selectedAlias so direct assignments are honored
+		const assignedToMeOrTeam = isAssignedToMemberOrTeam(
+			task,
+			selectedAlias
+		);
+		if (!hasAllowed && children.length === 0 && !assignedToMeOrTeam) {
+			return null;
+		}
+
+		return { ...task, children };
+	};
+
+	const pruneToTargets = (
+		node: TaskItem,
+		targetIds: Set<string>,
+		isUnderTarget = false
+	): TaskItem | null => {
+		if (!node) return null;
+
+		const thisIsTarget = targetIds.has(node._uniqueId ?? "");
+		const effectiveUnder = isUnderTarget || thisIsTarget;
+
+		const prunedChildren = (node.children || [])
+			.map((child: TaskItem) =>
+				pruneToTargets(child, targetIds, effectiveUnder)
+			)
+			.filter((c): c is TaskItem => c !== null);
+
+		if (effectiveUnder || prunedChildren.length > 0) {
+			return { ...node, children: prunedChildren };
+		}
+		return null;
+	};
+
+	const trimUnassignedAncestors = (tree: TaskItem): TaskItem | null => {
+		let current = tree;
+		while (
+			current &&
+			current.children &&
+			current.children.length === 1 &&
+			!isAssignedToMemberIncludingInferred(current)
+		) {
+			current = current.children[0];
+		}
+		return current;
+	};
+
+	// Roots to scan: same heuristic used elsewhere in the dashboard
+	const priorityRoots = currentTasks.filter(
+		(task) =>
+			task.status === "O" &&
+			!task.completed &&
+			isRelevantToday(task) &&
+			!isCancelled(task) &&
+			!task.text.includes("🎖️") &&
+			!task.text.includes("🏆") &&
+			!task.text.includes("📝") &&
+			!isSnoozed(task, taskMap) &&
+			getAgileArtifactType(task) !== "recurring-responsibility"
+	);
+
+	const priorityTrees = priorityRoots.map((t) => buildFullSubtree(t));
+
+	let allRecurring: TaskItem[] = [];
+	priorityTrees.forEach((tree: TaskItem) =>
+		collectRecurring(tree, allRecurring)
+	);
+
+	// FIX: Respect DOW schedules like "🗓️ Sundays"
+	// If a calendar marker is present, only include when scheduled for today.
+	allRecurring = allRecurring.filter((task) => {
+		const hasCalendar = /🗓️/.test(task.text);
+		return !hasCalendar || isScheduledForToday(task);
+	});
+
+	const recurringWithSubtrees = allRecurring
+		.map((rec) => {
+			const subtree = buildResponsibilitySubtree(rec);
+			return subtree ? { root: rec, subtree } : null;
+		})
+		.filter(
+			(item): item is { root: TaskItem; subtree: TaskItem } =>
+				item !== null
+		);
+
+	const responsibilityTreesMap = new Map<string, TaskItem>();
+	recurringWithSubtrees.forEach(({ root: rec, subtree }) => {
+		const topAncestor = findAncestor(rec, taskMap);
+		if (!topAncestor || !topAncestor._uniqueId) return;
+		const path = getPathToAncestor(rec, topAncestor._uniqueId, taskMap);
+		if (!path || !path.length) return;
+
+		const tree = buildHierarchyFromPath(path);
+		if (!tree) return;
+
+		let current: TaskItem = tree;
+		for (let i = 1; i < path.length; i++) {
+			current = current.children[0];
+		}
+		current.children = subtree.children || [];
+
+		const prunedTree = pruneToTargets(tree, new Set([rec._uniqueId ?? ""]));
+		if (!prunedTree) return;
+
+		const trimmedTree = trimUnassignedAncestors(prunedTree);
+		if (!trimmedTree) return;
+
+		const rootId = trimmedTree._uniqueId ?? "";
+		if (!responsibilityTreesMap.has(rootId)) {
+			responsibilityTreesMap.set(rootId, trimmedTree);
+		} else {
+			const existing = responsibilityTreesMap.get(rootId);
+			if (!existing) return;
+			trimmedTree.children.forEach((newChild: TaskItem) => {
+				const match = existing.children.find(
+					(c: TaskItem) => c._uniqueId === newChild._uniqueId
+				);
+				if (match) {
+					match.children = [
+						...new Set([...match.children, ...newChild.children]),
+					];
+				} else {
+					existing.children.push(newChild);
+				}
+			});
+		}
+	});
+
+	const responsibilityTasks = Array.from(responsibilityTreesMap.values());
+
+	const responsibilityTasksParamFilter = responsibilityTasks.filter(
+		(task) => {
+			return (
+				(inProgress && isInProgress(task, taskMap)) ||
+				(completed && isCompleted(task)) ||
+				(sleeping && isSnoozed(task, taskMap)) ||
+				(cancelled && isCancelled(task))
+			);
+		}
+	);
+
+	if (responsibilityTasksParamFilter.length > 0 && status) {
+		container.createEl("h2", { text: "🧹 Responsibilities" });
+		renderTaskTree(
+			responsibilityTasksParamFilter,
+			container,
+			app,
+			0,
+			false,
+			"responsibilities",
+			selectedAlias
+		);
+	}
+}
+
+./src/features/agile-dashboard-view/ui/components/task-buttons.ts
+import { App } from "obsidian";
+import { TaskItem } from "@features/task-index";
+import { snoozeTask } from "@features/task-snooze"
+import { TaskUIPolicy } from "./ui-policy";
+
+/**
+ * Hide a task's LI and collapse empty ancestors/sections afterward.
+ * Kept as-is but slightly annotated; exported for reuse.
+ */
+export function hideTaskAndCollapseAncestors(liEl: HTMLElement): void {
+	if (!liEl) return;
+
+	const hide = (el: HTMLElement) => {
+		el.style.display = "none";
+		el.setAttribute("aria-hidden", "true");
+	};
+
+	const isVisible = (el: HTMLElement) => {
+		if (!el) return false;
+		if (el.style.display === "none") return false;
+		const cs = getComputedStyle(el);
+		if (cs.visibility === "hidden" || cs.display === "none") return false;
+		return el.offsetParent !== null;
+	};
+
+	// Hide the affected task
+	hide(liEl);
+
+	// Walk up and collapse single-child ancestors
+	let current: HTMLElement | null = liEl;
+	while (current) {
+		const ul = current.parentElement as HTMLElement | null;
+		if (!ul || ul.tagName !== "UL") break;
+
+		const parentLi = ul.parentElement as HTMLElement | null;
+		if (!parentLi || parentLi.tagName !== "LI") break;
+
+		const childLis = Array.from(ul.children).filter(
+			(n) => n instanceof HTMLElement && n.tagName === "LI"
+		) as HTMLElement[];
+		const visibleChildren = childLis.filter((li) => isVisible(li));
+
+		if (childLis.length === 1 || visibleChildren.length === 0) {
+			hide(parentLi);
+			current = parentLi;
+			continue;
+		}
+		break;
+	}
+
+	// If no visible tasks remain in the section, hide the section (including its header)
+	const findSectionRoot = (el: HTMLElement): HTMLElement | null => {
+		let cur: HTMLElement | null = el;
+		while (cur && cur.parentElement) {
+			const parent = cur.parentElement as HTMLElement;
+			if (
+				parent.classList &&
+				parent.classList.contains("content-container")
+			) {
+				return cur;
+			}
+			cur = parent;
+		}
+		return null;
+	};
+
+	const maybeHideAdjacentHeader = (el: HTMLElement) => {
+		const prev = el.previousElementSibling as HTMLElement | null;
+		if (prev && /^H[1-6]$/.test(prev.tagName)) {
+			hide(prev);
+		}
+	};
+
+	const sectionRoot = findSectionRoot(liEl);
+	if (sectionRoot) {
+		const visibleLis = Array.from(
+			sectionRoot.querySelectorAll("li")
+		).filter((node) => isVisible(node as HTMLElement));
+		if (visibleLis.length === 0) {
+			hide(sectionRoot);
+			maybeHideAdjacentHeader(sectionRoot);
+		}
+	}
+}
+
+// Internal: determine if task has direct assignment to provided userSlug
+function isAssignedToUser(text: string, userSlug: string) {
+	if (!text || !userSlug) return false;
+	const activeRe = new RegExp(`\\bactive-${userSlug}\\b`, "i");
+	const inactiveRe = new RegExp(`\\binactive-${userSlug}\\b`, "i");
+	return activeRe.test(text) && !inactiveRe.test(text);
+}
+
+// Convert sectionType to normalized key for policy checks
+function normalizeSection(sectionType: string): TaskUIPolicy["section"] {
+	const s = (sectionType || "").toLowerCase();
+	if (s.includes("objective")) return "objectives";
+	if (s.includes("responsibil")) return "responsibilities";
+	if (s.includes("priorit")) return "priorities";
+	if (s.includes("epic")) return "epics";
+	if (s.includes("story")) return "stories";
+	if (s.includes("initiative")) return "initiatives";
+	return "tasks";
+}
+
+// Decide if a snooze button should be shown for a task in a given section
+function shouldShowSnoozeButton(
+	task: TaskItem,
+	sectionType: string,
+	userSlug: string
+): boolean {
+	const section = normalizeSection(sectionType);
+
+	// 1) No snooze buttons in Objectives or Responsibilities
+	if (section === "objectives" || section === "responsibilities")
+		return false;
+
+	// 2) Tasks, Stories, Epics: only on items directly assigned to the user
+	if (section === "tasks" || section === "stories" || section === "epics") {
+		return isAssignedToUser(task.text || "", userSlug);
+	}
+
+	// 3) Initiatives: allow everything
+	if (section === "initiatives") return true;
+
+	// 4) Priorities: only leaf tasks
+	if (section === "priorities") {
+		const isLeaf = !task.children || task.children.length === 0;
+		return isLeaf;
+	}
+
+	return false;
+}
+
+// Build a YYYY-MM-DD string for tomorrow (local)
+function getTomorrowISO(): string {
+	const d = new Date();
+	d.setDate(d.getDate() + 1);
+	const yyyy = d.getFullYear();
+	const mm = String(d.getMonth() + 1).padStart(2, "0");
+	const dd = String(d.getDate()).padStart(2, "0");
+	return `${yyyy}-${mm}-${dd}`;
+}
+
+// Create and wire the snooze button with click (tomorrow) and long-press (custom date) behavior
+function createSnoozeButton(
+	task: TaskItem,
+	liEl: HTMLElement,
+	sectionType: string,
+	app: App,
+	userSlug: string
+): HTMLButtonElement {
+	const btn = document.createElement("button");
+	btn.type = "button";
+	btn.textContent = "💤";
+	btn.classList.add("agile-snooze-btn");
+	btn.title = "Click: snooze until tomorrow • Long-press: enter custom date";
+	btn.style.marginLeft = "8px";
+	btn.style.cursor = "pointer";
+	btn.style.background = "none";
+	btn.style.border = "none";
+	btn.style.fontSize = "1em";
+
+	const uid = task._uniqueId || "";
+	const filePath = uid.split(":")[0] || "";
+
+	let longPressTimer: number | null = null;
+	let longPressed = false;
+	const LONG_PRESS_MS = 500;
+
+	const clearTimer = () => {
+		if (longPressTimer !== null) {
+			window.clearTimeout(longPressTimer);
+			longPressTimer = null;
+		}
+	};
+
+	const showCustomDateInput = () => {
+		longPressed = true;
+		const input = document.createElement("input");
+		input.type = "text";
+		input.placeholder = "YYYY-MM-DD";
+		input.style.width = "110px";
+		input.style.marginLeft = "6px";
+		input.style.fontSize = "0.95em";
+
+		const submit = async () => {
+			const val = input.value.trim();
+			const isValid = /^\d{4}-\d{2}-\d{2}$/.test(val);
+			input.remove();
+			btn.style.display = "";
+			if (!isValid) return;
+			btn.textContent = "⏳";
+			if (filePath) {
+				window.dispatchEvent(
+					new CustomEvent("agile:prepare-optimistic-file-change", {
+						detail: { filePath },
+					})
+				);
+			}
+			try {
+				await snoozeTask(task, app, userSlug, val);
+				if (uid && filePath) {
+					window.dispatchEvent(
+						new CustomEvent("agile:task-snoozed", {
+							detail: { uid, filePath, date: val },
+						})
+					);
+				}
+				hideTaskAndCollapseAncestors(liEl);
+			} catch (err) {
+				btn.textContent = "💤";
+				throw err;
+			}
+		};
+
+		input.addEventListener("keydown", (e: KeyboardEvent) => {
+			if (e.key === "Enter") submit();
+			if (e.key === "Escape") {
+				input.remove();
+				btn.style.display = "";
+			}
+		});
+		input.addEventListener("blur", submit);
+
+		btn.style.display = "none";
+		liEl.appendChild(input);
+		input.focus();
+	};
+
+	const startLongPress = (ev: Event) => {
+		ev.stopPropagation();
+		clearTimer();
+		longPressed = false;
+		longPressTimer = window.setTimeout(showCustomDateInput, LONG_PRESS_MS);
+	};
+
+	const cancelLongPress = () => {
+		clearTimer();
+	};
+
+	// Click to snooze until tomorrow (ignore if this click concluded a long-press)
+	btn.addEventListener("click", async (e) => {
+		e.preventDefault();
+		e.stopPropagation();
+		if (longPressed) return;
+		btn.textContent = "⏳";
+		if (filePath) {
+			window.dispatchEvent(
+				new CustomEvent("agile:prepare-optimistic-file-change", {
+					detail: { filePath },
+				})
+			);
+		}
+		try {
+			const date = getTomorrowISO();
+			await snoozeTask(task, app, userSlug, date);
+			if (uid && filePath) {
+				window.dispatchEvent(
+					new CustomEvent("agile:task-snoozed", {
+						detail: { uid, filePath, date },
+					})
+				);
+			}
+			hideTaskAndCollapseAncestors(liEl);
+		} catch (err) {
+			btn.textContent = "💤";
+			throw err;
+		}
+	});
+
+	// Mouse long-press
+	btn.addEventListener("mousedown", startLongPress);
+	btn.addEventListener("mouseup", cancelLongPress);
+	btn.addEventListener("mouseleave", cancelLongPress);
+
+	// Touch long-press (mobile)
+	btn.addEventListener("touchstart", startLongPress, { passive: true });
+	btn.addEventListener("touchend", cancelLongPress);
+
+	return btn;
+}
+
+function findInlineAnchor(liEl: HTMLElement): HTMLElement {
+	const innerLi = liEl.querySelector("ul > li") as HTMLElement | null;
+	const base = innerLi ?? liEl;
+	const inlineContainer =
+		(base.querySelector("p") as HTMLElement | null) ||
+		(base.querySelector("span") as HTMLElement | null) ||
+		(base.querySelector("label") as HTMLElement | null);
+	return inlineContainer ?? base;
+}
+
+export function appendSnoozeButtonIfEligible(
+	task: TaskItem,
+	liEl: HTMLElement,
+	sectionType: string,
+	app: App,
+	selectedAlias: string | null
+) {
+	const uid = task._uniqueId || "";
+	const filePath = uid.split(":")[0] || "";
+
+	const userSlug = selectedAlias;
+	if (!userSlug) {
+		return; // No user configured; skip
+	}
+
+	const eligible = shouldShowSnoozeButton(task, sectionType, userSlug);
+	if (!eligible) {
+		return;
+	}
+
+	if (uid) liEl.setAttribute("data-task-uid", uid);
+	if (filePath) liEl.setAttribute("data-file-path", filePath);
+
+	const btn = createSnoozeButton(task, liEl, sectionType, app, userSlug);
+	const anchor = findInlineAnchor(liEl);
+	anchor.appendChild(btn);
+}
+
+./src/features/agile-dashboard-view/ui/components/task-renderer.ts
+import { App, Component, MarkdownRenderer, TFile } from "obsidian";
+import { TaskItem } from "@features/task-index";
+import {
+	appendSnoozeButtonIfEligible,
+	hideTaskAndCollapseAncestors,
+} from "./task-buttons";
+
+function isLeaf(task: TaskItem): boolean {
+	return !task.children || task.children.length === 0;
+}
+function normalizeSection(sectionType: string) {
+	const s = (sectionType || "").toLowerCase();
+	if (s.includes("initiative")) return "initiatives";
+	if (s.includes("objective")) return "objectives";
+	if (s.includes("task")) return "tasks";
+	if (s.includes("story")) return "stories";
+	if (s.includes("epic")) return "epics";
+	if (s.includes("priorit")) return "priorities";
+	if (s.includes("responsibil")) return "responsibilities";
+	return "tasks";
+}
+function shouldEnableCheckbox(
+	sectionType: string,
+	depth: number,
+	task: TaskItem,
+	isRoot: boolean
+): boolean {
+	const section = normalizeSection(sectionType);
+	const leaf = isLeaf(task);
+
+	if (section === "initiatives") return true;
+	if (section === "objectives") return (isRoot && depth === 0) || leaf;
+	if (
+		section === "tasks" ||
+		section === "stories" ||
+		section === "epics" ||
+		section === "priorities" ||
+		section === "responsibilities"
+	) {
+		return leaf;
+	}
+	return true;
+}
+
+let assignmentEventListenerAttached = false;
+function ensureAssignmentEventListener(app: App) {
+	if (assignmentEventListenerAttached) return;
+	assignmentEventListenerAttached = true;
+
+	window.addEventListener(
+		"agile:request-assign-propagate" as any,
+		async (ev: Event) => {
+			try {
+				const ce = ev as CustomEvent<any>;
+				const detail =
+					ce && typeof ce.detail === "object" ? ce.detail : {};
+				const uid = detail?.uid;
+				const newAlias = detail?.newAlias;
+				if (
+					typeof uid === "string" &&
+					typeof newAlias === "string" &&
+					uid
+				) {
+					const filePath = uid.split(":")[0] || "";
+					if (filePath) {
+						window.dispatchEvent(
+							new CustomEvent(
+								"agile:prepare-optimistic-file-change",
+								{
+									detail: { filePath },
+								}
+							)
+						);
+					}
+					// await updateAssigneeAndPropagate(app, uid, newAlias); TO DO: add new reassignment/assignment cascade
+					if (filePath) {
+						window.dispatchEvent(
+							new CustomEvent("agile:assignment-changed", {
+								detail: { uid, filePath, newAlias },
+							})
+						);
+					}
+				}
+			} catch (err) {
+				console.error(
+					"[agile] Failed handling 'agile:request-assign-propagate' event",
+					err
+				);
+			}
+		}
+	);
+}
+
+function annotateAssigneeMarks(
+	liEl: HTMLElement,
+	uid: string,
+	filePath: string
+) {
+	const marks = liEl.querySelectorAll("mark");
+	marks.forEach((m) => {
+		const el = m as HTMLElement;
+		const cls = (el.getAttribute("class") || "").toLowerCase();
+		if (
+			!/(^|\s)(?:active|inactive)-[a-z0-9-]+(\s|$)/i.test(" " + cls + " ")
+		)
+			return;
+		const strong = el.querySelector("strong");
+		if (!strong || !/^\s*👋/u.test(strong.textContent || "")) return;
+		el.setAttribute("data-task-uid", uid);
+		if (filePath) el.setAttribute("data-file-path", filePath);
+	});
+}
+
+export function renderTaskTree(
+	tasks: TaskItem[],
+	container: HTMLElement,
+	app: App,
+	depth: number,
+	isRoot: boolean,
+	sectionType: string,
+	selectedAlias: string | null
+) {
+	ensureAssignmentEventListener(app);
+	if (tasks.length === 0) return;
+
+	const taskList = container.createEl("ul", {
+		cls: "agile-dashboard contains-task-list",
+	});
+
+	tasks.forEach((task) => {
+		if (
+			!task.text?.trim() &&
+			!task.visual?.trim() &&
+			(!task.children || task.children.length === 0)
+		)
+			return;
+
+		const tempEl = document.createElement("div");
+		const renderComponent = new Component();
+		MarkdownRenderer.renderMarkdown(
+			(task.visual || task.text || "").trim(),
+			tempEl,
+			task.link?.path || "",
+			renderComponent
+		);
+		renderComponent.load();
+
+		const firstEl = tempEl.firstElementChild as HTMLElement | null;
+		let taskItemEl: HTMLElement;
+
+		if (firstEl?.tagName.toLowerCase() === "ul") {
+			if (
+				firstEl.children.length === 1 &&
+				(
+					firstEl.firstElementChild as HTMLElement | null
+				)?.tagName.toLowerCase() === "li"
+			) {
+				taskItemEl = firstEl.firstElementChild as HTMLElement;
+				taskList.appendChild(taskItemEl);
+			} else {
+				taskItemEl = taskList.createEl("li", { cls: "task-list-item" });
+				while (tempEl.firstChild) {
+					taskItemEl.appendChild(tempEl.firstChild);
+				}
+			}
+		} else {
+			taskItemEl = taskList.createEl("li", { cls: "task-list-item" });
+			while (tempEl.firstChild) {
+				taskItemEl.appendChild(tempEl.firstChild);
+			}
+		}
+
+		if (task.annotated) {
+			taskItemEl.addClass("annotated-task");
+		}
+
+		if (task._uniqueId) {
+			taskItemEl.setAttribute("data-task-uid", task._uniqueId);
+		}
+		const filePath = task.link?.path || "";
+		if (filePath) {
+			taskItemEl.setAttribute("data-file-path", filePath);
+		}
+		try {
+			annotateAssigneeMarks(taskItemEl, task._uniqueId || "", filePath);
+		} catch (e) {
+			console.error("[agile] annotateAssigneeMarks failed", {
+				error: e,
+				taskUid: task._uniqueId,
+				filePath,
+			});
+		}
+
+		try {
+			appendSnoozeButtonIfEligible(
+				task,
+				taskItemEl,
+				sectionType,
+				app,
+				selectedAlias
+			);
+		} catch (e) {
+			console.error("[agile] appendSnoozeButtonIfEligible failed", {
+				error: e,
+				taskUid: task._uniqueId,
+				sectionType,
+				selectedAlias,
+			});
+		}
+
+		const checkbox = taskItemEl.querySelector(
+			'input[type="checkbox"]'
+		) as HTMLInputElement | null;
+		if (checkbox) {
+			const interactive = shouldEnableCheckbox(
+				sectionType,
+				depth,
+				task,
+				isRoot
+			);
+			if (!interactive) {
+				checkbox.disabled = true;
+				checkbox.tabIndex = -1;
+				checkbox.setAttribute("aria-disabled", "true");
+				(checkbox as HTMLElement).style.pointerEvents = "none";
+			} else {
+				let pressTimer: number | null = null;
+				let longPressed = false;
+				const LONG_PRESS_MS = 500;
+
+				let initialChecked = checkbox.checked;
+				let isUpdating = false;
+
+				const performUpdate = async (cancel: boolean) => {
+					if (isUpdating) return;
+					isUpdating = true;
+					try {
+						const result = await handleStatusChange(
+							task,
+							taskItemEl,
+							app,
+							cancel
+						);
+						if (result === "/") {
+							rerenderTaskInline(
+								task,
+								taskItemEl,
+								app,
+								sectionType,
+								result,
+								isRoot,
+								depth,
+								selectedAlias
+							);
+						} else if (result === "x") {
+							checkbox.checked = true;
+							initialChecked = true;
+						}
+					} catch (e) {
+						console.error("[agile] performUpdate failed", {
+							error: e,
+							cancel,
+							taskUid: task._uniqueId,
+						});
+					} finally {
+						isUpdating = false;
+					}
+				};
+
+				checkbox.addEventListener("change", (ev) => {
+					ev.preventDefault();
+					// @ts-ignore
+					ev.stopImmediatePropagation?.();
+					checkbox.checked = initialChecked;
+				});
+
+				checkbox.addEventListener("keydown", async (ev) => {
+					const key = (ev as KeyboardEvent).key;
+					if (key === " " || key === "Enter") {
+						ev.preventDefault();
+						await performUpdate(false);
+					}
+				});
+
+				const clearTimer = () => {
+					if (pressTimer !== null) {
+						window.clearTimeout(pressTimer);
+						pressTimer = null;
+					}
+				};
+
+				const onPressStart = () => {
+					longPressed = false;
+					clearTimer();
+					pressTimer = window.setTimeout(async () => {
+						longPressed = true;
+						await performUpdate(true);
+					}, LONG_PRESS_MS);
+				};
+
+				const onPressEnd = () => {
+					clearTimer();
+				};
+
+				checkbox.addEventListener("mousedown", onPressStart);
+				checkbox.addEventListener("touchstart", onPressStart, {
+					passive: true,
+				});
+				checkbox.addEventListener("mouseup", onPressEnd);
+				checkbox.addEventListener("mouseleave", onPressEnd);
+				checkbox.addEventListener("touchend", onPressEnd);
+				checkbox.addEventListener("touchcancel", onPressEnd);
+
+				checkbox.addEventListener("click", async (ev) => {
+					ev.preventDefault();
+					ev.stopPropagation();
+					if (longPressed) {
+						longPressed = false;
+						return;
+					}
+					await performUpdate(false);
+				});
+			}
+		}
+
+		if (task.children && task.children.length > 0) {
+			renderTaskTree(
+				task.children,
+				taskItemEl,
+				app,
+				depth + 1,
+				false,
+				sectionType,
+				selectedAlias
+			);
+		}
+	});
+}
+
+function rerenderTaskInline(
+	task: TaskItem,
+	liEl: HTMLElement,
+	app: App,
+	sectionType: string,
+	newStatus: string,
+	isRoot: boolean,
+	depth: number,
+	selectedAlias: string | null
+): void {
+	try {
+		const childLists = Array.from(
+			liEl.querySelectorAll(":scope > ul")
+		) as HTMLElement[];
+
+		let lineMd = (task.visual || task.text || "").trim();
+
+		if (/^\s*[-*]\s*\[\s*.\s*\]/.test(lineMd)) {
+			lineMd = lineMd.replace(
+				/^(\s*[-*]\s*\[\s*)(.)(\s*\])/,
+				`$1${newStatus}$3`
+			);
+		} else {
+			lineMd = `- [${newStatus}] ${lineMd}`;
+		}
+
+		if (newStatus === "/") {
+			lineMd = lineMd
+				.replace(/\s*(✅|❌)\s+\d{4}-\d{2}-\d{2}\b/g, "")
+				.trimEnd();
+		}
+
+		liEl.innerHTML = "";
+
+		const tempEl = document.createElement("div");
+		const renderComponent = new Component();
+		MarkdownRenderer.renderMarkdown(
+			lineMd,
+			tempEl,
+			task.link?.path || "",
+			renderComponent
+		);
+		renderComponent.load();
+
+		const firstEl = tempEl.firstElementChild as HTMLElement | null;
+		if (
+			firstEl?.tagName.toLowerCase() === "ul" &&
+			firstEl.children.length === 1 &&
+			(
+				firstEl.firstElementChild as HTMLElement | null
+			)?.tagName.toLowerCase() === "li"
+		) {
+			const sourceLi = firstEl.firstElementChild as HTMLElement;
+			const hadAnnotated = liEl.classList.contains("annotated-task");
+
+			const dataTask = sourceLi.getAttribute("data-task");
+			if (dataTask !== null) liEl.setAttribute("data-task", dataTask);
+			else liEl.removeAttribute("data-task");
+
+			const role = sourceLi.getAttribute("role");
+			if (role !== null) liEl.setAttribute("role", role);
+			else liEl.removeAttribute("role");
+
+			const ariaChecked = sourceLi.getAttribute("aria-checked");
+			if (ariaChecked !== null)
+				liEl.setAttribute("aria-checked", ariaChecked);
+			else liEl.removeAttribute("aria-checked");
+
+			liEl.className = sourceLi.className;
+			if (hadAnnotated) liEl.classList.add("annotated-task");
+
+			while (sourceLi.firstChild) {
+				liEl.appendChild(sourceLi.firstChild);
+			}
+		} else {
+			while (tempEl.firstChild) {
+				liEl.appendChild(tempEl.firstChild);
+			}
+			liEl.classList.add("task-list-item");
+			if (newStatus === "x") liEl.classList.add("is-checked");
+			else liEl.classList.remove("is-checked");
+			liEl.setAttribute("data-task", newStatus);
+		}
+
+		const inputEl = liEl.querySelector(
+			'input[type="checkbox"]'
+		) as HTMLInputElement | null;
+		if (inputEl) {
+			inputEl.setAttribute("data-task", newStatus);
+		}
+
+		childLists.forEach((ul) => liEl.appendChild(ul));
+
+		try {
+			appendSnoozeButtonIfEligible(
+				task,
+				liEl,
+				sectionType,
+				app,
+				selectedAlias
+			);
+		} catch (e) {
+			console.error(
+				"[agile] appendSnoozeButtonIfEligible (rerender) failed",
+				{
+					error: e,
+					taskUid: task._uniqueId,
+					sectionType,
+					selectedAlias,
+				}
+			);
+		}
+
+		const checkbox = liEl.querySelector(
+			'input[type="checkbox"]'
+		) as HTMLInputElement | null;
+
+		if (checkbox) {
+			const interactive = shouldEnableCheckbox(
+				sectionType,
+				depth,
+				task,
+				isRoot
+			);
+			if (!interactive) {
+				checkbox.disabled = true;
+				checkbox.tabIndex = -1;
+				checkbox.setAttribute("aria-disabled", "true");
+				(checkbox as HTMLElement).style.pointerEvents = "none";
+			} else {
+				let pressTimer: number | null = null;
+				const LONG_PRESS_MS = 500;
+
+				let initialChecked = checkbox.checked;
+				let isUpdating = false;
+
+				const performUpdate = async (cancel: boolean) => {
+					if (isUpdating) return;
+					isUpdating = true;
+					try {
+						const result = await handleStatusChange(
+							task,
+							liEl,
+							app,
+							cancel
+						);
+						if (result === "/") {
+							rerenderTaskInline(
+								task,
+								liEl,
+								app,
+								sectionType,
+								result,
+								isRoot,
+								depth,
+								selectedAlias
+							);
+						} else if (result === "x") {
+							checkbox.checked = true;
+							initialChecked = true;
+						}
+					} catch (e) {
+						console.error(
+							"[agile] performUpdate (rerender) failed",
+							{
+								error: e,
+								cancel,
+								taskUid: task._uniqueId,
+							}
+						);
+					} finally {
+						isUpdating = false;
+					}
+				};
+
+				checkbox.addEventListener("change", (ev) => {
+					ev.preventDefault();
+					// @ts-ignore
+					ev.stopImmediatePropagation?.();
+					checkbox.checked = initialChecked;
+				});
+
+				checkbox.addEventListener("keydown", async (ev) => {
+					const key = (ev as KeyboardEvent).key;
+					if (key === " " || key === "Enter") {
+						ev.preventDefault();
+						await performUpdate(false);
+					}
+				});
+
+				const clearTimer = () => {
+					if (pressTimer !== null) {
+						window.clearTimeout(pressTimer);
+						pressTimer = null;
+					}
+				};
+
+				const onPressStart = () => {
+					clearTimer();
+					pressTimer = window.setTimeout(async () => {
+						await performUpdate(true);
+					}, LONG_PRESS_MS);
+				};
+
+				const onPressEnd = () => {
+					clearTimer();
+				};
+
+				checkbox.addEventListener("mousedown", onPressStart);
+				checkbox.addEventListener("touchstart", onPressStart, {
+					passive: true,
+				});
+				checkbox.addEventListener("mouseup", onPressEnd);
+				checkbox.addEventListener("mouseleave", onPressEnd);
+				checkbox.addEventListener("touchend", onPressEnd);
+				checkbox.addEventListener("touchcancel", onPressEnd);
+
+				checkbox.addEventListener("click", async (ev) => {
+					ev.preventDefault();
+					ev.stopPropagation();
+					await performUpdate(false);
+				});
+			}
+		}
+	} catch (e) {
+		console.error("[agile] rerenderTaskInline failed", {
+			error: e,
+			taskUid: task._uniqueId,
+			newStatus,
+			sectionType,
+			isRoot,
+			depth,
+			selectedAlias,
+		});
+	}
+}
+
+export const handleStatusChange = async (
+	task: TaskItem,
+	liEl: HTMLElement,
+	app: App,
+	isCancel = false
+): Promise<string | null> => {
+	try {
+		const filePath = task.link?.path;
+		if (!filePath) throw new Error("Missing task.link.path");
+
+		const file = app.vault.getAbstractFileByPath(filePath) as TFile;
+		if (!file) throw new Error(`File not found: ${filePath}`);
+
+		window.dispatchEvent(
+			new CustomEvent("agile:prepare-optimistic-file-change", {
+				detail: { filePath },
+			})
+		);
+
+		const content = await app.vault.read(file);
+		const lines = content.split(/\r?\n/);
+
+		let effectiveStatus = (task.status ?? " ").trim() || " ";
+		let targetLineIndex = -1;
+
+		const parseStatusFromLine = (line: string): string | null => {
+			const m = line.match(/^\s*[-*]\s*\[\s*(.)\s*\]/);
+			return m ? m[1] : null;
+		};
+
+		const normalize = (s: string) =>
+			(s || "")
+				.replace(/\s*(✅|❌)\s+\d{4}-\d{2}-\d{2}\b/g, "")
+				.replace(/\s+/g, " ")
+				.trim();
+
+		const getLineRestNormalized = (line: string): string | null => {
+			const m = line.match(/^\s*[-*]\s*\[\s*.\s*\]\s*(.*)$/);
+			return m ? normalize(m[1]) : null;
+		};
+
+		const targetTextNorm = normalize(
+			(task.text || task.visual || "").trim()
+		);
+
+		const baseIdx = typeof task.line === "number" ? task.line : -1;
+		const candidates = [baseIdx, baseIdx - 1, baseIdx + 1].filter(
+			(i) => i >= 0 && i < lines.length
+		);
+
+		for (const i of candidates) {
+			const rest = getLineRestNormalized(lines[i]);
+			if (!rest) continue;
+			if (
+				rest === targetTextNorm ||
+				rest.startsWith(targetTextNorm) ||
+				targetTextNorm.startsWith(rest)
+			) {
+				targetLineIndex = i;
+				const parsed = parseStatusFromLine(lines[i]);
+				if (parsed) effectiveStatus = parsed;
+				break;
+			}
+		}
+
+		if (targetLineIndex === -1 && targetTextNorm) {
+			for (let i = 0; i < lines.length; i++) {
+				const rest = getLineRestNormalized(lines[i]);
+				if (rest && rest === targetTextNorm) {
+					targetLineIndex = i;
+					const parsed = parseStatusFromLine(lines[i]);
+					if (parsed) effectiveStatus = parsed;
+					break;
+				}
+			}
+			if (targetLineIndex === -1) {
+				for (let i = 0; i < lines.length; i++) {
+					const rest = getLineRestNormalized(lines[i]);
+					if (rest && rest.startsWith(targetTextNorm)) {
+						targetLineIndex = i;
+						const parsed = parseStatusFromLine(lines[i]);
+						if (parsed) effectiveStatus = parsed;
+						break;
+					}
+				}
+			}
+		}
+
+		const newStatus = isCancel ? "-" : effectiveStatus === "/" ? "x" : "/";
+
+		const today = new Date();
+		const yyyy = String(today.getFullYear());
+		const mm = String(today.getMonth() + 1).padStart(2, "0");
+		const dd = String(today.getDate()).padStart(2, "0");
+		const dateStr = `${yyyy}-${mm}-${dd}`;
+
+		const updateLine = (line: string): string => {
+			const m = line.match(/^(\s*[-*]\s*\[\s*)(.)(\s*\]\s*)(.*)$/);
+			if (!m) return line;
+
+			const prefix = m[1];
+			const bracketSuffix = m[3];
+			let rest = m[4] ?? "";
+
+			rest = rest
+				.replace(/\s*(✅|❌)\s+\d{4}-\d{2}-\d{2}\b/g, "")
+				.trimEnd();
+
+			let updated = `${prefix}${newStatus}${bracketSuffix}${
+				rest ? " " + rest : ""
+			}`;
+
+			if (newStatus === "x") {
+				updated += ` ✅ ${dateStr}`;
+			} else if (newStatus === "-") {
+				updated += ` ❌ ${dateStr}`;
+			}
+
+			return updated;
+		};
+
+		let newContent: string | null = null;
+
+		const tryReplaceAtIndex = (idx: number) => {
+			if (idx < 0 || idx >= lines.length) return false;
+			const originalLine = lines[idx];
+			const replaced = updateLine(originalLine);
+			if (replaced !== originalLine) {
+				lines[idx] = replaced;
+				newContent = lines.join("\n");
+				return true;
+			}
+			return false;
+		};
+
+		if (targetLineIndex !== -1) {
+			tryReplaceAtIndex(targetLineIndex);
+		}
+
+		if (newContent == null) {
+			const targetText = normalize(
+				(task.text || task.visual || "").trim()
+			);
+			if (targetText) {
+				for (let i = 0; i < lines.length; i++) {
+					const m = lines[i].match(/^\s*[-*]\s*\[\s*.\s*\]\s*(.*)$/);
+					if (!m) continue;
+					const rest = normalize(m[1]);
+					if (rest === targetText) {
+						if (tryReplaceAtIndex(i)) break;
+					}
+				}
+				if (newContent == null) {
+					for (let i = 0; i < lines.length; i++) {
+						const m = lines[i].match(
+							/^\s*[-*]\s*\[\s*.\s*\]\s*(.*)$/
+						);
+						if (!m) continue;
+						const rest = normalize(m[1]);
+						if (rest.startsWith(targetText)) {
+							if (tryReplaceAtIndex(i)) break;
+						}
+					}
+				}
+			}
+		}
+
+		if (newContent == null) {
+			const escaped = (task.text || "")
+				.trim()
+				.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+			if (escaped) {
+				const re = new RegExp(
+					`^(\\s*[-*]\\s*\\[\\s*).(\\s*\\]\\s*)${escaped}(.*)$`,
+					"m"
+				);
+				newContent = content.replace(re, (match) => updateLine(match));
+				if (newContent === content) {
+					newContent = null;
+				}
+			}
+		}
+
+		if (!newContent || newContent === content) {
+			throw new Error("Unable to update task line");
+		}
+
+		await app.vault.modify(file, newContent);
+		(task as any).status = newStatus;
+
+		if (newStatus === "x" || newStatus === "-") {
+			try {
+				hideTaskAndCollapseAncestors(liEl);
+			} catch (e) {
+				console.error("[agile] hideTaskAndCollapseAncestors failed", {
+					error: e,
+					taskUid: task._uniqueId,
+				});
+			}
+		}
+
+		return newStatus;
+	} catch (err) {
+		console.error("[agile] handleStatusChange failed", {
+			error: err,
+			taskUid: task?._uniqueId,
+			isCancel,
+		});
+		return null;
+	}
+};
+
+./src/features/agile-dashboard-view/ui/components/ui-policy.ts
+export type TaskSection =
+	| "objectives"
+	| "responsibilities"
+	| "priorities"
+	| "initiatives"
+	| "epics"
+	| "stories"
+	| "tasks";
+
+export interface TaskUIPolicy {
+	section: TaskSection;
+}
+
+./src/features/agile-dashboard-view/ui/presenters/task-buttons.ts
+import { App } from "obsidian";
+import { TaskItem } from "@features/task-index";
+import { snoozeTask } from "@features/task-snooze";
+
+// Check if task text indicates it's assigned to the current user
+function isAssignedToUser(text: string, userSlug: string) {
+	if (!text || !userSlug) return false;
+	const activeRe = new RegExp(`\\bactive-${userSlug}\\b`, "i");
+	const inactiveRe = new RegExp(`\\binactive-${userSlug}\\b`, "i");
+	return activeRe.test(text) && !inactiveRe.test(text);
+}
+
+// Decide if a snooze button should be shown for a task in a given section
+function shouldShowSnoozeButton(
+	task: TaskItem,
+	sectionType: string,
+	userSlug: string,
+	liEl?: HTMLElement
+): boolean {
+	const text = task.text || "";
+
+	// 1) No buttons in Objectives or Responsibilities
+	if (sectionType === "objectives" || sectionType === "responsibilities")
+		return false;
+
+	// 2) Tasks, Stories, Epics: only on items directly assigned to the user
+	if (
+		sectionType === "tasks" ||
+		sectionType === "stories" ||
+		sectionType === "epics"
+	) {
+		return isAssignedToUser(text, userSlug);
+	}
+
+	// 3) Initiatives: buttons on tasks all the way down the tree (allow everything)
+	if (sectionType === "initiatives") return true;
+
+	// 4) Priorities: show snooze only on leaf tasks (lowest-level children)
+	if (sectionType === "priorities") {
+		const isLeaf = !task.children || task.children.length === 0;
+		return isLeaf;
+	}
+
+	// Default: hide
+	return false;
+}
+
+// Build a YYYY-MM-DD string for tomorrow (local)
+function getTomorrowISO(): string {
+	const d = new Date();
+	d.setDate(d.getDate() + 1);
+	const yyyy = d.getFullYear();
+	const mm = String(d.getMonth() + 1).padStart(2, "0");
+	const dd = String(d.getDate()).padStart(2, "0");
+	return `${yyyy}-${mm}-${dd}`;
+}
+
+export function hideTaskAndCollapseAncestors(liEl: HTMLElement): void {
+	if (!liEl) return;
+
+	const hide = (el: HTMLElement) => {
+		el.style.display = "none";
+		el.setAttribute("aria-hidden", "true");
+	};
+
+	const isVisible = (el: HTMLElement) => {
+		if (!el) return false;
+		if (el.style.display === "none") return false;
+		const cs = getComputedStyle(el);
+		if (cs.visibility === "hidden" || cs.display === "none") return false;
+		return el.offsetParent !== null;
+	};
+
+	// Hide the affected task
+	hide(liEl);
+
+	// Walk up: if a parent LI's UL had only this one child (now hidden), hide the parent too
+	let current: HTMLElement | null = liEl;
+	while (current) {
+		const ul = current.parentElement as HTMLElement | null;
+		if (!ul || ul.tagName !== "UL") break;
+
+		const parentLi = ul.parentElement as HTMLElement | null;
+		if (!parentLi || parentLi.tagName !== "LI") break;
+
+		// Count direct LI children under this UL
+		const childLis = Array.from(ul.children).filter(
+			(n) => n instanceof HTMLElement && n.tagName === "LI"
+		) as HTMLElement[];
+
+		// Visible children after hiding current
+		const visibleChildren = childLis.filter((li) => isVisible(li));
+
+		// If parent effectively had only this one child, hide it and continue upward
+		if (childLis.length === 1 || visibleChildren.length === 0) {
+			hide(parentLi);
+			current = parentLi;
+			continue;
+		}
+
+		break;
+	}
+
+	// After collapsing, if no visible tasks remain in the section, hide the section (including its header)
+	const findSectionRoot = (el: HTMLElement): HTMLElement | null => {
+		let cur: HTMLElement | null = el;
+		while (cur && cur.parentElement) {
+			const parent = cur.parentElement as HTMLElement;
+			if (
+				parent.classList &&
+				parent.classList.contains("content-container")
+			) {
+				return cur;
+			}
+			cur = parent;
+		}
+		return null;
+	};
+
+	const maybeHideAdjacentHeader = (el: HTMLElement) => {
+		const prev = el.previousElementSibling as HTMLElement | null;
+		if (prev && /^H[1-6]$/.test(prev.tagName)) {
+			hide(prev);
+		}
+	};
+
+	const sectionRoot = findSectionRoot(liEl);
+	if (sectionRoot) {
+		const visibleLis = Array.from(
+			sectionRoot.querySelectorAll("li")
+		).filter((node) => isVisible(node as HTMLElement));
+		if (visibleLis.length === 0) {
+			hide(sectionRoot);
+			// If the section root is a list directly under the content container and the header is a sibling,
+			// also hide that header so the section disappears completely.
+			maybeHideAdjacentHeader(sectionRoot);
+		}
+	}
+}
+
+// Create and wire the snooze button with click (tomorrow) and long-press (custom date) behavior
+function createSnoozeButton(
+	task: TaskItem,
+	liEl: HTMLElement,
+	sectionType: string,
+	app: App,
+	userSlug: string
+): HTMLButtonElement {
+	const btn = document.createElement("button");
+	btn.type = "button";
+	btn.textContent = "💤";
+	btn.classList.add("agile-snooze-btn");
+	btn.title = "Click: snooze until tomorrow • Long-press: enter custom date";
+	btn.style.marginLeft = "8px";
+	btn.style.cursor = "pointer";
+	btn.style.background = "none";
+	btn.style.border = "none";
+	btn.style.fontSize = "1em";
+
+	const uid = task._uniqueId || "";
+	const filePath = uid.split(":")[0] || "";
+
+	let longPressTimer: number | null = null;
+	let longPressed = false;
+	const LONG_PRESS_MS = 500;
+
+	const clearTimer = () => {
+		if (longPressTimer !== null) {
+			window.clearTimeout(longPressTimer);
+			longPressTimer = null;
+		}
+	};
+
+	const showCustomDateInput = () => {
+		longPressed = true;
+		const input = document.createElement("input");
+		input.type = "text";
+		input.placeholder = "YYYY-MM-DD";
+		input.style.width = "110px";
+		input.style.marginLeft = "6px";
+		input.style.fontSize = "0.95em";
+
+		const submit = async () => {
+			const val = input.value.trim();
+			const isValid = /^\d{4}-\d{2}-\d{2}$/.test(val);
+			input.remove();
+			btn.style.display = "";
+			if (!isValid) return;
+			btn.textContent = "⏳";
+			if (filePath) {
+				window.dispatchEvent(
+					new CustomEvent("agile:prepare-optimistic-file-change", {
+						detail: { filePath },
+					})
+				);
+			}
+			try {
+				await snoozeTask(task, app, userSlug, val);
+				if (uid && filePath) {
+					window.dispatchEvent(
+						new CustomEvent("agile:task-snoozed", {
+							detail: { uid, filePath, date: val },
+						})
+					);
+				}
+				hideTaskAndCollapseAncestors(liEl);
+			} catch (err) {
+				btn.textContent = "💤";
+				throw err;
+			}
+		};
+
+		input.addEventListener("keydown", (e: KeyboardEvent) => {
+			if (e.key === "Enter") submit();
+			if (e.key === "Escape") {
+				input.remove();
+				btn.style.display = "";
+			}
+		});
+		input.addEventListener("blur", submit);
+
+		btn.style.display = "none";
+		liEl.appendChild(input);
+		input.focus();
+	};
+
+	const startLongPress = (ev: Event) => {
+		ev.stopPropagation();
+		clearTimer();
+		longPressed = false;
+		longPressTimer = window.setTimeout(showCustomDateInput, LONG_PRESS_MS);
+	};
+
+	const cancelLongPress = () => {
+		clearTimer();
+	};
+
+	// Click to snooze until tomorrow (ignore if this click concluded a long-press)
+	btn.addEventListener("click", async (e) => {
+		e.preventDefault();
+		e.stopPropagation();
+		if (longPressed) return;
+		btn.textContent = "⏳";
+		if (filePath) {
+			window.dispatchEvent(
+				new CustomEvent("agile:prepare-optimistic-file-change", {
+					detail: { filePath },
+				})
+			);
+		}
+		try {
+			const date = getTomorrowISO();
+			await snoozeTask(task, app, userSlug, date);
+			if (uid && filePath) {
+				window.dispatchEvent(
+					new CustomEvent("agile:task-snoozed", {
+						detail: { uid, filePath, date },
+					})
+				);
+			}
+			hideTaskAndCollapseAncestors(liEl);
+		} catch (err) {
+			btn.textContent = "💤";
+			throw err;
+		}
+	});
+
+	// Mouse long-press
+	btn.addEventListener("mousedown", startLongPress);
+	btn.addEventListener("mouseup", cancelLongPress);
+	btn.addEventListener("mouseleave", cancelLongPress);
+
+	// Touch long-press (mobile)
+	btn.addEventListener("touchstart", startLongPress, { passive: true });
+	btn.addEventListener("touchend", cancelLongPress);
+
+	return btn;
+}
+
+function findInlineAnchor(liEl: HTMLElement): HTMLElement {
+	// Prefer inner UL>LI if present (result of rendering a single "- [ ]" task line)
+	const innerLi = liEl.querySelector("ul > li") as HTMLElement | null;
+	const base = innerLi ?? liEl;
+
+	// Prefer inline containers inside base for appending the button at end of text
+	const inlineContainer =
+		(base.querySelector("p") as HTMLElement | null) ||
+		(base.querySelector("span") as HTMLElement | null) ||
+		(base.querySelector("label") as HTMLElement | null);
+
+	return inlineContainer ?? base;
+}
+
+export function appendSnoozeButtonIfEligible(
+	task: TaskItem,
+	liEl: HTMLElement,
+	sectionType: string,
+	app: App,
+	selectedAlias: string | null
+) {
+	const uid = task._uniqueId || "";
+	const filePath = uid.split(":")[0] || "";
+
+	const userSlug = selectedAlias;
+	if (!userSlug) {
+		return; // No user configured; skip
+	}
+
+	const eligible = shouldShowSnoozeButton(task, sectionType, userSlug, liEl);
+	if (!eligible) {
+		return;
+	}
+
+	if (uid) liEl.setAttribute("data-task-uid", uid);
+	if (filePath) liEl.setAttribute("data-file-path", filePath);
+
+	const btn = createSnoozeButton(task, liEl, sectionType, app, userSlug);
+	const anchor = findInlineAnchor(liEl);
+	anchor.appendChild(btn);
+}
+
+./src/features/agile-dashboard-view/ui/views/agile-dashboard-view.ts
+import { ItemView, WorkspaceLeaf, TFile, TAbstractFile } from "obsidian";
+import manifest from "manifest.json";
+import { cleanupExpiredSnoozes } from "@features/task-snooze";
+import { getCurrentUserDisplayName } from "@settings/index";
+
+// Section processors
+import { processAndRenderObjectives } from "../components/objectives";
+import { processAndRenderArtifacts } from "../components/artifacts";
+import { processAndRenderInitiatives } from "../components/initiatives";
+import { processAndRenderResponsibilities } from "../components/responsibilities";
+import { processAndRenderPriorities } from "../components/priorities";
+
+// Task Index types
+import type {
+	TaskItem,
+	TaskNode,
+} from "@features/task-index/domain/task-types";
+import type { TaskIndexService } from "@features/task-index";
+import type { SettingsService } from "@settings";
+
+// Org structure API
+import type {
+	OrgStructurePort,
+	OrganizationNode,
+	TeamNode,
+} from "@features/org-structure";
+
+export const VIEW_TYPE_AGILE_DASHBOARD = "agile-dashboard-view";
+
+export type AgileDashboardViewPorts = {
+	taskIndex?: TaskIndexService;
+	settings: SettingsService;
+	orgStructure?: OrgStructurePort;
+	manifestId?: string;
+};
+
+export class AgileDashboardView extends ItemView {
+	private taskIndexService: TaskIndexService;
+	private settingsService: SettingsService;
+
+	private viewSelect: HTMLSelectElement;
+	private activeToggle: HTMLInputElement;
+	private activeToggleLabel: HTMLSpanElement;
+	private memberSelect: HTMLSelectElement;
+	private suppressedFiles = new Set<string>();
+
+	// Team selection UI
+	private orgStructurePort?: OrgStructurePort;
+	private selectTeamsBtn: HTMLButtonElement | null = null;
+	private teamsPopupEl: HTMLDivElement | null = null;
+	private outsideClickHandler: ((ev: MouseEvent) => void) | null = null;
+
+	// Team selection state
+	private selectedTeamSlugs: Set<string> = new Set();
+	private implicitAllSelected: boolean = true;
+	private storageKey: string;
+
+	constructor(leaf: WorkspaceLeaf, ports: AgileDashboardViewPorts) {
+		super(leaf);
+		this.settingsService = ports.settings;
+
+		const svc = ports.taskIndex;
+		if (!svc) {
+			console.warn(
+				"[AgileDashboardView] TaskIndexService not found in ports."
+			);
+			this.taskIndexService = {
+				buildAll: async () => {},
+				updateFile: async () => {},
+				removeFile: () => {},
+				renameFile: () => {},
+				getSnapshot: () => ({} as any),
+				getAllTasks: () => [],
+				getByFile: () => undefined,
+				getById: () => undefined,
+				getItemAtCursor: () => undefined,
+			} as unknown as TaskIndexService;
+		} else {
+			this.taskIndexService = svc;
+		}
+
+		this.orgStructurePort = ports.orgStructure;
+		const mid = (ports.manifestId || "").trim() || "agile-default";
+		this.storageKey = `agile:selected-team-slugs:${mid}`;
+		this.loadSelectedTeamSlugs();
+	}
+
+	getViewType() {
+		return VIEW_TYPE_AGILE_DASHBOARD;
+	}
+
+	getDisplayText() {
+		return "Agile Dashboard";
+	}
+
+	getIcon() {
+		return "calendar-clock";
+	}
+
+	async onOpen() {
+		const container = this.containerEl.children[1];
+		container.empty();
+
+		// Controls row (consistent gaps; active/inactive sits right next to Select Teams)
+		const controlsContainer = container.createEl("div", {
+			attr: {
+				style: "display:flex; align-items:center; gap:8px; position:relative; flex-wrap:wrap;",
+			},
+		});
+
+		const versionText = controlsContainer.createEl("p");
+		const strongText = versionText.createEl("strong");
+		strongText.textContent = `Agile Obsidian v${manifest.version}`;
+
+		this.viewSelect = controlsContainer.createEl("select");
+		this.viewSelect.innerHTML = `
+      <option value="projects">🚀 Projects</option>
+      <option value="completed">✅ Completed</option>
+    `;
+
+		// Member dropdown (grouped and sorted)
+		this.memberSelect = controlsContainer.createEl("select");
+		this.populateMemberSelectGrouped();
+
+		this.memberSelect.addEventListener("change", () => {
+			// Keep selection consistent with known membership if we have it
+			this.restrictSelectedTeamsToUserMembership();
+			// Refresh view and, if open, re-render the teams popup
+			this.updateView();
+			if (this.teamsPopupEl) {
+				this.renderTeamsPopupContent(this.teamsPopupEl);
+			}
+		});
+
+		// Select Teams button + popup
+		this.selectTeamsBtn = controlsContainer.createEl("button", {
+			text: "Select Teams",
+		}) as HTMLButtonElement;
+		this.selectTeamsBtn.addEventListener("click", (ev) => {
+			ev.preventDefault();
+			ev.stopPropagation();
+			this.toggleTeamsPopup(this.selectTeamsBtn!);
+		});
+
+		// Active/Inactive toggle — immediately after Select Teams via flex gap
+		const statusToggleContainer = controlsContainer.createEl("span", {
+			attr: {
+				style: "display:inline-flex; align-items:center; gap:6px;",
+			},
+		});
+		this.activeToggleLabel = statusToggleContainer.createEl("span", {
+			text: "Active",
+		});
+		this.activeToggle = statusToggleContainer.createEl("input", {
+			type: "checkbox",
+		}) as HTMLInputElement;
+		this.activeToggle.checked = true;
+		statusToggleContainer.style.display =
+			this.viewSelect.value === "projects" ? "inline-flex" : "none";
+
+		this.activeToggle.addEventListener("change", () => {
+			this.activeToggleLabel.textContent = this.activeToggle.checked
+				? "Active"
+				: "Inactive";
+			this.updateView();
+		});
+
+		this.viewSelect.addEventListener("change", () => {
+			statusToggleContainer.style.display =
+				this.viewSelect.value === "projects" ? "inline-flex" : "none";
+			this.updateView();
+		});
+
+		// Listen for settings changes to auto-refresh
+		this.registerEvent(
+			// @ts-ignore
+			this.app.workspace.on("agile-settings-changed", () => {
+				if (this.memberSelect) {
+					const prev = this.getSelectedAlias();
+					this.populateMemberSelectGrouped();
+					const exists = Array.from(this.memberSelect.options).some(
+						(o) => o.value === prev
+					);
+					if (prev && exists) this.memberSelect.value = prev!;
+				}
+				this.restrictSelectedTeamsToUserMembership();
+				this.updateView();
+				if (this.teamsPopupEl)
+					this.renderTeamsPopupContent(this.teamsPopupEl);
+			})
+		);
+
+		// Local optimistic updates suppression
+		this.registerDomEvent(
+			window,
+			"agile:prepare-optimistic-file-change" as any,
+			(e: Event) => {
+				const ev = e as CustomEvent<{ filePath: string }>;
+				if (ev.detail?.filePath) {
+					this.suppressedFiles.add(ev.detail.filePath);
+				}
+			}
+		);
+		this.registerDomEvent(
+			window,
+			"agile:task-snoozed" as any,
+			async (e: Event) => {
+				const ev = e as CustomEvent<{ uid: string; filePath: string }>;
+				const filePath = ev.detail?.filePath;
+				if (filePath) {
+					this.suppressedFiles.add(filePath);
+					const file = this.app.vault.getAbstractFileByPath(filePath);
+					if (file instanceof TFile) {
+						await this.taskIndexService.updateFile(file);
+					}
+				}
+			}
+		);
+
+		// Close popup when clicking outside
+		this.outsideClickHandler = (ev: MouseEvent) => {
+			if (!this.teamsPopupEl) return;
+			const target = ev.target as Node;
+			const within =
+				this.teamsPopupEl.contains(target) ||
+				this.selectTeamsBtn?.contains(target);
+			if (!within) {
+				this.closeTeamsPopup();
+			}
+		};
+		window.addEventListener("click", this.outsideClickHandler, {
+			capture: true,
+		});
+
+		// Initial render
+		await this.updateView();
+
+		// Auto-refresh on vault changes
+		this.registerEvent(
+			this.app.vault.on("modify", async (file: TFile) => {
+				if (file.extension === "md") {
+					await this.taskIndexService.updateFile(file);
+					if (this.suppressedFiles.has(file.path)) {
+						this.suppressedFiles.delete(file.path);
+						return;
+					}
+					this.updateView();
+				}
+			})
+		);
+		this.registerEvent(
+			this.app.vault.on("create", async (file: TAbstractFile) => {
+				if (file instanceof TFile && file.extension === "md") {
+					await this.taskIndexService.updateFile(file);
+					this.updateView();
+				}
+			})
+		);
+		this.registerEvent(
+			this.app.vault.on("delete", (file: TAbstractFile) => {
+				if (file instanceof TFile && file.extension === "md") {
+					this.taskIndexService.removeFile(file.path);
+					this.updateView();
+				}
+			})
+		);
+		this.registerEvent(
+			this.app.vault.on(
+				"rename",
+				async (file: TAbstractFile, oldPath: string) => {
+					if (file instanceof TFile && file.extension === "md") {
+						this.taskIndexService.renameFile(oldPath, file.path);
+						this.updateView();
+					}
+				}
+			)
+		);
+	}
+
+	async onClose() {
+		this.closeTeamsPopup();
+		if (this.outsideClickHandler) {
+			try {
+				window.removeEventListener("click", this.outsideClickHandler, {
+					capture: true,
+				} as any);
+			} catch {}
+			this.outsideClickHandler = null;
+		}
+	}
+
+	private getSelectedAlias(): string | null {
+		return (
+			this.memberSelect?.value ||
+			this.settingsService.getRaw().currentUserAlias ||
+			null
+		);
+	}
+
+	private async updateView() {
+		const viewContainer = this.containerEl.children[1] as HTMLElement;
+		const existingContent = viewContainer.querySelector(
+			".content-container"
+		) as HTMLElement | null;
+		const prevContainerScrollTop = viewContainer.scrollTop;
+		const prevContentScrollTop = existingContent?.scrollTop ?? 0;
+
+		const contentContainer =
+			existingContent ??
+			viewContainer.createEl("div", { cls: "content-container" });
+		contentContainer.empty();
+
+		const selectedView = this.viewSelect.value;
+		const isActive = this.activeToggle ? this.activeToggle.checked : true;
+		const selectedAlias = this.getSelectedAlias();
+
+		if (selectedView === "projects") {
+			await this.projectView(contentContainer, isActive, selectedAlias);
+		} else if (selectedView === "completed") {
+			contentContainer.createEl("h2", {
+				text: "✅ Completed (Coming Soon)",
+			});
+		}
+
+		viewContainer.scrollTop = prevContainerScrollTop;
+		contentContainer.scrollTop = prevContentScrollTop;
+	}
+
+	private async projectView(
+		container: HTMLElement,
+		status = true,
+		selectedAlias: string | null = null
+	) {
+		// Show helpful empty state only when user explicitly cleared selection
+		if (!this.implicitAllSelected && this.selectedTeamSlugs.size === 0) {
+			const msg = container.createEl("div", {
+				attr: {
+					style: "display:flex; align-items:center; justify-content:center; min-height: 240px; text-align:center; opacity:0.8;",
+				},
+			});
+			msg.createEl("div", {
+				text: "No organizations/teams selected. Select a team or organization to view the dashboard",
+			});
+			return;
+		}
+
+		// Get tasks
+		let currentTasks: TaskNode[] = this.taskIndexService.getAllTasks();
+
+		// Clean up expired snoozes for current user before rendering
+		const settings = this.settingsService.getRaw();
+		const changedFiles = await cleanupExpiredSnoozes(
+			this.app,
+			currentTasks,
+			getCurrentUserDisplayName(settings) || ""
+		);
+		if (changedFiles.size > 0) {
+			for (const path of changedFiles) {
+				const file = this.app.vault.getAbstractFileByPath(path);
+				if (file instanceof TFile) {
+					await this.taskIndexService.updateFile(file);
+				}
+			}
+			currentTasks = this.taskIndexService.getAllTasks();
+		}
+
+		// Apply team selection + membership filter
+		currentTasks = currentTasks.filter((t) =>
+			this.isTaskAllowedByTeam(t as unknown as TaskItem)
+		);
+
+		// Build maps
+		const taskMap = new Map<string, TaskItem>();
+		const childrenMap = new Map<string, TaskItem[]>();
+		currentTasks.forEach((t) => {
+			if (t._uniqueId) {
+				taskMap.set(t._uniqueId, t);
+				childrenMap.set(t._uniqueId, []);
+			}
+		});
+		currentTasks.forEach((t) => {
+			if (t._parentId && childrenMap.has(t._parentId)) {
+				childrenMap.get(t._parentId)!.push(t);
+			}
+		});
+
+		const taskParams = {
+			inProgress: true,
+			completed: false,
+			sleeping: false,
+			cancelled: false,
+		};
+
+		if (settings.showObjectives) {
+			processAndRenderObjectives(
+				container,
+				currentTasks,
+				status,
+				selectedAlias,
+				this.app,
+				taskMap,
+				childrenMap,
+				taskParams
+			);
+		}
+		if (settings.showResponsibilities) {
+			processAndRenderResponsibilities(
+				container,
+				currentTasks,
+				status,
+				selectedAlias,
+				this.app,
+				taskMap,
+				childrenMap,
+				taskParams
+			);
+		}
+		processAndRenderArtifacts(
+			container,
+			currentTasks,
+			status,
+			selectedAlias,
+			this.app,
+			taskMap,
+			childrenMap,
+			taskParams,
+			settings
+		);
+		if (settings.showInitiatives) {
+			processAndRenderInitiatives(
+				container,
+				currentTasks,
+				status,
+				selectedAlias,
+				this.app,
+				taskMap,
+				childrenMap,
+				taskParams
+			);
+		}
+		if (settings.showPriorities) {
+			processAndRenderPriorities(
+				container,
+				currentTasks,
+				status,
+				selectedAlias,
+				this.app,
+				taskMap,
+				childrenMap,
+				taskParams
+			);
+		}
+	}
+
+	// -----------------------
+	// Member select (grouped)
+	// -----------------------
+	private populateMemberSelectGrouped() {
+		this.memberSelect.innerHTML = "";
+
+		type Entry = {
+			alias: string;
+			name: string;
+			role: "member" | "internal-team-member" | "team" | "external";
+			label: string;
+		};
+		const entries: Entry[] = [];
+
+		const settings = this.settingsService.getRaw();
+		const teams = settings.teams || [];
+		const seen = new Set<string>();
+
+		for (const t of teams) {
+			for (const m of t.members || []) {
+				const aliasRaw =
+					typeof m === "string"
+						? m
+						: m?.alias || m?.handle || m?.username || m?.name || "";
+				/*
+						Note we need to fix the TS errors here before you proceed:
+
+						[{
+	"resource": "/mnt/c/Users/Ownerpc/plugin-dev-notes/.obsidian/plugins/agile-obsidian/src/features/agile-dashboard-view/ui/views/agile-dashboard-view.ts",
+	"owner": "typescript",
+	"code": "2339",
+	"severity": 8,
+	"message": "Property 'handle' does not exist on type 'MemberInfo'.",
+	"source": "ts",
+	"startLineNumber": 478,
+	"startColumn": 24,
+	"endLineNumber": 478,
+	"endColumn": 30,
+	"origin": "extHost3"
+},{
+	"resource": "/mnt/c/Users/Ownerpc/plugin-dev-notes/.obsidian/plugins/agile-obsidian/src/features/agile-dashboard-view/ui/views/agile-dashboard-view.ts",
+	"owner": "typescript",
+	"code": "2339",
+	"severity": 8,
+	"message": "Property 'username' does not exist on type 'MemberInfo'.",
+	"source": "ts",
+	"startLineNumber": 478,
+	"startColumn": 37,
+	"endLineNumber": 478,
+	"endColumn": 45,
+	"origin": "extHost3"
+}]
+
+Once fixed you can remove this comment in the final version
+						*/
+				const alias = this.normalizeAlias(aliasRaw);
+				if (!alias) continue;
+				if (seen.has(alias)) continue;
+				seen.add(alias);
+
+				const dispName =
+					(typeof m === "string" ? "" : m?.name) || alias;
+
+				const lower = alias.toLowerCase();
+				let role: Entry["role"] = "member";
+				if (lower.endsWith("-ext")) role = "external";
+				else if (lower.endsWith("-team")) role = "team";
+				else if (lower.endsWith("-int")) role = "internal-team-member";
+
+				const roleLabel =
+					role === "member"
+						? "Team Member"
+						: role === "internal-team-member"
+						? "Internal Team Member"
+						: role === "team"
+						? "Internal Team"
+						: "External Delegate";
+				const label = `${dispName} (${roleLabel} - ${alias})`;
+
+				entries.push({ alias, name: dispName, role, label });
+			}
+		}
+
+		// Split into groups and sort A–Z within each
+		const groupTeamMembers = entries
+			.filter(
+				(e) => e.role === "member" || e.role === "internal-team-member"
+			)
+			.sort((a, b) => a.name.localeCompare(b.name));
+		const groupDelegatesInternalTeams = entries
+			.filter((e) => e.role === "team")
+			.sort((a, b) => a.name.localeCompare(b.name));
+		const groupDelegatesExternal = entries
+			.filter((e) => e.role === "external")
+			.sort((a, b) => a.name.localeCompare(b.name));
+
+		const addGroup = (label: string, group: Entry[]) => {
+			if (group.length === 0) return;
+			const og = document.createElement("optgroup");
+			og.label = label;
+			group.forEach((e) => {
+				const opt = document.createElement("option");
+				opt.value = e.alias;
+				opt.text = e.label;
+				og.appendChild(opt);
+			});
+			this.memberSelect.appendChild(og);
+		};
+
+		addGroup("Team Members", groupTeamMembers);
+		addGroup("Delegates – Internal Teams", groupDelegatesInternalTeams);
+		addGroup("Delegates – External", groupDelegatesExternal);
+
+		const defRaw = this.settingsService.getRaw().currentUserAlias || "";
+		const def = this.normalizeAlias(defRaw);
+		const all = [
+			...groupTeamMembers,
+			...groupDelegatesInternalTeams,
+			...groupDelegatesExternal,
+		];
+		if (def && all.some((e) => e.alias === def)) {
+			this.memberSelect.value = def;
+		} else if (all.length > 0) {
+			this.memberSelect.value = all[0].alias;
+		}
+	}
+
+	// -----------------------
+	// Team selection: storage
+	// -----------------------
+	private loadSelectedTeamSlugs() {
+		try {
+			const raw = window.localStorage.getItem(this.storageKey);
+			if (raw === null) {
+				this.implicitAllSelected = true;
+				this.selectedTeamSlugs = new Set();
+				return;
+			}
+			this.implicitAllSelected = false;
+			const arr = JSON.parse(raw);
+			if (Array.isArray(arr)) {
+				this.selectedTeamSlugs = new Set(
+					arr.map((s) => String(s).toLowerCase())
+				);
+			} else {
+				this.selectedTeamSlugs = new Set();
+			}
+		} catch {
+			this.implicitAllSelected = true;
+			this.selectedTeamSlugs = new Set();
+		}
+	}
+
+	private persistSelectedTeamSlugs() {
+		try {
+			this.implicitAllSelected = false;
+			const arr = Array.from(this.selectedTeamSlugs.values());
+			window.localStorage.setItem(this.storageKey, JSON.stringify(arr));
+		} catch {}
+	}
+
+	// -----------------------------
+	// Team selection: task filtering
+	// -----------------------------
+	private isTaskAllowedByTeam(task: TaskItem): boolean {
+		const filePath =
+			task.link?.path || (task._uniqueId?.split(":")[0] ?? "");
+		if (!filePath) return false;
+
+		// Membership set for selected user (if available)
+		const allowedByUser = this.getAllowedTeamSlugsForSelectedUser();
+
+		// If implicit "all": show everything; clamp to membership only if we know it
+		if (this.implicitAllSelected) {
+			if (!this.orgStructurePort) return true;
+			const teamSlug = this.getTeamSlugForFile(filePath);
+			if (!allowedByUser) return true; // unknown => show all
+			if (!teamSlug) return false;
+			return allowedByUser.has(teamSlug);
+		}
+
+		// Custom mode: require selected team + (if known) user membership
+		if (this.selectedTeamSlugs.size === 0) return false;
+		const teamSlug = this.getTeamSlugForFile(filePath);
+		if (!teamSlug) return false;
+
+		const inSelected = this.selectedTeamSlugs.has(teamSlug);
+		if (!inSelected) return false;
+
+		// If we know membership, require membership too
+		if (allowedByUser) {
+			return allowedByUser.has(teamSlug);
+		}
+		return true;
+	}
+
+	private getTeamSlugForFile(filePath: string): string | null {
+		try {
+			if (!this.orgStructurePort) return null;
+			const { team } =
+				this.orgStructurePort.getTeamMembersForFile(filePath);
+			// TeamInfo exposes 'slug' (not 'teamSlug')
+			const slug = (team?.slug || "").toLowerCase().trim();
+			return slug || null;
+		} catch {
+			return null;
+		}
+	}
+
+	// Selected user membership for tasks/menu.
+	// Returns:
+	// - Set<string> of slugs if we confidently know memberships
+	// - null if unknown/undeterminable (menu will show all; tasks "implicit all" remains unfiltered)
+	private getAllowedTeamSlugsForSelectedUser(): Set<string> | null {
+		const aliasNorm = this.normalizeAlias(this.getSelectedAlias() || "");
+		if (!aliasNorm) return null;
+
+		// 1) Try direct org-structure helper methods (various naming conventions)
+		const fromPortMethods = this.tryPortMembershipMethods(aliasNorm);
+		// 2) Derive from org structure walking trees
+		const fromStructure = this.deriveMembershipFromStructure(aliasNorm);
+		// 3) Fallback: derive from settings.teams
+		const fromSettings = this.deriveMembershipFromSettings(aliasNorm);
+
+		// Union of all sources
+		const union = new Set<string>();
+		for (const s of [fromPortMethods, fromStructure, fromSettings]) {
+			if (!s) continue;
+			for (const x of s) union.add(x);
+		}
+
+		// If we found any, return them; otherwise return null (unknown),
+		// so we don't hide everything in the UI.
+		return union.size > 0 ? union : null;
+	}
+
+	private normalizeAlias(input: string): string {
+		if (!input) return "";
+		let s = String(input).trim();
+		if (s.startsWith("@")) s = s.slice(1);
+		return s.toLowerCase();
+	}
+
+	private extractPossibleSlug(obj: unknown): string {
+		if (!obj || typeof obj !== "object") return "";
+		const anyObj = obj as Record<string, unknown>;
+		const cand =
+			anyObj.slug ??
+			anyObj.teamSlug ??
+			anyObj.id ??
+			anyObj.key ??
+			anyObj.code;
+		return typeof cand === "string"
+			? cand.toLowerCase().trim()
+			: String(cand || "")
+					.toLowerCase()
+					.trim();
+	}
+
+	private extractPossibleName(obj: unknown): string {
+		if (!obj || typeof obj !== "object") return "";
+		const anyObj = obj as Record<string, unknown>;
+		const cand =
+			anyObj.name ??
+			anyObj.teamName ??
+			anyObj.displayName ??
+			anyObj.title;
+		return typeof cand === "string" ? cand : "";
+	}
+
+	private aliasFromMemberLike(x: unknown): string {
+		if (typeof x === "string") return this.normalizeAlias(x);
+		if (!x || typeof x !== "object") return "";
+		const anyObj = x as Record<string, unknown>;
+		const cand =
+			anyObj.alias ??
+			anyObj.handle ??
+			anyObj.username ??
+			anyObj.user ??
+			anyObj.name ??
+			anyObj.id ??
+			anyObj.email;
+		return this.normalizeAlias(
+			typeof cand === "string" ? cand : String(cand || "")
+		);
+	}
+
+	private extractAliases(members: unknown): string[] {
+		if (!members) return [];
+		if (Array.isArray(members)) {
+			return members
+				.map((m) => this.aliasFromMemberLike(m))
+				.filter(Boolean);
+		}
+		if (typeof members === "object") {
+			return Object.values(members)
+				.map((v) => this.aliasFromMemberLike(v))
+				.filter(Boolean);
+		}
+		return [];
+	}
+
+	private teamNodeHasUser(node: TeamNode, aliasNorm: string): boolean {
+		const obj = node as unknown as Record<string, unknown>;
+		const pools = [
+			obj.members,
+			obj.memberAliases,
+			obj.users,
+			obj.aliases,
+			obj.membersMap,
+			obj.allMembers,
+		];
+		for (const pool of pools) {
+			const aliases = this.extractAliases(pool);
+			if (aliases.includes(aliasNorm)) return true;
+		}
+		return false;
+	}
+
+	private tryPortMembershipMethods(aliasNorm: string): Set<string> | null {
+		if (!this.orgStructurePort) return null;
+		const port = this.orgStructurePort as unknown as Record<
+			string,
+			unknown
+		>;
+
+		const candidates = [
+			"getTeamsForUser",
+			"getTeamSlugsForUser",
+			"getUserTeams",
+			"getTeamsByUser",
+		];
+
+		for (const fnName of candidates) {
+			const fn = port[fnName];
+			if (typeof fn === "function") {
+				try {
+					const raw = (fn as any).call(
+						this.orgStructurePort,
+						aliasNorm
+					);
+					if (Array.isArray(raw)) {
+						const set = new Set<string>();
+						for (const item of raw) {
+							if (typeof item === "string") {
+								const slug = item.toLowerCase().trim();
+								if (slug) set.add(slug);
+							} else if (item && typeof item === "object") {
+								const slug = this.extractPossibleSlug(item);
+								if (slug) set.add(slug);
+							}
+						}
+						if (set.size > 0) return set;
+					}
+				} catch {
+					/* ignore and try next */
+				}
+			}
+		}
+		return null;
+	}
+
+	private deriveMembershipFromStructure(
+		aliasNorm: string
+	): Set<string> | null {
+		if (!this.orgStructurePort) return null;
+		try {
+			const { organizations, teams } =
+				this.orgStructurePort.getOrgStructure();
+			const result = new Set<string>();
+
+			const visitTeam = (node: TeamNode) => {
+				const slug = this.extractPossibleSlug(node);
+				if (slug && this.teamNodeHasUser(node, aliasNorm)) {
+					result.add(slug);
+				}
+				for (const st of (node.subteams as TeamNode[] | undefined) ||
+					[]) {
+					visitTeam(st);
+				}
+			};
+
+			for (const org of organizations || []) {
+				for (const t of org.teams || []) visitTeam(t);
+			}
+			for (const t of teams || []) visitTeam(t);
+
+			return result.size > 0 ? result : new Set<string>();
+		} catch {
+			return null;
+		}
+	}
+
+	private deriveMembershipFromSettings(
+		aliasNorm: string
+	): Set<string> | null {
+		try {
+			const settings = this.settingsService.getRaw();
+			const teams = settings.teams || [];
+			const result = new Set<string>();
+
+			for (const t of teams) {
+				const slug =
+					(typeof (t as any).slug === "string"
+						? (t as any).slug
+						: (t as any).teamSlug) || "";
+				const slugNorm = String(slug || "")
+					.toLowerCase()
+					.trim();
+				if (!slugNorm) continue;
+
+				const members = (t as any).members || [];
+				const aliases = this.extractAliases(members);
+				if (aliases.includes(aliasNorm)) result.add(slugNorm);
+			}
+			return result.size > 0 ? result : new Set<string>();
+		} catch {
+			return null;
+		}
+	}
+
+	private isSlugSelected(slug: string): boolean {
+		if (this.implicitAllSelected) return true;
+		return this.selectedTeamSlugs.has((slug || "").toLowerCase());
+	}
+
+	// Keep selectedTeamSlugs consistent with the selected user's memberships
+	// only when memberships are confidently known.
+	private restrictSelectedTeamsToUserMembership() {
+		const allowed = this.getAllowedTeamSlugsForSelectedUser();
+		if (!allowed) return; // unknown — do not mutate user’s selection
+
+		if (this.selectedTeamSlugs.size === 0) return;
+
+		const before = this.selectedTeamSlugs.size;
+		for (const s of Array.from(this.selectedTeamSlugs)) {
+			if (!allowed.has(s)) {
+				this.selectedTeamSlugs.delete(s);
+			}
+		}
+		if (this.selectedTeamSlugs.size !== before) {
+			this.persistSelectedTeamSlugs();
+		}
+	}
+
+	// -----------------------------------------
+	// Teams popup build/render (filtered by selected user; falls back to all when unknown)
+	// -----------------------------------------
+	private toggleTeamsPopup(anchor: HTMLElement) {
+		if (this.teamsPopupEl) {
+			this.closeTeamsPopup();
+			return;
+		}
+		this.openTeamsPopup(anchor);
+	}
+
+	private openTeamsPopup(anchor: HTMLElement) {
+		this.closeTeamsPopup();
+
+		const popup = document.createElement("div");
+		this.teamsPopupEl = popup;
+		popup.classList.add("agile-teams-popup");
+		popup.style.position = "absolute";
+		popup.style.right = "0";
+		popup.style.top = "calc(100% + 8px)";
+		popup.style.zIndex = "9999";
+		popup.style.minWidth = "320px";
+		popup.style.maxWidth = "520px";
+		popup.style.maxHeight = "60vh";
+		popup.style.overflow = "auto";
+		popup.style.padding = "10px";
+		popup.style.border = "1px solid var(--background-modifier-border)";
+		popup.style.borderRadius = "8px";
+		popup.style.background = "var(--background-primary)";
+		popup.style.boxShadow = "0 6px 24px rgba(0,0,0,0.2)";
+
+		anchor.parentElement?.appendChild(popup);
+
+		this.renderTeamsPopupContent(popup);
+	}
+
+	private closeTeamsPopup() {
+		if (this.teamsPopupEl) {
+			try {
+				this.teamsPopupEl.remove();
+			} catch {}
+			this.teamsPopupEl = null;
+		}
+	}
+
+	private renderTeamsPopupContent(root: HTMLDivElement) {
+		root.innerHTML = "";
+
+		const header = root.createEl("div", {
+			attr: {
+				style: "display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px;",
+			},
+		});
+		header.createEl("strong", { text: "Select Teams" });
+		const help = header.createEl("span", {
+			text: "Choose organizations/teams to show in the dashboard",
+		});
+		help.style.opacity = "0.7";
+		help.style.fontSize = "12px";
+
+		if (!this.orgStructurePort) {
+			root.createEl("em", { text: "Organization data unavailable." });
+			return;
+		}
+
+		const { organizations, teams } =
+			this.orgStructurePort.getOrgStructure();
+
+		// Determine membership allowance
+		const allowed = this.getAllowedTeamSlugsForSelectedUser(); // null => unknown; do not filter
+		const predicate = allowed
+			? (slug: string) => allowed.has((slug || "").toLowerCase())
+			: (_slug: string) => true;
+
+		// Organizations filtered only when allowed != null
+		const filteredOrgs: OrganizationNode[] = (organizations || []).filter(
+			(org) => {
+				const slugs = this.collectOrgTeamSlugs(org);
+				return slugs.some((s) => predicate(s));
+			}
+		);
+
+		// Independent teams (teams with no subteams), filtered by allowed if present
+		const independentsRaw = (teams || []).filter(
+			(t) => (t.subteams?.length ?? 0) === 0
+		);
+		const independents = independentsRaw.filter((t) => {
+			const slug = this.extractPossibleSlug(t);
+			return slug && predicate(slug);
+		});
+
+		const hasOrgs = filteredOrgs.length > 0;
+		const hasIndependents = independents.length > 0;
+
+		// If neither section has entries, show friendly message.
+		if (!hasOrgs && !hasIndependents) {
+			const alias = this.getSelectedAlias() || "(none)";
+			const msg =
+				allowed !== null
+					? `No organizations or teams found for selected user: ${alias}`
+					: `No organizations or teams available.`;
+			root.createEl("em", { text: msg });
+			return;
+		}
+
+		// Organizations accordion (if any)
+		if (hasOrgs) {
+			this.renderAccordion(
+				root,
+				"Organizations",
+				() => {
+					const wrapper = document.createElement("div");
+					wrapper.style.display = "flex";
+					wrapper.style.flexDirection = "column";
+					wrapper.style.gap = "6px";
+
+					for (const org of filteredOrgs) {
+						wrapper.appendChild(
+							this.renderOrganizationEntryFiltered(org, predicate)
+						);
+					}
+					return wrapper;
+				},
+				true
+			);
+		}
+
+		// Independent Teams accordion (if any)
+		if (hasIndependents) {
+			this.renderAccordion(
+				root,
+				"Teams",
+				() => {
+					const wrapper = document.createElement("div");
+					wrapper.style.display = "flex";
+					wrapper.style.flexDirection = "column";
+					wrapper.style.gap = "6px";
+
+					for (const t of independents) {
+						const row = document.createElement("div");
+						row.style.display = "flex";
+						row.style.alignItems = "center";
+						row.style.gap = "6px";
+
+						const cb = document.createElement("input");
+						cb.type = "checkbox";
+						const slug = this.extractPossibleSlug(t);
+						cb.checked = this.isSlugSelected(slug);
+
+						cb.addEventListener("change", () => {
+							if (!slug) return;
+							this.implicitAllSelected = false;
+							if (cb.checked) this.selectedTeamSlugs.add(slug);
+							else this.selectedTeamSlugs.delete(slug);
+							this.persistSelectedTeamSlugs();
+							this.updateView();
+						});
+
+						const label = document.createElement("label");
+						const name = this.extractPossibleName(t);
+						label.textContent = `${name} (${
+							(this as any).extractPossibleSlug
+								? (t as any).teamSlug || (t as any).slug || ""
+								: slug
+						})`;
+						label.style.cursor = "pointer";
+						label.addEventListener("click", () => cb.click());
+
+						row.appendChild(cb);
+						row.appendChild(label);
+						wrapper.appendChild(row);
+					}
+
+					return wrapper;
+				},
+				true
+			);
+		}
+	}
+
+	private renderAccordion(
+		parent: HTMLElement,
+		title: string,
+		contentBuilder: () => HTMLElement,
+		defaultOpen = false
+	) {
+		const section = parent.createEl("div", {
+			attr: {
+				style: "border-top:1px solid var(--background-modifier-border); padding-top:8px; margin-top:8px;",
+			},
+		});
+
+		const hdr = section.createEl("div", {
+			attr: {
+				style: "display:flex; align-items:center; gap:8px; cursor:pointer; user-select:none;",
+			},
+		});
+		const chev = hdr.createEl("span", { text: defaultOpen ? "▾" : "▸" });
+		hdr.createEl("span", {
+			text: title,
+			attr: { style: "font-weight:600;" },
+		});
+
+		const content = contentBuilder();
+		content.style.display = defaultOpen ? "block" : "none";
+		section.appendChild(content);
+
+		hdr.addEventListener("click", () => {
+			const open = content.style.display !== "none";
+			content.style.display = open ? "none" : "block";
+			chev.textContent = open ? "▸" : "▾";
+		});
+	}
+
+	// ---- Org/Team rendering with predicate filter ----
+
+	private renderOrganizationEntryFiltered(
+		org: OrganizationNode,
+		isAllowed: (slug: string) => boolean
+	): HTMLElement {
+		const container = document.createElement("div");
+		container.style.display = "flex";
+		container.style.flexDirection = "column";
+		container.style.gap = "4px";
+
+		// Collect only allowed team slugs in this org (so group-level checkbox matches visible subset)
+		const allOrgTeamSlugs = this.collectOrgTeamSlugs(org).filter(isAllowed);
+		if (allOrgTeamSlugs.length === 0) {
+			// Nothing to show for this org
+			return container;
+		}
+
+		// Org row
+		const row = document.createElement("div");
+		row.style.display = "flex";
+		row.style.alignItems = "center";
+		row.style.gap = "6px";
+
+		const cb = document.createElement("input");
+		cb.type = "checkbox";
+
+		const state = this.computeSelectionState(allOrgTeamSlugs);
+		cb.checked = state === "all";
+		cb.indeterminate = state === "partial";
+
+		cb.addEventListener("change", () => {
+			this.implicitAllSelected = false;
+			if (cb.checked) {
+				for (const slug of allOrgTeamSlugs)
+					this.selectedTeamSlugs.add(slug);
+			} else {
+				for (const slug of allOrgTeamSlugs)
+					this.selectedTeamSlugs.delete(slug);
+			}
+			this.persistSelectedTeamSlugs();
+			if (this.teamsPopupEl)
+				this.renderTeamsPopupContent(this.teamsPopupEl);
+			this.updateView();
+		});
+
+		const label = document.createElement("label");
+		label.textContent = `${
+			(org as any).orgName || (org as any).name || ""
+		} (${(org as any).orgSlug || (org as any).slug || ""})`;
+		label.style.cursor = "pointer";
+		label.addEventListener("click", () => cb.click());
+
+		const expandBtn = document.createElement("button");
+		expandBtn.type = "button";
+		expandBtn.textContent = "▸";
+		expandBtn.style.border = "none";
+		expandBtn.style.background = "none";
+		expandBtn.style.cursor = "pointer";
+		expandBtn.style.fontSize = "12px";
+		expandBtn.title = "Show teams";
+
+		row.appendChild(cb);
+		row.appendChild(label);
+		row.appendChild(expandBtn);
+
+		const nested = document.createElement("div");
+		nested.style.display = "none";
+		nested.style.marginLeft = "18px";
+		nested.style.marginTop = "4px";
+
+		expandBtn.addEventListener("click", () => {
+			const open = nested.style.display !== "none";
+			nested.style.display = open ? "none" : "block";
+			expandBtn.textContent = open ? "▸" : "▾";
+		});
+
+		// Render org teams recursively (only allowed ones)
+		const renderTeamNodeEntryFiltered = (
+			node: TeamNode,
+			level: number
+		): HTMLElement | null => {
+			const hasChildren = (node.subteams?.length ?? 0) > 0;
+
+			// If this node (and all descendants) are disallowed, skip
+			const allSlugsHere = this.collectTeamNodeSlugs(node);
+			if (!allSlugsHere.some(isAllowed)) return null;
+
+			const wrapper = document.createElement("div");
+			wrapper.style.display = "flex";
+			wrapper.style.flexDirection = "column";
+			wrapper.style.gap = "4px";
+
+			const row = document.createElement("div");
+			row.style.display = "flex";
+			row.style.alignItems = "center";
+			row.style.gap = "6px";
+			row.style.paddingLeft = `${Math.min(24, level * 12)}px`;
+
+			const cb = document.createElement("input");
+			cb.type = "checkbox";
+
+			const visibleSlugsHere = allSlugsHere.filter(isAllowed);
+			const state = this.computeSelectionState(visibleSlugsHere);
+
+			cb.checked = state === "all";
+			cb.indeterminate = state === "partial";
+
+			cb.addEventListener("change", () => {
+				this.implicitAllSelected = false;
+				if (cb.checked) {
+					for (const s of visibleSlugsHere)
+						this.selectedTeamSlugs.add(s);
+				} else {
+					for (const s of visibleSlugsHere)
+						this.selectedTeamSlugs.delete(s);
+				}
+				this.persistSelectedTeamSlugs();
+				if (this.teamsPopupEl)
+					this.renderTeamsPopupContent(this.teamsPopupEl);
+				this.updateView();
+			});
+
+			const label = document.createElement("label");
+			label.textContent = `${
+				(node as any).teamName || (node as any).name || ""
+			} (${(node as any).teamSlug || (node as any).slug || ""})`;
+			label.style.cursor = "pointer";
+			label.addEventListener("click", () => cb.click());
+
+			row.appendChild(cb);
+			row.appendChild(label);
+
+			let nestedChildren: HTMLDivElement | null = null;
+			if (hasChildren) {
+				const expandBtn = document.createElement("button");
+				expandBtn.type = "button";
+				expandBtn.textContent = "▸";
+				expandBtn.style.border = "none";
+				expandBtn.style.background = "none";
+				expandBtn.style.cursor = "pointer";
+				expandBtn.style.fontSize = "12px";
+				expandBtn.title = "Show subteams";
+				row.appendChild(expandBtn);
+
+				nestedChildren = document.createElement("div");
+				nestedChildren.style.display = "none";
+				nestedChildren.style.marginLeft = "18px";
+				nestedChildren.style.marginTop = "4px";
+
+				expandBtn.addEventListener("click", () => {
+					const open = nestedChildren!.style.display !== "none";
+					nestedChildren!.style.display = open ? "none" : "block";
+					expandBtn.textContent = open ? "▸" : "▾";
+				});
+			}
+
+			wrapper.appendChild(row);
+
+			if (hasChildren && nestedChildren) {
+				for (const child of node.subteams || []) {
+					const childEl = renderTeamNodeEntryFiltered(
+						child,
+						level + 1
+					);
+					if (childEl) nestedChildren.appendChild(childEl);
+				}
+				wrapper.appendChild(nestedChildren);
+			}
+
+			return wrapper;
+		};
+
+		for (const team of org.teams || []) {
+			const el = renderTeamNodeEntryFiltered(team, 0);
+			if (el) nested.appendChild(el);
+		}
+
+		container.appendChild(row);
+		container.appendChild(nested);
+		return container;
+	}
+
+	// --------------- helpers: slugs & selection ---------------
+
+	private collectTeamNodeSlugs(node: TeamNode): string[] {
+		const slugs: string[] = [];
+		const visit = (n: TeamNode) => {
+			const s = this.extractPossibleSlug(n);
+			if (s) slugs.push(s);
+			for (const c of n.subteams || []) visit(c);
+		};
+		visit(node);
+		return slugs;
+	}
+
+	private collectOrgTeamSlugs(org: OrganizationNode): string[] {
+		const slugs: string[] = [];
+		for (const t of org.teams || []) {
+			slugs.push(...this.collectTeamNodeSlugs(t));
+		}
+		return Array.from(new Set(slugs));
+	}
+
+	private computeSelectionState(slugs: string[]): "all" | "none" | "partial" {
+		if (this.implicitAllSelected) return "all";
+		let selected = 0;
+		for (const s of slugs) {
+			if (this.selectedTeamSlugs.has(s.toLowerCase())) selected++;
+		}
+		if (selected === 0) return "none";
+		if (selected === slugs.length) return "all";
+		return "partial";
+	}
+}
+
+./src/features/agile-dashboard-view/ui/views/task-index-accesor.ts
+import type AgileObsidianPlugin from "src/main";
+import type { TaskIndexService } from "@features/task-index/app/task-index-service";
+
+export function getTaskIndexServiceFromContainer(
+	plugin: AgileObsidianPlugin
+): TaskIndexService | undefined {
+	const container: any = plugin.container;
+	return container?.taskIndexService as TaskIndexService | undefined;
+}
+

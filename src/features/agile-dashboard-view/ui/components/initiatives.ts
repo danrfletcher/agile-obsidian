@@ -11,6 +11,10 @@ import {
 } from "@features/task-filter";
 import { buildPrunedMergedTrees } from "@features/task-tree-builder";
 
+/**
+ * Process and render the Initiatives section.
+ * Displays top-level initiatives with a limited set of child epics.
+ */
 export function processAndRenderInitiatives(
 	container: HTMLElement,
 	currentTasks: TaskItem[],
@@ -75,6 +79,14 @@ export function processAndRenderInitiatives(
 
 	if (prunedTasks.length > 0) {
 		container.createEl("h2", { text: "🎖️ Initiatives" });
-		renderTaskTree(prunedTasks, container, app, 0, false, "initiatives", selectedAlias);
+		renderTaskTree(
+			prunedTasks,
+			container,
+			app,
+			0,
+			false,
+			"initiatives",
+			selectedAlias
+		);
 	}
 }

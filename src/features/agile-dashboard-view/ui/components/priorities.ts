@@ -12,6 +12,9 @@ import {
 import { isRelevantToday } from "@features/task-date-manager";
 import { stripListItems } from "@features/task-tree-builder";
 
+/**
+ * Process and render the Priorities section (time-relevant task trees).
+ */
 export function processAndRenderPriorities(
 	container: HTMLElement,
 	currentTasks: TaskItem[],

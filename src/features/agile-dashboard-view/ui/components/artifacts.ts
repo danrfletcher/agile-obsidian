@@ -23,6 +23,9 @@ export interface ArtifactOptions {
 	predicate: ArtifactPredicate;
 }
 
+/**
+ * Process and render a single artifact section (Tasks/Stories/Epics) into the container.
+ */
 export function processAndRenderArtifact(
 	container: HTMLElement,
 	currentTasks: TaskItem[],
@@ -67,6 +70,9 @@ export function processAndRenderArtifact(
 	}
 }
 
+/**
+ * Render all artifacts sections that are enabled in settings.
+ */
 export function processAndRenderArtifacts(
 	container: HTMLElement,
 	currentTasks: TaskItem[],

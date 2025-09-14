@@ -11,6 +11,9 @@ import {
 } from "@features/task-filter";
 import { buildPrunedMergedTrees } from "@features/task-tree-builder";
 
+/**
+ * Process and render Objectives (OKRs) and their linked item trees.
+ */
 export function processAndRenderObjectives(
 	container: HTMLElement,
 	currentTasks: TaskItem[],
@@ -48,7 +51,6 @@ export function processAndRenderObjectives(
 
 			const sixDigitCode = okrTask.blockId;
 			if (!sixDigitCode || !/^[A-Za-z0-9]{6}$/.test(sixDigitCode)) {
-				// No linked items for OKR - no block ID
 				return;
 			}
 
@@ -67,10 +69,8 @@ export function processAndRenderObjectives(
 	const prunedOKRs = linkedOKRs
 		.map((entry) => {
 			const okr = taskMap.get(entry._uniqueId);
-			if (!okr) {
-				// No linked items for OKR - no items linked to block ID
-				return null;
-			}
+			if (!okr) return null;
+
 			const linkedTrees = buildPrunedMergedTrees(
 				entry.linkedTasks,
 				taskMap
@@ -134,7 +134,15 @@ export function processAndRenderObjectives(
 		container.createEl("h2", { text: "🎯 Objectives" });
 
 		prunedOKRs.forEach(({ okr, linkedTrees }) => {
-			renderTaskTree([okr], container, app, 0, false, "objectives", selectedAlias);
+			renderTaskTree(
+				[okr],
+				container,
+				app,
+				0,
+				false,
+				"objectives",
+				selectedAlias
+			);
 			container.createEl("h5", {
 				text: "🔗 Linked Items",
 				attr: { style: "margin-left: 20px;" },
