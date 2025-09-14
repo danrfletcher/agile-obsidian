@@ -88,6 +88,17 @@ export class AgileSettingTab extends PluginSettingTab {
 			.setClass("setting-item-description");
 
 		new Setting(containerEl)
+			.setName("🧹 Responsibilities")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.settings.showResponsibilities)
+					.onChange(async (value) => {
+						this.settings.showResponsibilities = value;
+						await this.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
 			.setName("🎯 Objectives (OKRs)")
 			.addToggle((toggle) =>
 				toggle
@@ -133,17 +144,6 @@ export class AgileSettingTab extends PluginSettingTab {
 					await this.saveSettings();
 				})
 		);
-
-		new Setting(containerEl)
-			.setName("🧹 Responsibilities")
-			.addToggle((toggle) =>
-				toggle
-					.setValue(this.settings.showResponsibilities)
-					.onChange(async (value) => {
-						this.settings.showResponsibilities = value;
-						await this.saveSettings();
-					})
-			);
 
 		new Setting(containerEl).setName("📁 Priorities").addToggle((toggle) =>
 			toggle
