@@ -31,8 +31,20 @@ export async function registerSettings(container: Container) {
 
 	// Feature-specific action factories
 	const saveSettingsLocal = async (): Promise<void> => {
+		// Persist settings
 		if (typeof p.saveSettings === "function") await p.saveSettings();
 		else if (typeof p.saveData === "function") await p.saveData(settings);
+
+		// Notify any open views (e.g., Agile Dashboard) to refresh immediately
+		try {
+			// @ts-ignore - Obsidian Workspace supports custom events via trigger
+			app.workspace.trigger("agile-settings-changed");
+		} catch (e) {
+			console.warn(
+				"[settings] Failed to trigger agile-settings-changed",
+				e
+			);
+		}
 	};
 
 	const orgActions = registerOrgStructureSettings({

@@ -22,20 +22,58 @@ export async function registerAgileDashboardView(container: Container) {
 			})
 	);
 
+	// Helper: open or reveal singleton dashboard leaf
+	const openOrRevealDashboard = async () => {
+		const existing = app.workspace.getLeavesOfType(
+			VIEW_TYPE_AGILE_DASHBOARD
+		);
+		if (existing.length > 0) {
+			// Reveal the first existing dashboard leaf
+			app.workspace.revealLeaf(existing[0]);
+			return;
+		}
+		// No existing leaf — create one
+		const leaf = app.workspace.getLeaf(true); // create a new leaf only the first time
+		await leaf.setViewState({ type: VIEW_TYPE_AGILE_DASHBOARD });
+		app.workspace.revealLeaf(leaf);
+	};
+
 	// Ensure any open leaves are detached when the plugin unloads
 	plugin.register(() => {
 		app.workspace.detachLeavesOfType(VIEW_TYPE_AGILE_DASHBOARD);
 	});
+
+	// Prune duplicates if they somehow exist (keep the first one)
+	const pruneDuplicateDashboardLeaves = () => {
+		const leaves = app.workspace.getLeavesOfType(VIEW_TYPE_AGILE_DASHBOARD);
+		if (leaves.length > 1) {
+			// Keep the first, detach the rest
+			for (let i = 1; i < leaves.length; i++) {
+				try {
+					leaves[i].detach();
+				} catch (e) {
+					console.warn(
+						"Failed to detach duplicate Agile Dashboard leaf",
+						e
+					);
+				}
+			}
+		}
+	};
+
+	// Also run pruning on layout changes as a safety net
+	plugin.registerEvent(
+		app.workspace.on("layout-change", () => {
+			pruneDuplicateDashboardLeaves();
+		})
+	);
 
 	// Register a simple command to open the dashboard (can be triggered by a status bar click)
 	plugin.addCommand({
 		id: "agile-open-dashboard",
 		name: "Open Agile Dashboard",
 		callback: async () => {
-			// Open a new leaf and set its view to our dashboard
-			const leaf = app.workspace.getLeaf(true);
-			await leaf.setViewState({ type: VIEW_TYPE_AGILE_DASHBOARD });
-			app.workspace.revealLeaf(leaf);
+			await openOrRevealDashboard();
 		},
 	});
 
@@ -45,9 +83,7 @@ export async function registerAgileDashboardView(container: Container) {
 			"list",
 			"Open Agile Dashboard",
 			async () => {
-				const leaf = app.workspace.getLeaf(true);
-				await leaf.setViewState({ type: VIEW_TYPE_AGILE_DASHBOARD });
-				app.workspace.revealLeaf(leaf);
+				await openOrRevealDashboard();
 			}
 		);
 		// Ensure removal on unload
@@ -66,10 +102,7 @@ export async function registerAgileDashboardView(container: Container) {
 
 		// Use registerDomEvent so it is cleaned up on unload
 		plugin.registerDomEvent(statusEl, "click", async () => {
-			// Directly open the dashboard view rather than calling app.commands (typings don't expose .commands)
-			const leaf = app.workspace.getLeaf(true);
-			await leaf.setViewState({ type: VIEW_TYPE_AGILE_DASHBOARD });
-			app.workspace.revealLeaf(leaf);
+			await openOrRevealDashboard();
 		});
 
 		// Also ensure removal on unload
