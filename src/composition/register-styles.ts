@@ -1,7 +1,7 @@
 import {
 	injectCheckboxStyles,
 	removeCheckboxStyles,
-} from "@features/custom-checkboxes";
+} from "@styles/custom-checkboxes";
 import type { Container } from "./container";
 
 export function applyCheckboxStylesSetting(container: Container) {

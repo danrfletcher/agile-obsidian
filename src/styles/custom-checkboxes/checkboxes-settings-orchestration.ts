@@ -1,5 +1,5 @@
 import type { App, Plugin } from "obsidian";
-import type { AgileObsidianSettings } from "src/settings";
+import type { AgileObsidianSettings } from "@settings";
 
 export function registerCustomCheckboxesSettings(ports: {
 	app: App;

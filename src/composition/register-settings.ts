@@ -3,7 +3,7 @@ import type { AgileObsidianSettings } from "@settings";
 import type { Plugin } from "obsidian";
 import type { Container } from "./container";
 import { registerOrgStructureSettings } from "@features/org-structure";
-import { registerCustomCheckboxesSettings } from "@features/custom-checkboxes";
+import { registerCustomCheckboxesSettings } from "@styles/custom-checkboxes";
 import { applyCheckboxStylesSetting } from "./register-styles";
 
 export async function initSettings(
