@@ -35,11 +35,13 @@ export function processAndRenderInitiatives(
 		);
 	});
 
-	const directlyAssigned = sectionTasks.filter(
-		(task) =>
+	const directlyAssigned = sectionTasks.filter((task) => {
+		const t = getAgileArtifactType(task);
+		return (
 			activeForMember(task, status, selectedAlias) &&
-			getAgileArtifactType(task) === "initiative"
-	);
+			(t === "initiative" || t === "learning-initiative")
+		);
+	});
 
 	const statusFilterCallback = (task: TaskItem) =>
 		(task.status !== "I" && inProgress && isInProgress(task, taskMap)) ||
