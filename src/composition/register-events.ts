@@ -169,7 +169,6 @@ class ProgressNotice {
  */
 export async function registerEvents(container: Container) {
 	const { plugin, app, settings } = container;
-	console.log("[boot] registerEvents called");
 
 	const appAdapter = createObsidianAppAdapter(app);
 
@@ -579,7 +578,6 @@ export async function registerEvents(container: Container) {
 			plugin.manifest.id,
 			{ orgStructure: orgStructurePort }
 		);
-		console.log("[boot] assignment commands registered");
 	} catch (e) {
 		console.error("[boot] assignment commands failed", e);
 	}
@@ -587,7 +585,6 @@ export async function registerEvents(container: Container) {
 	// NEW: Wire the cascade listener with TaskIndex port (hybrid mode)
 	try {
 		wireTaskAssignmentCascade(app, plugin, { taskIndex: taskIndexService });
-		console.log("[boot] cascade wired");
 	} catch (e) {
 		console.error("[boot] cascade wiring failed", e);
 	}
