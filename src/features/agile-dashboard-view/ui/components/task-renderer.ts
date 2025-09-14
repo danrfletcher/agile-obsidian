@@ -1,8 +1,6 @@
-import { App, Component, MarkdownRenderer } from "obsidian";
+import { App, Component, MarkdownRenderer, TFile } from "obsidian";
 import { TaskItem } from "@features/task-index";
-import {
-	appendSnoozeButtonIfEligible,
-} from "./task-buttons";
+import { appendSnoozeButtonIfEligible } from "./task-buttons";
 import { handleStatusChange } from "../../app/status-update";
 
 function isLeaf(task: TaskItem): boolean {
@@ -110,6 +108,137 @@ function annotateAssigneeMarks(
 }
 
 /**
+ * Utilities for opening a task's source file at its line in a new tab (leaf)
+ */
+function getTaskFilePath(task: TaskItem): string {
+	return task.link?.path || (task._uniqueId?.split(":")[0] ?? "");
+}
+
+function getTaskLine(task: TaskItem): number | null {
+	// Prefer parser-provided positions if available
+	const posLine = (task as any)?.position?.start?.line ?? (task as any)?.line;
+	if (typeof posLine === "number" && posLine >= 0) return posLine;
+	if (typeof task.line === "number" && task.line >= 0) return task.line;
+	return null;
+}
+
+async function openTaskInNewTab(app: App, task: TaskItem): Promise<void> {
+	try {
+		const filePath = getTaskFilePath(task);
+		if (!filePath) return;
+
+		const abs = app.vault.getAbstractFileByPath(filePath);
+		if (!(abs instanceof TFile)) return;
+
+		const line = getTaskLine(task);
+		// Open a new leaf (tab)
+		const leaf = app.workspace.getLeaf(true);
+
+		// Try ephemeral state "line" (supported by Obsidian)
+		await (leaf as any).openFile(abs, {
+			eState: line != null ? { line } : {},
+		});
+
+		// Best-effort scroll/cursor positioning if needed
+		try {
+			const view = (leaf as any).view;
+			if (
+				view?.editor &&
+				typeof view.editor.setCursor === "function" &&
+				line != null
+			) {
+				view.editor.setCursor({ line, ch: 0 });
+				if (typeof view.editor.scrollIntoView === "function") {
+					view.editor.scrollIntoView(
+						{ from: { line, ch: 0 }, to: { line, ch: 0 } },
+						true
+					);
+				}
+			} else if (
+				typeof view?.setEphemeralState === "function" &&
+				line != null
+			) {
+				view.setEphemeralState({ line });
+			}
+		} catch {
+			/* ignore */
+		}
+
+		// Fallback to blockId if line is unavailable
+		if (line == null && (task as any).blockId) {
+			const blockId = (task as any).blockId;
+			try {
+				(app.workspace as any).openLinkText(
+					`${filePath}#^${blockId}`,
+					"",
+					true
+				);
+			} catch {
+				/* ignore */
+			}
+		}
+	} catch {
+		/* ignore */
+	}
+}
+
+/**
+ * Attach a long-press handler to the task's LI to open source in new tab.
+ * Avoids starting on interactive elements (checkboxes, buttons, links).
+ */
+function attachOpenOnLongPress(
+	liEl: HTMLElement,
+	task: TaskItem,
+	app: App
+): void {
+	// Avoid duplicate attachment
+	if ((liEl as any).__agileOpenAttached) return;
+
+	const LONG_PRESS_MS = 500;
+	let pressTimer: number | null = null;
+
+	const clearTimer = () => {
+		if (pressTimer !== null) {
+			window.clearTimeout(pressTimer);
+			pressTimer = null;
+		}
+	};
+
+	const isInteractiveTarget = (el: HTMLElement | null): boolean => {
+		if (!el) return false;
+		// Ignore if pressing on checkbox, button, link, or snooze button
+		if (el.closest("input, button, a, .agile-snooze-btn")) return true;
+		// Also ignore Obsidian's rendered label for checkbox etc.
+		if (el.closest("label")) return true;
+		return false;
+	};
+
+	const onPressStart = (ev: Event) => {
+		const target = ev.target as HTMLElement | null;
+		if (isInteractiveTarget(target)) return;
+		clearTimer();
+		pressTimer = window.setTimeout(async () => {
+			await openTaskInNewTab(app, task);
+			clearTimer();
+		}, LONG_PRESS_MS);
+	};
+
+	const onPressEnd = () => {
+		clearTimer();
+	};
+
+	liEl.addEventListener("mousedown", onPressStart);
+	liEl.addEventListener("mouseup", onPressEnd);
+	liEl.addEventListener("mouseleave", onPressEnd);
+
+	liEl.addEventListener("touchstart", onPressStart, { passive: true } as any);
+	liEl.addEventListener("touchend", onPressEnd);
+	liEl.addEventListener("touchcancel", onPressEnd);
+
+	(liEl as any).__agileOpenAttached = true;
+}
+
+/**
  * Render a tree of tasks into the given container.
  * Adds affordances (checkbox semantics, snooze buttons) and wires mutation handlers.
  */
@@ -197,6 +326,13 @@ export function renderTaskTree(
 				app,
 				selectedAlias
 			);
+		} catch {
+			/* ignore */
+		}
+
+		// NEW: Long-press anywhere on the task line to open its source file in a new tab
+		try {
+			attachOpenOnLongPress(taskItemEl, task, app);
 		} catch {
 			/* ignore */
 		}
@@ -425,6 +561,13 @@ function rerenderTaskInline(
 				app,
 				selectedAlias
 			);
+		} catch {
+			/* ignore */
+		}
+
+		// Ensure long-press open remains attached after inline re-render
+		try {
+			attachOpenOnLongPress(liEl, task, app);
 		} catch {
 			/* ignore */
 		}
