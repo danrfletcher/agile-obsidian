@@ -10,10 +10,10 @@ import {
 	getAgileArtifactType,
 	isAssignedToMemberOrTeam,
 	isAssignedToAnyUser,
+	isScheduledForToday, // NEW: use DOW schedule helper (🗓️ Sundays, etc.)
 } from "@features/task-filter";
 import {
-	matchesDatePattern,
-	isRelevantToday,
+	isRelevantToday, // keep: used for priorityRoots
 } from "@features/task-date-manager";
 import {
 	buildHierarchyFromPath,
@@ -36,14 +36,19 @@ export function processAndRenderResponsibilities(
 
 	const { inProgress, completed, sleeping, cancelled } = taskParams;
 
+	// Direct or inferred assignment to selectedAlias (or team)
 	const isAssignedToMemberIncludingInferred = (task: TaskItem) => {
-		if (isAssignedToMemberOrTeam(task)) return true;
+		// FIX: pass selectedAlias so direct assignments match correctly
+		if (isAssignedToMemberOrTeam(task, selectedAlias)) return true;
+
+		// Inherit from ancestors: if any ancestor has an assignee wrapper, respect it
 		let cur: TaskItem | undefined = task;
 		while (cur?._parentId) {
 			const parentId = cur._parentId;
 			if (!parentId) return false;
 			cur = taskMap.get(parentId);
 			if (!cur) return false;
+
 			if (isAssignedToAnyUser(cur)) {
 				return activeForMember(cur, status, selectedAlias);
 			}
@@ -51,6 +56,7 @@ export function processAndRenderResponsibilities(
 		return false;
 	};
 
+	// Collect recurring responsibilities from a subtree if assigned and not snoozed
 	const collectRecurring = (node: TaskItem, collector: TaskItem[]) => {
 		if (
 			getAgileArtifactType(node) === "recurring-responsibility" &&
@@ -64,6 +70,7 @@ export function processAndRenderResponsibilities(
 		);
 	};
 
+	// Build a displayable subtree (prunes unrelated nodes)
 	const buildResponsibilitySubtree = (
 		task: TaskItem,
 		isRoot = false
@@ -96,7 +103,11 @@ export function processAndRenderResponsibilities(
 		}
 
 		const hasAllowed = hasAllowedMarker || hasAllowedStatus;
-		const assignedToMeOrTeam = isAssignedToMemberOrTeam(task);
+		// FIX: pass selectedAlias so direct assignments are honored
+		const assignedToMeOrTeam = isAssignedToMemberOrTeam(
+			task,
+			selectedAlias
+		);
 		if (!hasAllowed && children.length === 0 && !assignedToMeOrTeam) {
 			return null;
 		}
@@ -139,6 +150,7 @@ export function processAndRenderResponsibilities(
 		return current;
 	};
 
+	// Roots to scan: same heuristic used elsewhere in the dashboard
 	const priorityRoots = currentTasks.filter(
 		(task) =>
 			task.status === "O" &&
@@ -159,9 +171,12 @@ export function processAndRenderResponsibilities(
 		collectRecurring(tree, allRecurring)
 	);
 
-	allRecurring = allRecurring.filter(
-		(task) => !/🗓️/.test(task.text) || matchesDatePattern(task)
-	);
+	// FIX: Respect DOW schedules like "🗓️ Sundays"
+	// If a calendar marker is present, only include when scheduled for today.
+	allRecurring = allRecurring.filter((task) => {
+		const hasCalendar = /🗓️/.test(task.text);
+		return !hasCalendar || isScheduledForToday(task);
+	});
 
 	const recurringWithSubtrees = allRecurring
 		.map((rec) => {
