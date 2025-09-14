@@ -4,7 +4,7 @@ export { registerOrgStructureSettings } from "./app/org-structure-settings-orche
 export * from "./domain/org-types";
 
 // New exports: public API types and service + helpers
-export type * from "./domain/org-api-types";
+export * from "./domain/org-api-types";
 export {
 	createOrgStructureService,
 	type OrgStructurePort,
