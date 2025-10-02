@@ -1000,12 +1000,15 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["task", "list"] },
-		render(params?: { version?: string; }) {
+		render(params?: { version?: string }) {
 			const version = (params?.version ?? "").trim();
 
 			const inner = chip({
 				id: "wf-version",
-				text: `<strong>${emojis.version} ${wrapVar("version", version)}</strong>`,
+				text: `<strong>${emojis.version} ${wrapVar(
+					"version",
+					version
+				)}</strong>`,
 				bg: `linear-gradient(to right, ${colors.versionFrom}, ${colors.versionTo})`,
 				// No explicit text color to keep it similar to your example
 			});
@@ -1086,12 +1089,24 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 		orderTag: "state",
 		id: "workflows.states.waiting",
 		label: "Workflow - State: Waiting",
+		hasParams: true,
+		paramsSchema: {
+			titles: { create: "Set State", edit: "Edit State" },
+			fields: [
+				{
+					name: "for",
+					label: "For",
+					required: true,
+					placeholder: "Describe what the task is waiting for...",
+				},
+			],
+		},
 		rules: { allowedOn: ["task"] },
 		render(params?: { for?: string }) {
-			const forWho = (params?.for ?? "").trim();
+			const forWhat = (params?.for ?? "").trim();
 			const inner = chip({
 				id: "state-waiting",
-				text: `⌛ For: <strong>${forWho}</strong>`,
+				text: `⌛ <strong>For: ${forWhat}</strong>`,
 				bg: colors.statesWaiting,
 			});
 			return wrapTemplate("workflows.states.waiting", inner, {
