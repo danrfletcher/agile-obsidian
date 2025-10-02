@@ -1,6 +1,7 @@
 import { App, Modal, Notice } from "obsidian";
 import type { ParamsSchema, ParamsSchemaField } from "../domain/types";
 import { resolveModalTitleFromSchema } from "../app/templating-service";
+import { escapeHtml } from "../domain/template-utils";
 
 /**
  Helpers and types for blockSelect
@@ -258,6 +259,63 @@ function filterSuggestions(
 	return out.slice(0, limit);
 }
 
+/**
+ * Helpers for rendering block previews with HTML and minimal safety.
+ */
+
+// Basic test if a string likely contains HTML tags
+function looksLikeHtml(s: string): boolean {
+	return /<\/?[a-z][\s\S]*>/i.test(s);
+}
+
+// Minimal sanitizer: remove script/style tags, inline event handlers, and javascript: URIs
+function sanitizeHtml(raw: string): string {
+	let s = raw;
+	// Remove <script> and <style> blocks
+	s = s.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "");
+	s = s.replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "");
+	// Strip inline event handlers like onclick="..."
+	s = s.replace(/\s+on\w+\s*=\s*"(?:[^"]*)"/gi, "");
+	s = s.replace(/\s+on\w+\s*=\s*'(?:[^']*)'/gi, "");
+	// Strip javascript: URIs in href/src/action
+	s = s.replace(/\s+(href|src|action)\s*=\s*"(?:\s*javascript:[^"]*)"/gi, "");
+	s = s.replace(/\s+(href|src|action)\s*=\s*'(?:\s*javascript:[^']*)'/gi, "");
+	return s;
+}
+
+// Parse task/list prefix and return HTML for the marker + remaining content
+function splitListOrTaskPrefix(s: string): {
+	leadingHTML: string;
+	content: string;
+} {
+	const task = /^\s*-\s+\[([^\]]*)\]\s*(.*)$/s.exec(s);
+	if (task) {
+		const inside = task[1] ?? "";
+		const content = task[2] ?? "";
+		const checked = /x/i.test(inside);
+		const leading = `<input type="checkbox" ${
+			checked ? "checked" : ""
+		} disabled style="pointer-events:none;margin-right:6px;vertical-align:middle;" />`;
+		return { leadingHTML: leading, content };
+	}
+	const list = /^\s*-\s+(.*)$/s.exec(s);
+	if (list) {
+		const content = list[1] ?? "";
+		const leading = `<span style="display:inline-block;width:0.8em;text-align:center;">•</span>&nbsp;`;
+		return { leadingHTML: leading, content };
+	}
+	return { leadingHTML: "", content: s };
+}
+
+function renderBlockLinePreview(item: BlockCandidate): string {
+	const { leadingHTML, content } = splitListOrTaskPrefix(item.text);
+	const contentHtml = looksLikeHtml(content)
+		? sanitizeHtml(content)
+		: escapeHtml(content);
+	const pathHtml = escapeHtml(toDisplayPath(item.filePath));
+	return `🔗 ${leadingHTML}${contentHtml}<span style="color: var(--text-muted);"> — ${pathHtml}</span>`;
+}
+
 function renderSuggestionItem(
 	li: HTMLLIElement,
 	item: SuggestionItem,
@@ -276,10 +334,12 @@ function renderSuggestionItem(
 	li.setAttr("data-kind", item.kind);
 
 	if (item.kind === "file") {
-		li.textContent = `📄 ${item.display}`;
+		// Keep file items simple and safe
+		li.innerHTML = `📄 ${escapeHtml(item.display)}`;
 		li.title = item.filePath;
 	} else {
-		li.textContent = `🔗 ${item.display}`;
+		// Render block line with HTML if present; keep list/task markers intact
+		li.innerHTML = renderBlockLinePreview(item);
 		li.title = `${item.filePath}:${item.line + 1}`;
 	}
 }
