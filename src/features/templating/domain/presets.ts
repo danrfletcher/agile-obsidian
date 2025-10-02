@@ -981,6 +981,41 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 			});
 		},
 	},
+	version: {
+		orderTag: "metadata",
+		id: "workflows.metadata.version",
+		label: "Workflow - Version",
+		hasParams: true,
+		paramsSchema: {
+			titles: { create: "Set Version", edit: "Edit Version" },
+			description:
+				"Add a semantic version and (optionally) a link to release notes.",
+			fields: [
+				{
+					name: "version",
+					label: "Version",
+					required: true,
+					placeholder: "e.g., 0.5.0",
+				},
+			],
+		},
+		rules: { allowedOn: ["task", "list"] },
+		render(params?: { version?: string; }) {
+			const version = (params?.version ?? "").trim();
+
+			const inner = chip({
+				id: "wf-version",
+				text: `<strong>${emojis.version} ${wrapVar("version", version)}</strong>`,
+				bg: `linear-gradient(to right, ${colors.versionFrom}, ${colors.versionTo})`,
+				// No explicit text color to keep it similar to your example
+			});
+
+			return wrapTemplate("workflows.metadata.version", inner, {
+				orderTag: this.orderTag,
+				version,
+			});
+		},
+	},
 
 	// States
 	blocked: {
