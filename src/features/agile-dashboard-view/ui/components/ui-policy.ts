@@ -5,6 +5,7 @@
 
 export type TaskSection =
 	| "objectives"
+	| "objectives-linked"
 	| "responsibilities"
 	| "priorities"
 	| "initiatives"
@@ -22,6 +23,8 @@ export interface TaskUIPolicy {
  */
 export function normalizeSection(sectionType: string): TaskSection {
 	const s = (sectionType || "").toLowerCase();
+	// Make sure to detect the linked-objects variant before the general case
+	if (s.includes("objectives-linked")) return "objectives-linked";
 	if (s.includes("objective")) return "objectives";
 	if (s.includes("responsibil")) return "responsibilities";
 	if (s.includes("priorit")) return "priorities";

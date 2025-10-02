@@ -134,6 +134,7 @@ export function processAndRenderObjectives(
 		container.createEl("h2", { text: "🎯 Objectives" });
 
 		prunedOKRs.forEach(({ okr, linkedTrees }) => {
+			// Render the OKR itself under "objectives"
 			renderTaskTree(
 				[okr],
 				container,
@@ -143,6 +144,9 @@ export function processAndRenderObjectives(
 				"objectives",
 				selectedAlias
 			);
+
+			// Render the linked items, but mark the section as "objectives-linked"
+			// so snooze policy can show only on leaf items here.
 			container.createEl("h5", {
 				text: "🔗 Linked Items",
 				attr: { style: "margin-left: 20px;" },
@@ -157,7 +161,7 @@ export function processAndRenderObjectives(
 				app,
 				0,
 				false,
-				"objectives",
+				"objectives-linked",
 				selectedAlias
 			);
 		});

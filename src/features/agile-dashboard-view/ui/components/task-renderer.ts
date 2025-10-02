@@ -9,6 +9,8 @@ function isLeaf(task: TaskItem): boolean {
 
 function normalizeSection(sectionType: string) {
 	const s = (sectionType || "").toLowerCase();
+	// Detect objectives-linked before generic objectives
+	if (s.includes("objectives-linked")) return "objectives-linked";
 	if (s.includes("initiative")) return "initiatives";
 	if (s.includes("objective")) return "objectives";
 	if (s.includes("task")) return "tasks";
@@ -28,7 +30,8 @@ function shouldEnableCheckbox(
 	const leaf = isLeaf(task);
 
 	if (section === "initiatives") return true;
-	if (section === "objectives") return (isRoot && depth === 0) || leaf;
+	if (section === "objectives" || section === "objectives-linked")
+		return (isRoot && depth === 0) || leaf;
 	if (
 		section === "tasks" ||
 		section === "stories" ||
