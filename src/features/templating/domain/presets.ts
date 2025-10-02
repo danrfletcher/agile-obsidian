@@ -483,15 +483,30 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 	},
 };
 
+// Reusable dropdown options for currency selectors
+export const currencyDropdownOptions: Array<{ label: string; value: string }> = [
+	{ label: "USD $", value: "$" },
+	{ label: "EUR €", value: "€" },
+	{ label: "GBP £", value: "£" },
+	{ label: "AUD A$", value: "A$ " },
+	{ label: "CAD C$", value: "C$ " },
+	{ label: "JPY ¥", value: "JPY ¥" },
+	{ label: "INR ₹", value: "INR ₹" },
+	{ label: "CHF ₣", value: "CHF " },
+	{ label: "CNY ¥", value: "CNY ¥" },
+	{ label: "SEK kr", value: "SEK" },
+	{ label: "NZD NZ$", value: "NZ$ " },
+];
+
 /**
- * CRM — lists only
+ * CRM
  */
 export const CRM: Record<string, TemplateDefinition<any>> = {
 	abandoned: {
 		orderTag: "crm-payment",
 		id: "crm.abandoned",
 		label: "CRM - Abandoned",
-		rules: { allowedOn: ["list"] },
+		rules: { allowedOn: ["task"] },
 		render() {
 			const inner = chip({
 				id: "crm-abandoned",
@@ -503,11 +518,12 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 			});
 		},
 	},
+
 	awaitingDeposit: {
 		orderTag: "crm-payment",
 		id: "crm.awaitingDeposit",
 		label: "CRM - Awaiting Deposit",
-		rules: { allowedOn: ["list"] },
+		rules: { allowedOn: ["task"] },
 		render() {
 			const inner = chip({
 				id: "crm-awaiting-deposit",
@@ -519,15 +535,62 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 			});
 		},
 	},
+
 	commission: {
 		orderTag: "crm-commission",
 		id: "crm.commission",
 		label: "CRM - Commission",
-		rules: { allowedOn: ["list"] },
-		render() {
+		hasParams: true,
+		paramsSchema: {
+			title: "Commission Paid",
+			titles: {
+				create: "Set Commission Paid",
+				edit: "Edit Commission Paid",
+			},
+			description: "Record the commission paid vs. total commission.",
+			fields: [
+				{
+					name: "currency",
+					label: "Currency",
+					type: "dropdown",
+					required: true,
+					placeholder: "Select currency…",
+					defaultValue: "USD",
+					options: currencyDropdownOptions,
+				},
+				{
+					name: "paidAmount",
+					label: "Paid Amount",
+					required: true,
+					placeholder: "e.g., 1,250.00",
+				},
+				{
+					name: "totalAmount",
+					label: "Total Commission",
+					required: true,
+					placeholder: "e.g., 5,000.00",
+				},
+			],
+		},
+		rules: { allowedOn: ["task"] },
+		render(params?: {
+			currency?: string;
+			paidAmount?: string;
+			totalAmount?: string;
+		}) {
+			const currency = (params?.currency ?? "USD").trim();
+			const paidAmount = (params?.paidAmount ?? "").trim();
+			const totalAmount = (params?.totalAmount ?? "").trim();
+
 			const inner = chip({
 				id: "crm-commission",
-				text: `<strong>Commission Paid /</strong>`,
+				text: `<strong>Commission Paid ${wrapVar(
+					"currency",
+					currency
+				)}${wrapVar("paidAmount", paidAmount)} / ${wrapVar(
+					"currency",
+					currency
+				)}${wrapVar("totalAmount", totalAmount)}</strong>`,
 				bg: colors.crmCommission,
 			});
 			return wrapTemplate("crm.commission", inner, {
@@ -535,15 +598,62 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 			});
 		},
 	},
+
 	depositPaid: {
 		orderTag: "crm-payment",
 		id: "crm.depositPaid",
 		label: "CRM - Deposit Paid",
-		rules: { allowedOn: ["list"] },
-		render() {
+		hasParams: true,
+		paramsSchema: {
+			title: "Deposit Paid",
+			titles: {
+				create: "Record Deposit Paid",
+				edit: "Edit Deposit Paid",
+			},
+			description: "Record the deposit paid vs. total deposit.",
+			fields: [
+				{
+					name: "currency",
+					label: "Currency",
+					type: "dropdown",
+					required: true,
+					placeholder: "Select currency…",
+					defaultValue: "USD",
+					options: currencyDropdownOptions,
+				},
+				{
+					name: "paidAmount",
+					label: "Paid Amount",
+					required: true,
+					placeholder: "e.g., 500.00",
+				},
+				{
+					name: "totalAmount",
+					label: "Total Deposit",
+					required: true,
+					placeholder: "e.g., 2,000.00",
+				},
+			],
+		},
+		rules: { allowedOn: ["task"] },
+		render(params?: {
+			currency?: string;
+			paidAmount?: string;
+			totalAmount?: string;
+		}) {
+			const currency = (params?.currency ?? "USD").trim();
+			const paidAmount = (params?.paidAmount ?? "").trim();
+			const totalAmount = (params?.totalAmount ?? "").trim();
+
 			const inner = chip({
 				id: "crm-deposit",
-				text: `<strong>Deposit Paid /</strong>`,
+				text: `<strong>Deposit Paid ${wrapVar(
+					"currency",
+					currency
+				)}${wrapVar("paidAmount", paidAmount)} / ${wrapVar(
+					"currency",
+					currency
+				)}${wrapVar("totalAmount", totalAmount)}</strong>`,
 				bg: colors.crmDeposit,
 			});
 			return wrapTemplate("crm.depositPaid", inner, {
@@ -551,15 +661,60 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 			});
 		},
 	},
+
 	paidInFull: {
 		orderTag: "crm-payment",
 		id: "crm.paidInFull",
 		label: "CRM - Paid in Full",
-		rules: { allowedOn: ["list"] },
-		render() {
+		hasParams: true,
+		paramsSchema: {
+			title: "Mark Paid in Full",
+			titles: { create: "Set Paid in Full", edit: "Edit Paid in Full" },
+			description:
+				"Record the paid vs. total amount (usually the same when fully paid).",
+			fields: [
+				{
+					name: "currency",
+					label: "Currency",
+					type: "dropdown",
+					required: true,
+					placeholder: "Select currency…",
+					defaultValue: "USD",
+					options: currencyDropdownOptions,
+				},
+				{
+					name: "paidAmount",
+					label: "Paid Amount",
+					required: true,
+					placeholder: "e.g., 4,999.00",
+				},
+				{
+					name: "totalAmount",
+					label: "Total Amount",
+					required: true,
+					placeholder: "e.g., 4,999.00",
+				},
+			],
+		},
+		rules: { allowedOn: ["task"] },
+		render(params?: {
+			currency?: string;
+			paidAmount?: string;
+			totalAmount?: string;
+		}) {
+			const currency = (params?.currency ?? "USD").trim();
+			const paidAmount = (params?.paidAmount ?? "").trim();
+			const totalAmount = (params?.totalAmount ?? "").trim();
+
 			const inner = chip({
 				id: "crm-paid-full",
-				text: `<strong>Paid in Full / </strong>`,
+				text: `<strong>Paid in Full ${wrapVar(
+					"currency",
+					currency
+				)}${wrapVar("paidAmount", paidAmount)} / ${wrapVar(
+					"currency",
+					currency
+				)}${wrapVar("totalAmount", totalAmount)}</strong>`,
 				bg: colors.crmPaidFull,
 			});
 			return wrapTemplate("crm.paidInFull", inner, {
@@ -567,15 +722,62 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 			});
 		},
 	},
+
 	partiallyPaid: {
 		orderTag: "crm-payment",
 		id: "crm.partiallyPaid",
 		label: "CRM - Partially Paid",
-		rules: { allowedOn: ["list"] },
-		render() {
+		hasParams: true,
+		paramsSchema: {
+			title: "Record Partial Payment",
+			titles: {
+				create: "Set Partial Payment",
+				edit: "Edit Partial Payment",
+			},
+			description: "Record the amount paid vs. total amount.",
+			fields: [
+				{
+					name: "currency",
+					label: "Currency",
+					type: "dropdown",
+					required: true,
+					placeholder: "Select currency…",
+					defaultValue: "USD",
+					options: currencyDropdownOptions,
+				},
+				{
+					name: "paidAmount",
+					label: "Paid Amount",
+					required: true,
+					placeholder: "e.g., 1,250.00",
+				},
+				{
+					name: "totalAmount",
+					label: "Total Amount",
+					required: true,
+					placeholder: "e.g., 5,000.00",
+				},
+			],
+		},
+		rules: { allowedOn: ["task"] },
+		render(params?: {
+			currency?: string;
+			paidAmount?: string;
+			totalAmount?: string;
+		}) {
+			const currency = (params?.currency ?? "USD").trim();
+			const paidAmount = (params?.paidAmount ?? "").trim();
+			const totalAmount = (params?.totalAmount ?? "").trim();
+
 			const inner = chip({
 				id: "crm-partially-paid",
-				text: `<strong>Paid  / </strong>`,
+				text: `<strong>Paid ${wrapVar("currency", currency)}${wrapVar(
+					"paidAmount",
+					paidAmount
+				)} / ${wrapVar("currency", currency)}${wrapVar(
+					"totalAmount",
+					totalAmount
+				)}</strong>`,
 				bg: colors.crmPartially,
 			});
 			return wrapTemplate("crm.partiallyPaid", inner, {
@@ -583,15 +785,82 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 			});
 		},
 	},
+
 	paymentPlan: {
 		orderTag: "crm-payment",
 		id: "crm.paymentPlan",
 		label: "CRM - Payment Plan",
-		rules: { allowedOn: ["list"] },
-		render() {
+		hasParams: true,
+		paramsSchema: {
+			title: "Set Payment Plan",
+			titles: {
+				create: "Create Payment Plan",
+				edit: "Edit Payment Plan",
+			},
+			description:
+				"Define terms for the payment plan and progress to date.",
+			fields: [
+				{
+					name: "months",
+					label: "Number of Months",
+					required: true,
+					placeholder: "e.g., 6",
+				},
+				{
+					name: "endDate",
+					label: "End Date",
+					required: true,
+					placeholder: "YYYY-MM-DD",
+				},
+				{
+					name: "currency",
+					label: "Currency",
+					type: "dropdown",
+					required: true,
+					placeholder: "Select currency…",
+					defaultValue: "USD",
+					options: currencyDropdownOptions,
+				},
+				{
+					name: "paidAmount",
+					label: "Paid Amount",
+					required: true,
+					placeholder: "e.g., 1,500.00",
+				},
+				{
+					name: "totalAmount",
+					label: "Total Amount",
+					required: true,
+					placeholder: "e.g., 6,000.00",
+				},
+			],
+		},
+		rules: { allowedOn: ["task"] },
+		render(params?: {
+			months?: string;
+			endDate?: string;
+			currency?: string;
+			paidAmount?: string;
+			totalAmount?: string;
+		}) {
+			const months = (params?.months ?? "").trim();
+			const endDate = (params?.endDate ?? "").trim();
+			const currency = (params?.currency ?? "USD").trim();
+			const paidAmount = (params?.paidAmount ?? "").trim();
+			const totalAmount = (params?.totalAmount ?? "").trim();
+
 			const inner = chip({
 				id: "crm-payment-plan",
-				text: `<strong>Payment Plan - [Number] Months - [End Date YYYY-MM-DD] - Paid  / </strong>`,
+				text: `<strong>Payment Plan - ${wrapVar(
+					"months",
+					months
+				)} Months → ${wrapVar("endDate", endDate)} - Paid ${wrapVar(
+					"currency",
+					currency
+				)}${wrapVar("paidAmount", paidAmount)} / ${wrapVar(
+					"currency",
+					currency
+				)}${wrapVar("totalAmount", totalAmount)}</strong>`,
 				bg: colors.crmPaymentPlan,
 			});
 			return wrapTemplate("crm.paymentPlan", inner, {
@@ -600,7 +869,6 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 };
-
 /**
  * Members — tasks only
  */
