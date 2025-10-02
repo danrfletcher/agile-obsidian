@@ -9,8 +9,8 @@ import {
 	renderTemplateOnly,
 	prefillTemplateParams,
 	replaceTemplateWrapperOnCurrentLine,
+	findTemplateById,
 } from "./templating-service";
-import { presetTemplates } from "../domain/presets";
 import { getCursorContext } from "@platform/obsidian/";
 import { showSchemaModal } from "../ui/template-schema-modal";
 import { showJsonModal } from "../ui/template-json-modal";
@@ -21,12 +21,11 @@ export async function processClick(app: App, el: HTMLElement): Promise<void> {
 	try {
 		const templateKey = el.getAttribute("data-template-key") ?? "";
 		if (!templateKey) return;
-		const [group, key] = templateKey.split(".");
-		const groupMap = presetTemplates as unknown as Record<
-			string,
-			Record<string, TemplateDefinition>
-		>;
-		const def = groupMap[group]?.[key] as TemplateDefinition | undefined;
+
+		// Robust resolution: supports multi-dot ids like "workflows.states.blocked"
+		const def = findTemplateById(templateKey) as
+			| TemplateDefinition
+			| undefined;
 
 		// If this template is excluded from dynamic commands (like members.assignee),
 		// do not open parameter modals on click. Let other feature handlers manage it.
@@ -259,12 +258,9 @@ export async function processEnter(
 		}
 
 		// Resolve definition quickly; bail if not parameterized or hidden.
-		const [g, k] = (found.templateKey ?? "").split(".");
-		const groupMap = presetTemplates as unknown as Record<
-			string,
-			Record<string, TemplateDefinition>
-		>;
-		const def = groupMap[g]?.[k] as TemplateDefinition | undefined;
+		const def = findTemplateById(found.templateKey) as
+			| TemplateDefinition
+			| undefined;
 		if (!def || !def.hasParams) return;
 		if (def.hiddenFromDynamicCommands) return;
 

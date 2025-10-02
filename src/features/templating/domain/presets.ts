@@ -4,8 +4,8 @@ import type { TemplateDefinition } from "./types";
 import {
 	wrapVar,
 	extractParamsFromWrapperEl,
+	attrVar,
 } from "./template-parameter-helpers";
-import { escapeHtml } from "./template-utils";
 
 // Derive from JSON
 const colors = tokensData.colors as Record<string, string>;
@@ -411,7 +411,7 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 					name: "blockRef",
 					label: "Parent Block Reference",
 					required: true,
-					type: "blockSelect", // CHANGED: enable vault-backed block selection
+					type: "blockSelect",
 					placeholder: "Start typing...",
 				},
 			],
@@ -419,7 +419,11 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 		rules: { allowedOn: ["task"] },
 		render(params: { blockRef: string }) {
 			const blockRef = params?.blockRef?.trim() ?? "";
-			const inner = `<a href="${blockRef}" class="internal-link">${emojis.linkArrowUp}</a>`;
+			const inner = `<a class="internal-link" ${attrVar(
+				"href",
+				"blockRef",
+				blockRef
+			)}>${emojis.linkArrowUp}</a>`;
 			return wrapTemplate("agile.parentLink", inner, {
 				orderTag: this.orderTag,
 			});
@@ -1008,10 +1012,17 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 		render(params?: { details?: string; href?: string }) {
 			const details = (params?.details ?? "").trim();
 			const href = (params?.href ?? "").trim();
-			const anchorOpen = `<a class="internal-link" href="${href}">`;
+			const anchorOpen = `<a class="internal-link" ${attrVar(
+				"href",
+				"href",
+				href
+			)}>`;
 			const inner = chip({
 				id: "state-blocked",
-				text: `⛔ <strong>Requires: ${anchorOpen}${details}</a></strong>`,
+				text: `⛔ <strong>Requires: ${anchorOpen}${wrapVar(
+					"details",
+					details
+				)}</a></strong>`,
 				bg: colors.statesBlocked,
 			});
 			return wrapTemplate("workflows.states.blocked", inner, {
@@ -1120,14 +1131,11 @@ export const ObsidianExtensions: Record<string, TemplateDefinition<any>> = {
 			const linkContent = params?.linkContent?.trim() ?? "";
 			const inner = chip({
 				id: "obsidian-internal-link",
-				text:
-					`<a href="${href}" class="internal-link">${wrapVar(
-						"linkContent",
-						linkContent
-					)}</a>` +
-					`<span data-tpl-var="href" style="display:none">${escapeHtml(
-						href
-					)}</span>`,
+				text: `<a class="internal-link" ${attrVar(
+					"href",
+					"href",
+					href
+				)}>${wrapVar("linkContent", linkContent)}</a>`,
 				bg: colors.obsidianTagGrey,
 			});
 			return wrapTemplate("obsidian.internalInlineLink", inner, {

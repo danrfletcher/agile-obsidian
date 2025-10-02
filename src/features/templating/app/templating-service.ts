@@ -54,13 +54,62 @@ export function resolveModalTitleFromSchema(
 }
 
 /**
- * Find a template definition by its id, e.g. "agile.userStory".
+ * Robust template resolver that supports:
+ * - Canonical "group.key" lookups (fast-path).
+ * - Multi-dot ids like "workflows.states.blocked" by matching against def.id.
+ * - Fallback to using the last segment as the key within the group.
+ * - As a final fallback, scans all groups for a def with a matching def.id.
  */
-function findTemplateById(id: string) {
-	const [group, key] = id.split(".");
-	const groupObj = (presetTemplates as Record<string, any>)[group];
-	if (!groupObj) return undefined;
-	return groupObj[key];
+export function findTemplateById(id: string): TemplateDefinition | undefined {
+	if (!id) return undefined;
+
+	// Extract group (first segment)
+	const firstDot = id.indexOf(".");
+	const group = firstDot >= 0 ? id.slice(0, firstDot) : id;
+
+	const groups = presetTemplates as unknown as Record<
+		string,
+		Record<string, TemplateDefinition>
+	>;
+	const groupObj = groups[group];
+
+	// If group exists, attempt a series of targeted resolutions
+	if (groupObj) {
+		// 1) Try exact "group.remainder" where remainder may contain dots (e.g., "states.blocked")
+		const remainder =
+			firstDot >= 0 && firstDot + 1 < id.length
+				? id.slice(firstDot + 1)
+				: "";
+		if (remainder && groupObj[remainder]) {
+			return groupObj[remainder];
+		}
+
+		// 2) Try last segment within the group (e.g., key "blocked")
+		const parts = id.split(".");
+		const last = parts[parts.length - 1];
+		if (last && groupObj[last]) {
+			return groupObj[last];
+		}
+
+		// 3) Search the group's definitions by exact def.id match
+		for (const def of Object.values(groupObj)) {
+			if (def?.id === id) return def;
+		}
+	}
+
+	// 4) As a final fallback, scan all groups by def.id
+	for (const defs of Object.values(
+		presetTemplates as unknown as Record<
+			string,
+			Record<string, TemplateDefinition>
+		>
+	)) {
+		for (const def of Object.values(defs)) {
+			if (def?.id === id) return def;
+		}
+	}
+
+	return undefined;
 }
 
 function coerceRuleObject(rule: Rule | undefined): RuleObject | undefined {
@@ -286,33 +335,35 @@ export function renderTemplateOnly<TParams = unknown>(
  * If a template supplies parseParamsFromDom, it must also return marker-only values.
  */
 export function prefillTemplateParams(
-  templateId: string,
-  wrapperEl: HTMLElement
+	templateId: string,
+	wrapperEl: HTMLElement
 ): Record<string, unknown> | undefined {
-  const def = findTemplateById(templateId) as TemplateDefinition | undefined;
-  if (!def) return undefined;
+	const def = findTemplateById(templateId) as TemplateDefinition | undefined;
+	if (!def) return undefined;
 
-  // Template-specific override (must be marker-only)
-  if (typeof def.parseParamsFromDom === "function") {
-    try {
-      const parsed = def.parseParamsFromDom(wrapperEl) as Record<string, unknown> | undefined;
-      if (parsed && Object.keys(parsed).length > 0) return parsed;
-    } catch {
-      // fall through
-    }
-  }
+	// Template-specific override (must be marker-only)
+	if (typeof def.parseParamsFromDom === "function") {
+		try {
+			const parsed = def.parseParamsFromDom(wrapperEl) as
+				| Record<string, unknown>
+				| undefined;
+			if (parsed && Object.keys(parsed).length > 0) return parsed;
+		} catch {
+			// fall through
+		}
+	}
 
-  // Generic: explicit var markers only
-  const explicit = extractParamsFromWrapperEl(wrapperEl);
-  if (Object.keys(explicit).length > 0) return explicit;
+	// Generic: explicit var markers only
+	const explicit = extractParamsFromWrapperEl(wrapperEl);
+	if (Object.keys(explicit).length > 0) return explicit;
 
-  // No markers found. Enforce “wrapped vars only”.
-  console.warn(
-    "[templating] No [data-tpl-var] markers found for parameterized template:",
-    templateId,
-    wrapperEl
-  );
-  return {};
+	// No markers found. Enforce “wrapped vars only”.
+	console.warn(
+		"[templating] No [data-tpl-var] markers found for parameterized template:",
+		templateId,
+		wrapperEl
+	);
+	return {};
 }
 
 /**
@@ -320,60 +371,71 @@ export function prefillTemplateParams(
  * Uses instanceId if provided for precise matching; otherwise falls back to templateKey.
  */
 export async function replaceTemplateWrapperOnCurrentLine(
-  app: any,
-  view: any,
-  editor: MinimalEditor,
-  templateKey: string,
-  newHtml: string,
-  wrapperInstanceId?: string
+	app: any,
+	view: any,
+	editor: MinimalEditor,
+	templateKey: string,
+	newHtml: string,
+	wrapperInstanceId?: string
 ): Promise<void> {
-  try {
-    const cur = editor.getCursor();
-    const lineNo = cur.line;
-    const lineText = editor.getLine(lineNo);
+	try {
+		const cur = editor.getCursor();
+		const lineNo = cur.line;
+		const lineText = editor.getLine(lineNo);
 
-    // Prefer matching by data-template-wrapper (unique per instance)
-    const openTagRe = new RegExp(
-      wrapperInstanceId
-        ? `<span\\b[^>]*\\bdata-template-wrapper\\s*=\\s*"${escapeRegExp(wrapperInstanceId)}"[^>]*>`
-        : `<span\\b[^>]*\\bdata-template-key\\s*=\\s*"${escapeRegExp(templateKey)}"[^>]*>`,
-      "i"
-    );
+		// Prefer matching by data-template-wrapper (unique per instance)
+		const openTagRe = new RegExp(
+			wrapperInstanceId
+				? `<span\\b[^>]*\\bdata-template-wrapper\\s*=\\s*"${escapeRegExp(
+						wrapperInstanceId
+				  )}"[^>]*>`
+				: `<span\\b[^>]*\\bdata-template-key\\s*=\\s*"${escapeRegExp(
+						templateKey
+				  )}"[^>]*>`,
+			"i"
+		);
 
-    const openMatch = openTagRe.exec(lineText);
-    if (!openMatch) {
-      console.debug(
-        "[templating] replaceTemplateWrapperOnCurrentLine: wrapper not found on line",
-        { lineNo, templateKey, wrapperInstanceId, lineText }
-      );
-      return;
-    }
+		const openMatch = openTagRe.exec(lineText);
+		if (!openMatch) {
+			console.debug(
+				"[templating] replaceTemplateWrapperOnCurrentLine: wrapper not found on line",
+				{ lineNo, templateKey, wrapperInstanceId, lineText }
+			);
+			return;
+		}
 
-    const startIdx = openMatch.index;
+		const startIdx = openMatch.index;
 
-    // Find the end index of the matching </span> for this wrapper via deterministic counting
-    const endIdx = findMatchingSpanEndIndexDeterministic(lineText, startIdx);
-    if (endIdx === -1) {
-      console.warn(
-        "[templating] replaceTemplateWrapperOnCurrentLine: could not find matching </span> for wrapper",
-        { lineNo, templateKey, wrapperInstanceId }
-      );
-      return;
-    }
+		// Find the end index of the matching </span> for this wrapper via deterministic counting
+		const endIdx = findMatchingSpanEndIndexDeterministic(
+			lineText,
+			startIdx
+		);
+		if (endIdx === -1) {
+			console.warn(
+				"[templating] replaceTemplateWrapperOnCurrentLine: could not find matching </span> for wrapper",
+				{ lineNo, templateKey, wrapperInstanceId }
+			);
+			return;
+		}
 
-    const updated = lineText.slice(0, startIdx) + newHtml + lineText.slice(endIdx);
+		const updated =
+			lineText.slice(0, startIdx) + newHtml + lineText.slice(endIdx);
 
-    const from = { line: lineNo, ch: 0 };
-    const to = { line: lineNo, ch: lineText.length };
-    editor.replaceRange(updated, from, to);
+		const from = { line: lineNo, ch: 0 };
+		const to = { line: lineNo, ch: lineText.length };
+		editor.replaceRange(updated, from, to);
 
-    // Place caret at end of line to avoid caret jumping inside HTML
-    if (typeof editor.setCursor === "function") {
-      editor.setCursor({ line: lineNo, ch: updated.length });
-    }
-  } catch (e) {
-    console.error("[templating] replaceTemplateWrapperOnCurrentLine error", e);
-  }
+		// Place caret at end of line to avoid caret jumping inside HTML
+		if (typeof editor.setCursor === "function") {
+			editor.setCursor({ line: lineNo, ch: updated.length });
+		}
+	} catch (e) {
+		console.error(
+			"[templating] replaceTemplateWrapperOnCurrentLine error",
+			e
+		);
+	}
 }
 
 /**
@@ -381,44 +443,47 @@ export async function replaceTemplateWrapperOnCurrentLine(
  * and count '<span' vs '</span>' to find the matching closing position.
  * This avoids regex corner cases with nested spans.
  */
-function findMatchingSpanEndIndexDeterministic(s: string, startIdx: number): number {
-  // Sanity: the startIdx must point at an opening '<span'
-  if (s.slice(startIdx, startIdx + 5).toLowerCase() !== "<span") {
-    // find the next opening from startIdx just in case
-    const firstOpen = s.toLowerCase().indexOf("<span", startIdx);
-    if (firstOpen === -1) return -1;
-    startIdx = firstOpen;
-  }
+function findMatchingSpanEndIndexDeterministic(
+	s: string,
+	startIdx: number
+): number {
+	// Sanity: the startIdx must point at an opening '<span'
+	if (s.slice(startIdx, startIdx + 5).toLowerCase() !== "<span") {
+		// find the next opening from startIdx just in case
+		const firstOpen = s.toLowerCase().indexOf("<span", startIdx);
+		if (firstOpen === -1) return -1;
+		startIdx = firstOpen;
+	}
 
-  // Move to end of the opening tag
-  const firstGt = s.indexOf(">", startIdx);
-  if (firstGt === -1) return -1;
+	// Move to end of the opening tag
+	const firstGt = s.indexOf(">", startIdx);
+	if (firstGt === -1) return -1;
 
-  let depth = 1;
-  let i = firstGt + 1;
+	let depth = 1;
+	let i = firstGt + 1;
 
-  while (i < s.length) {
-    const nextOpen = s.toLowerCase().indexOf("<span", i);
-    const nextClose = s.toLowerCase().indexOf("</span>", i);
+	while (i < s.length) {
+		const nextOpen = s.toLowerCase().indexOf("<span", i);
+		const nextClose = s.toLowerCase().indexOf("</span>", i);
 
-    // No more closing tag: unbalanced
-    if (nextClose === -1) return -1;
+		// No more closing tag: unbalanced
+		if (nextClose === -1) return -1;
 
-    // If next opening comes before next closing, it's a nested span
-    if (nextOpen !== -1 && nextOpen < nextClose) {
-      depth += 1;
-      const gt = s.indexOf(">", nextOpen);
-      if (gt === -1) return -1;
-      i = gt + 1;
-      continue;
-    }
+		// If next opening comes before next closing, it's a nested span
+		if (nextOpen !== -1 && nextOpen < nextClose) {
+			depth += 1;
+			const gt = s.indexOf(">", nextOpen);
+			if (gt === -1) return -1;
+			i = gt + 1;
+			continue;
+		}
 
-    // Otherwise we encountered a closing
-    depth -= 1;
-    const closeEnd = nextClose + "</span>".length;
-    if (depth === 0) return closeEnd;
-    i = closeEnd;
-  }
+		// Otherwise we encountered a closing
+		depth -= 1;
+		const closeEnd = nextClose + "</span>".length;
+		if (depth === 0) return closeEnd;
+		i = closeEnd;
+	}
 
-  return -1;
+	return -1;
 }
