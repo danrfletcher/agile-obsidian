@@ -12,10 +12,15 @@ export type Rule = RuleObject | RuleObject[];
 
 /**
  Param input type rendering in the modal
- - text: single-line input
+ - text: single-line input (default when omitted)
  - textarea: multi-line input
+ - dropdown: select from a predefined list of options
+ - blockSelect: free-text input with autosuggest from the vault:
+    * matches file names across the vault
+    * matches all blocks across the vault (every non-empty line), regardless of whether they have a block ID
+    * when a block is selected, ensures it has a block ID (creates/appends one if needed) and returns "<filePath>#^<blockId>"
 */
-export type ParamInputType = "text" | "textarea";
+export type ParamInputType = "text" | "textarea" | "dropdown" | "blockSelect";
 
 // Optional modal titles to distinguish create/edit flows
 export type ParamsSchemaTitles = {
@@ -26,11 +31,16 @@ export type ParamsSchemaTitles = {
 export type ParamsSchemaField = {
 	name: string;
 	label?: string;
-	type?: string;
+	type?: ParamInputType; // default is "text" when omitted
 	placeholder?: string;
 	defaultValue?: string | number | boolean | null;
 	description?: string;
 	required?: boolean;
+	/**
+	 For dropdown fields:
+	 - Provide an array of options. "label" is the user-facing string, "value" is returned to the template.
+	 - If defaultValue is provided and matches an option's value, that option will be preselected.
+	*/
 	options?: Array<{ label: string; value: string }>;
 };
 

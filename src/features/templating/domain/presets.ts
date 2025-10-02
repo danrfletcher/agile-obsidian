@@ -411,6 +411,7 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 					name: "blockRef",
 					label: "Parent Block Reference",
 					required: true,
+					type: "blockSelect", // CHANGED: enable vault-backed block selection
 					placeholder: "Start typing...",
 				},
 			],
@@ -982,14 +983,35 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 		orderTag: "state",
 		id: "workflows.states.blocked",
 		label: "Workflow - State: Blocked",
+		hasParams: true,
+		paramsSchema: {
+			titles: { create: "Set State", edit: "Edit State" },
+			fields: [
+				{
+					name: "href",
+					label: "Requires",
+					required: true,
+					type: "blockSelect",
+					placeholder: "Select a blocking task…",
+				},
+				{
+					name: "details",
+					label: "Details",
+					required: true,
+					type: "textarea",
+					placeholder:
+						"Enter title for blocking task (for display only)...",
+				},
+			],
+		},
 		rules: { allowedOn: ["task"] },
-		render(params?: { requires?: string; href?: string }) {
-			const requires = (params?.requires ?? "").trim();
+		render(params?: { details?: string; href?: string }) {
+			const details = (params?.details ?? "").trim();
 			const href = (params?.href ?? "").trim();
 			const anchorOpen = `<a class="internal-link" href="${href}">`;
 			const inner = chip({
 				id: "state-blocked",
-				text: `⛔ Requires: ${anchorOpen}<strong>${requires}</strong></a>`,
+				text: `⛔ <strong>Requires: ${anchorOpen}${details}</a></strong>`,
 				bg: colors.statesBlocked,
 			});
 			return wrapTemplate("workflows.states.blocked", inner, {
