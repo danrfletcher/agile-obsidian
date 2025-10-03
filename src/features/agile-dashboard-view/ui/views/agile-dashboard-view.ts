@@ -261,6 +261,87 @@ export class AgileDashboardView extends ItemView {
 			}
 		);
 
+		// NEW: Localized subtree refresh on snooze events (used by 💤 and 💤⬇️)
+		// Avoid re-rendering leaf tasks that were optimistically hidden (single-task snooze).
+		this.registerDomEvent(
+			window,
+			"agile:task-snoozed" as any,
+			async (e: Event) => {
+				try {
+					const ev = e as CustomEvent<{
+						uid: string;
+						filePath?: string;
+						date?: string;
+					}>;
+					const uid = ev?.detail?.uid || "";
+					const filePath = ev?.detail?.filePath || "";
+
+					if (!uid) return;
+
+					// If the element for uid is currently hidden (e.g., single-task 💤),
+					// skip the refresh to preserve the optimistic disappearance.
+					const viewContainer = this.containerEl
+						.children[1] as HTMLElement;
+					const contentRoot = viewContainer.querySelector(
+						".content-container"
+					) as HTMLElement | null;
+
+					let targetLi: HTMLElement | null = null;
+					if (contentRoot) {
+						const allLis = Array.from(
+							contentRoot.querySelectorAll("li[data-task-uid]")
+						) as HTMLElement[];
+						targetLi =
+							allLis.find(
+								(el) =>
+									(el.getAttribute("data-task-uid") || "") ===
+									uid
+							) || null;
+					}
+
+					const isHidden =
+						!targetLi ||
+						targetLi.style.display === "none" ||
+						targetLi.getAttribute("aria-hidden") === "true" ||
+						(() => {
+							try {
+								const cs = getComputedStyle(targetLi!);
+								return (
+									cs.display === "none" ||
+									cs.visibility === "hidden"
+								);
+							} catch {
+								return false;
+							}
+						})();
+
+					if (isHidden) {
+						// Leaf task snooze or already removed: do nothing.
+						return;
+					}
+
+					// Keep local modify-driven refresh suppressed and update index
+					try {
+						if (filePath) {
+							this.suppressedFiles.add(filePath);
+							const af =
+								this.app.vault.getAbstractFileByPath(filePath);
+							if (af instanceof TFile) {
+								await this.taskIndexService.updateFile(af);
+							}
+						}
+					} catch {
+						/* ignore */
+					}
+
+					// Localized subtree refresh for the updated node (e.g., parent for 💤⬇️)
+					await this.refreshTaskTreeByUid(uid);
+				} catch {
+					/* ignore */
+				}
+			}
+		);
+
 		// Attach dashboard-level click handler for assignment wrappers (once)
 		this.attachDashboardAssignmentHandler();
 

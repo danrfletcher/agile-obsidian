@@ -1,6 +1,9 @@
 import { App, Component, MarkdownRenderer, TFile } from "obsidian";
 import { TaskItem } from "@features/task-index";
-import { appendSnoozeButtonIfEligible } from "./task-buttons";
+import {
+	appendSnoozeButtonIfEligible,
+	appendSnoozeAllSubtasksButtonIfEligible,
+} from "./task-buttons";
 import { handleStatusChange } from "../../app/status-update";
 
 function isLeaf(task: TaskItem): boolean {
@@ -319,7 +322,16 @@ export function renderTaskTree(
 		}
 
 		try {
+			// Regular snooze (💤)
 			appendSnoozeButtonIfEligible(
+				task,
+				taskItemEl,
+				sectionType,
+				app,
+				selectedAlias
+			);
+			// Snooze all subtasks (💤⬇️), placed after the regular snooze button
+			appendSnoozeAllSubtasksButtonIfEligible(
 				task,
 				taskItemEl,
 				sectionType,
@@ -553,7 +565,15 @@ function rerenderTaskInline(
 		childLists.forEach((ul) => liEl.appendChild(ul));
 
 		try {
+			// Re-append snooze buttons on rerender
 			appendSnoozeButtonIfEligible(
+				task,
+				liEl,
+				sectionType,
+				app,
+				selectedAlias
+			);
+			appendSnoozeAllSubtasksButtonIfEligible(
 				task,
 				liEl,
 				sectionType,

@@ -40,12 +40,18 @@ export function processAndRenderArtifact(
 	const { inProgress, completed, sleeping, cancelled } = taskParams;
 
 	const sectionTasks = currentTasks.filter((task) => {
-		return (
-			(inProgress && isInProgress(task, taskMap)) ||
-			(completed && isCompleted(task)) ||
-			(sleeping && isSnoozed(task, taskMap)) ||
-			(cancelled && isCancelled(task))
-		);
+		const snoozedForAlias = isSnoozed(task, taskMap, selectedAlias);
+
+		const inProg =
+			inProgress &&
+			isInProgress(task, taskMap, selectedAlias) &&
+			!snoozedForAlias;
+
+		const compl = completed && isCompleted(task);
+		const sleep = sleeping && snoozedForAlias;
+		const canc = cancelled && isCancelled(task);
+
+		return inProg || compl || sleep || canc;
 	});
 
 	const directlyAssigned = sectionTasks.filter(

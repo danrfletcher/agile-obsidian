@@ -97,10 +97,11 @@ export const isCancelled = (task: TaskItem): boolean => {
  */
 export const isInProgress = (
 	task: TaskItem,
-	taskMap: Map<string, TaskItem>
+	taskMap: Map<string, TaskItem>,
+	selectedAlias: string | null
 ): boolean => {
 	return (
-		!isCompleted(task) && !isCancelled(task) && !isSnoozed(task, taskMap)
+		!isCompleted(task) && !isCancelled(task) && !isSnoozed(task, taskMap, selectedAlias)
 	);
 };
 
@@ -146,7 +147,7 @@ function collectSnoozeMatches(text: string, inherited: boolean): SnoozeMatch[] {
 export const isSnoozed = (
 	task: TaskItem,
 	taskMap: Map<string, TaskItem>,
-	selectedAlias?: string
+	selectedAlias: string | null
 ): boolean => {
 	if (!task || typeof task.text !== "string") {
 		return false;
@@ -434,101 +435,4 @@ export function isScheduledForToday(
 		}
 	}
 	return false;
-}
-
-/**
- * Extra helpers you can use in your dashboard predicates
- */
-
-// Simple checkbox-open heuristic for markdown task lines beginning with "- [ ]"
-export function isMarkdownCheckboxOpen(task: TaskItem): boolean {
-	const txt = task?.text ?? "";
-	return /^\s*-\s*\[\s\]/.test(txt);
-}
-
-// Decision function for recurring responsibilities
-export function shouldShowRecurringResponsibility(
-	task: TaskItem,
-	taskMap: Map<string, TaskItem>,
-	options?: {
-		selectedAlias?: string | null;
-		date?: Date;
-		requireAssignee?: boolean; // default true
-		requireScheduleToday?: boolean; // default true, but enforced only if a calendar marker exists
-		requireOpenCheckbox?: boolean; // default false
-	}
-): boolean {
-	const {
-		selectedAlias,
-		date = new Date(),
-		requireAssignee = true,
-		requireScheduleToday = true,
-		requireOpenCheckbox = false,
-	} = options ?? {};
-
-	// Base state
-	if (!isInProgress(task, taskMap)) return false;
-
-	// Optional checkbox gating (some dashboards want "- [ ]" explicitly)
-	if (requireOpenCheckbox && !isMarkdownCheckboxOpen(task)) return false;
-
-	// Assignee gating
-	if (requireAssignee && !isAssignedToMemberOrTeam(task, selectedAlias)) {
-		return false;
-	}
-
-	// Schedule gating — only enforce DOW if a calendar marker exists on the line
-	if (requireScheduleToday && hasCalendarScheduleMarker(task)) {
-		if (!isScheduledForToday(task, date)) {
-			return false;
-		}
-	}
-
-	return true;
-}
-
-// Debug object to log exactly which checks pass/fail
-export function debugRecurringResDecision(
-	task: TaskItem,
-	taskMap: Map<string, TaskItem>,
-	options?: {
-		selectedAlias?: string | null;
-		date?: Date;
-		requireAssignee?: boolean;
-		requireScheduleToday?: boolean;
-		requireOpenCheckbox?: boolean;
-	}
-) {
-	const {
-		selectedAlias,
-		date = new Date(),
-		requireAssignee = true,
-		requireScheduleToday = true,
-		requireOpenCheckbox = false,
-	} = options ?? {};
-
-	const state = {
-		text: (task?.text ?? "").slice(0, 240),
-		isCompleted: isCompleted(task),
-		isCancelled: isCancelled(task),
-		isSnoozed: isSnoozed(task, taskMap, selectedAlias || undefined),
-		isInProgress: isInProgress(task, taskMap),
-		isMarkdownCheckboxOpen: isMarkdownCheckboxOpen(task),
-		isAssignedToMemberOrTeam: isAssignedToMemberOrTeam(task, selectedAlias),
-		hasCalendarScheduleMarker: hasCalendarScheduleMarker(task),
-		isScheduledForToday: isScheduledForToday(task, date),
-		requireAssignee,
-		requireScheduleToday,
-		requireOpenCheckbox,
-		selectedAlias: selectedAlias ?? null,
-		todayDOW: date.getDay(),
-	};
-	const result = shouldShowRecurringResponsibility(task, taskMap, {
-		selectedAlias,
-		date,
-		requireAssignee,
-		requireScheduleToday,
-		requireOpenCheckbox,
-	});
-	return { ...state, result };
 }

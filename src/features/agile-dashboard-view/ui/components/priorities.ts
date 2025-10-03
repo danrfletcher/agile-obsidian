@@ -31,7 +31,7 @@ export function processAndRenderPriorities(
 		task: TaskItem,
 		isRoot = false
 	): TaskItem | null => {
-		if (isSnoozed(task, taskMap)) return null;
+		if (isSnoozed(task, taskMap, selectedAlias)) return null;
 
 		const allowedMarkers = ["🚀", "📦", "⚡", "⭐", "💝", "⬇️", "🪣"];
 		const disallowedMarkers = ["❌", "🛠️", "📂", "🏆", "📝", "🎖️"];
@@ -76,7 +76,7 @@ export function processAndRenderPriorities(
 			!task.text.includes("🎖️") &&
 			!task.text.includes("🏆") &&
 			!task.text.includes("📝") &&
-			!isSnoozed(task, taskMap) &&
+			!isSnoozed(task, taskMap, selectedAlias) &&
 			getAgileArtifactType(task) !== "recurring-responsibility"
 	);
 
@@ -112,9 +112,9 @@ export function processAndRenderPriorities(
 
 	const filteredPriorityTasks = strippedPriorityTasks.filter((task) => {
 		return (
-			(inProgress && isInProgress(task, taskMap)) ||
+			(inProgress && isInProgress(task, taskMap, selectedAlias)) ||
 			(completed && isCompleted(task)) ||
-			(sleeping && isSnoozed(task, taskMap)) ||
+			(sleeping && isSnoozed(task, taskMap, selectedAlias)) ||
 			(cancelled && isCancelled(task))
 		);
 	});

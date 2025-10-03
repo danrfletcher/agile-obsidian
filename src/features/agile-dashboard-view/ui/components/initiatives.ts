@@ -30,12 +30,18 @@ export function processAndRenderInitiatives(
 
 	// 1) Filter to tasks shown by current view toggles
 	const sectionTasks = currentTasks.filter((task) => {
-		return (
-			(inProgress && isInProgress(task, taskMap)) ||
-			(completed && isCompleted(task)) ||
-			(sleeping && isSnoozed(task, taskMap)) ||
-			(cancelled && isCancelled(task))
-		);
+		const snoozedForAlias = isSnoozed(task, taskMap, selectedAlias);
+
+		const inProg =
+			inProgress &&
+			isInProgress(task, taskMap, selectedAlias) &&
+			!snoozedForAlias;
+
+		const compl = completed && isCompleted(task);
+		const sleep = sleeping && snoozedForAlias;
+		const canc = cancelled && isCancelled(task);
+
+		return inProg || compl || sleep || canc;
 	});
 
 	// 2) Only initiatives assigned/active for member

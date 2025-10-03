@@ -58,7 +58,7 @@ export function processAndRenderResponsibilities(
 		if (
 			getAgileArtifactType(node) === "recurring-responsibility" &&
 			isAssignedToMemberIncludingInferred(node) &&
-			!isSnoozed(node, taskMap)
+			!isSnoozed(node, taskMap, selectedAlias)
 		) {
 			collector.push(node);
 		}
@@ -71,7 +71,7 @@ export function processAndRenderResponsibilities(
 		task: TaskItem,
 		isRoot = false
 	): TaskItem | null => {
-		if (isSnoozed(task, taskMap)) return null;
+		if (isSnoozed(task, taskMap, selectedAlias)) return null;
 
 		const allowedMarkers = ["🚀", "📦", "⚡", "⭐", "💝", "🔁", "⬇️", "🪣"];
 		const disallowedMarkers = ["❌", "🛠️", "📂", "🏆", "📝", "🎖️"];
@@ -154,7 +154,7 @@ export function processAndRenderResponsibilities(
 			!task.text.includes("🎖️") &&
 			!task.text.includes("🏆") &&
 			!task.text.includes("📝") &&
-			!isSnoozed(task, taskMap) &&
+			!isSnoozed(task, taskMap, selectedAlias) &&
 			getAgileArtifactType(task) !== "recurring-responsibility"
 	);
 
@@ -229,9 +229,9 @@ export function processAndRenderResponsibilities(
 	const responsibilityTasksParamFilter = responsibilityTasks.filter(
 		(task) => {
 			return (
-				(inProgress && isInProgress(task, taskMap)) ||
+				(inProgress && isInProgress(task, taskMap, selectedAlias)) ||
 				(completed && isCompleted(task)) ||
-				(sleeping && isSnoozed(task, taskMap)) ||
+				(sleeping && isSnoozed(task, taskMap, selectedAlias)) ||
 				(cancelled && isCancelled(task))
 			);
 		}
