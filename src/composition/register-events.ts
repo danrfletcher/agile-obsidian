@@ -28,6 +28,7 @@ import {
 	wireTaskClosedCascade,
 	wireTaskClosedCascadeObserver,
 } from "@features/task-close-cascade";
+import { registerTaskMetadataCleanup } from "@features/task-metadata-cleanup";
 
 // Strong singleton-per-run progress UI (per view)
 class ProgressNotice {
@@ -499,4 +500,10 @@ export async function registerEvents(container: Container) {
 	}
 
 	tryWireView(app.workspace.getActiveViewOfType(MarkdownView) ?? null);
+
+	try {
+		registerTaskMetadataCleanup(container);
+	} catch (e) {
+		console.error("[boot] task-metadata-cleanup wiring failed", e);
+	}
 }

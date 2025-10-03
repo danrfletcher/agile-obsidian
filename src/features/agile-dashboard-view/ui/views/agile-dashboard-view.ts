@@ -1,7 +1,5 @@
 import { ItemView, WorkspaceLeaf, TFile, TAbstractFile } from "obsidian";
 import manifest from "manifest.json";
-import { cleanupExpiredSnoozes } from "@features/task-snooze";
-import { getCurrentUserDisplayName } from "@settings/index";
 
 import { processAndRenderObjectives } from "../components/objectives";
 import { processAndRenderArtifacts } from "../components/artifacts";
@@ -540,21 +538,8 @@ export class AgileDashboardView extends ItemView {
 
 		let currentTasks: TaskItem[] = this.taskIndexService.getAllTasks();
 
-		const settings = this.settingsService.getRaw();
-		const changedFiles = await cleanupExpiredSnoozes(
-			this.app,
-			currentTasks,
-			getCurrentUserDisplayName(settings) || ""
-		);
-		if (changedFiles.size > 0) {
-			for (const path of changedFiles) {
-				const file = this.app.vault.getAbstractFileByPath(path);
-				if (file instanceof TFile) {
-					await this.taskIndexService.updateFile(file);
-				}
-			}
-			currentTasks = this.taskIndexService.getAllTasks();
-		}
+		// NOTE: Metadata cleanup (expired snoozes) is now run by the global
+		// task-metadata-cleanup module on startup and daily. We do not run it here.
 
 		currentTasks = currentTasks.filter((t) =>
 			this.isTaskAllowedByTeam(t as unknown as TaskItem)
@@ -581,6 +566,8 @@ export class AgileDashboardView extends ItemView {
 			sleeping: false,
 			cancelled: false,
 		};
+
+		const settings = this.settingsService.getRaw();
 
 		if (settings.showObjectives) {
 			processAndRenderObjectives(
@@ -863,11 +850,11 @@ export class AgileDashboardView extends ItemView {
 		if (!x || typeof x !== "object") return "";
 		const anyObj = x as Record<string, unknown>;
 		const cand =
-			anyObj.alias ??
-			anyObj.user ??
-			anyObj.name ??
-			anyObj.id ??
-			anyObj.email;
+			(anyObj as any).alias ??
+			(anyObj as any).user ??
+			(anyObj as any).name ??
+			(anyObj as any).id ??
+			(anyObj as any).email;
 		return normalizeAlias(
 			typeof cand === "string" ? cand : String(cand || "")
 		);
