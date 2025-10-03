@@ -1,0 +1,96 @@
+/**
+ * Dashboard-level click delegation for assignment template wrappers.
+ * Opens the headless reassignment menu where users click the assignee chip in the dashboard.
+ *
+ * Feature served: Reassignment UX inside the rendered dashboard without navigating to source.
+ */
+
+import type { App } from "obsidian";
+import type { OrgStructurePort } from "@features/org-structure";
+import { openAssignmentMenuAt } from "@features/task-assignment/ui/reassignment-menu";
+
+type RegisterDomEvent = (
+	el: HTMLElement | Window | Document,
+	type: string,
+	handler: (evt: any) => void,
+	options?: AddEventListenerOptions | boolean
+) => void;
+
+export interface AssignmentHandlerOptions {
+	app: App;
+	orgStructurePort?: OrgStructurePort;
+	viewContainer: HTMLElement; // the content area (this.containerEl.children[1])
+	registerDomEvent: RegisterDomEvent; // ItemView.registerDomEvent binder for cleanup
+}
+
+export function attachDashboardAssignmentHandler(
+	opts: AssignmentHandlerOptions
+): void {
+	const { app, orgStructurePort, viewContainer, registerDomEvent } = opts;
+	if (!orgStructurePort) return;
+
+	const onClick = (evt: MouseEvent) => {
+		const tgt = evt.target as HTMLElement | null;
+		const span = tgt?.closest(
+			'span[data-template-key="members.assignee"]'
+		) as HTMLElement | null;
+		if (!span) return;
+
+		evt.preventDefault();
+		evt.stopPropagation();
+		// @ts-ignore
+		(evt as any).stopImmediatePropagation?.();
+
+		const templateKey = span.getAttribute("data-template-key") ?? "";
+		if (templateKey !== "members.assignee") return;
+
+		const instanceId = span.getAttribute("data-template-wrapper") ?? "";
+		if (!instanceId) return;
+
+		const assignTypeAttr = (
+			span.getAttribute("data-assign-type") || ""
+		).toLowerCase();
+		const assignType: "assignee" | "delegate" =
+			assignTypeAttr === "delegate" ? "delegate" : "assignee";
+
+		const currentState = (
+			(span.getAttribute("data-assignment-state") || "").toLowerCase() ===
+			"inactive"
+				? "inactive"
+				: "active"
+		) as "active" | "inactive";
+
+		const currentSlug = (
+			span.getAttribute("data-member-slug") || ""
+		).trim();
+
+		// Map to task LI
+		const li = span.closest("li[data-file-path]") as HTMLElement | null;
+		const filePath = li?.getAttribute("data-file-path") || "";
+		if (!filePath) return;
+
+		const parentUid = li?.getAttribute("data-task-uid") || null;
+		const lineHintStr = li?.getAttribute("data-line") || "";
+		const lineHint0 =
+			lineHintStr && /^\d+$/.test(lineHintStr)
+				? parseInt(lineHintStr, 10)
+				: null;
+
+		openAssignmentMenuAt({
+			mode: "headless",
+			app,
+			plugin: null,
+			ports: { orgStructure: orgStructurePort },
+			at: { x: evt.clientX, y: evt.clientY },
+			filePath,
+			instanceId,
+			assignType,
+			currentState,
+			currentSlug,
+			parentUid,
+			lineHint0,
+		});
+	};
+
+	registerDomEvent(viewContainer, "click", onClick);
+}

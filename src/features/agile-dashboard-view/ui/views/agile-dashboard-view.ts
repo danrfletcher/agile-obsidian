@@ -16,6 +16,9 @@ import { renderTeamsPopupContent, TeamsPopupContext } from "./teams-popup";
 // headless reassignment menu for dashboard
 import { openAssignmentMenuAt } from "@features/task-assignment/ui/reassignment-menu";
 
+// NEW: Import the templating handler for parameterized template editing in the dashboard
+import { attachDashboardTemplatingHandler } from "../handlers/templating-handler";
+
 export const VIEW_TYPE_AGILE_DASHBOARD = "agile-dashboard-view";
 
 export type AgileDashboardViewPorts = {
@@ -95,7 +98,7 @@ export class AgileDashboardView extends ItemView {
 	}
 
 	async onOpen() {
-		const container = this.containerEl.children[1];
+		const container = this.containerEl.children[1] as HTMLElement;
 		container.empty();
 
 		// Controls row
@@ -343,6 +346,14 @@ export class AgileDashboardView extends ItemView {
 		// Attach dashboard-level click handler for assignment wrappers (once)
 		this.attachDashboardAssignmentHandler();
 
+		// NEW: Attach dashboard-level click handler for parameterized template editing
+		attachDashboardTemplatingHandler({
+			app: this.app,
+			viewContainer: container,
+			registerDomEvent: this.registerDomEvent.bind(this),
+			refreshForFile: this.refreshForFile.bind(this),
+		});
+
 		// Initial render
 		await this.updateView();
 
@@ -480,6 +491,19 @@ export class AgileDashboardView extends ItemView {
 			}
 		});
 		this.dashboardAssignHandlerAttached = true;
+	}
+
+	// NEW: Refresh method used by templating handler for double-buffered re-render
+	private async refreshForFile(filePath?: string | null) {
+		try {
+			if (filePath) {
+				const af = this.app.vault.getAbstractFileByPath(filePath);
+				if (af instanceof TFile) {
+					await this.taskIndexService.updateFile(af);
+				}
+			}
+		} catch { /* ignore */ }
+		await this.updateView();
 	}
 
 	private getSelectedAlias(): string | null {
@@ -673,7 +697,7 @@ export class AgileDashboardView extends ItemView {
 		li.replaceWith(newLi);
 	}
 
-	// -----------------------
+		// -----------------------
 	// Member select (grouped)
 	// -----------------------
 	private populateMemberSelectGrouped() {
@@ -774,9 +798,6 @@ export class AgileDashboardView extends ItemView {
 			this.memberSelect.value = all[0].alias;
 		}
 	}
-
-	// storage/membership/team selection helpers as before...
-	// [unchanged code omitted for brevity in this comment-only section; everything below remains identical to your version]
 	private loadSelectedTeamSlugs() {
 		try {
 			const raw = window.localStorage.getItem(this.storageKey);
@@ -1016,10 +1037,6 @@ export class AgileDashboardView extends ItemView {
 			for (const x of s) union.add(x);
 		}
 		return union.size > 0 ? union : null;
-	}
-	private isSlugSelected(slug: string): boolean {
-		if (this.implicitAllSelected) return true;
-		return this.selectedTeamSlugs.has((slug || "").toLowerCase());
 	}
 	private restrictSelectedTeamsToUserMembership() {
 		const allowed = this.getAllowedTeamSlugsForSelectedUser();
