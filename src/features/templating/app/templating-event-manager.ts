@@ -20,6 +20,12 @@ export function wireTemplatingDomHandlers(
 		view.containerEl.querySelector(".cm-content")) as HTMLElement | null;
 	const targetEl: HTMLElement = contentRoot ?? view.containerEl;
 
+	// Avoid double-binding for this view's content root
+	if ((targetEl as any).__tplTemplatingHandlersBound) {
+		return;
+	}
+	(targetEl as any).__tplTemplatingHandlersBound = true;
+
 	// Click-to-edit (delegate)
 	const onClick = async (evt: MouseEvent) => {
 		const target = evt.target as HTMLElement | null;
@@ -43,11 +49,23 @@ export function wireTemplatingDomHandlers(
 		}
 
 		// Otherwise, this is a normal templating click we manage
+		// Prevent navigation/other handlers on this click
 		evt.preventDefault();
 		evt.stopPropagation();
 
 		try {
-			await processClick(app, el);
+			// Defer slightly to let CodeMirror finalize caret movement/selection updates
+			setTimeout(async () => {
+				try {
+					await processClick(app, el!);
+				} catch (err) {
+					new Notice(
+						`Template edit failed: ${String(
+							(err as Error)?.message ?? err
+						)}`
+					);
+				}
+			}, 16);
 		} catch (err) {
 			new Notice(
 				`Template edit failed: ${String(

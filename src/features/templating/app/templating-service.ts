@@ -163,7 +163,9 @@ export function insertTemplate<TParams = unknown>(
 	if (!tpl || typeof tpl !== "object" || typeof tpl.render !== "function") {
 		throw new TemplateInsertError(
 			`Unknown or invalid template: ${templateId}`,
-			{ code: "UNKNOWN_TEMPLATE" }
+			{
+				code: "UNKNOWN_TEMPLATE",
+			}
 		);
 	}
 
@@ -229,7 +231,9 @@ export function insertTemplateAtCursor<TParams = unknown>(
 	if (!tpl || typeof tpl !== "object" || typeof tpl.render !== "function") {
 		throw new TemplateInsertError(
 			`Unknown or invalid template: ${templateId}`,
-			{ code: "UNKNOWN_TEMPLATE" }
+			{
+				code: "UNKNOWN_TEMPLATE",
+			}
 		);
 	}
 
@@ -318,7 +322,9 @@ export function renderTemplateOnly<TParams = unknown>(
 	if (!tpl || typeof tpl !== "object" || typeof tpl.render !== "function") {
 		throw new TemplateInsertError(
 			`Unknown or invalid template: ${templateId}`,
-			{ code: "UNKNOWN_TEMPLATE" }
+			{
+				code: "UNKNOWN_TEMPLATE",
+			}
 		);
 	}
 	const finalParams = tpl.defaults
@@ -369,6 +375,7 @@ export function prefillTemplateParams(
 /**
  * Replace the first template wrapper on the current editor line with newHtml.
  * Uses instanceId if provided for precise matching; otherwise falls back to templateKey.
+ * Fallback: if not found on the current line, scan the entire file for the wrapper instance id.
  */
 export async function replaceTemplateWrapperOnCurrentLine(
 	app: any,

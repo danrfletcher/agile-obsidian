@@ -1,4 +1,4 @@
-import { App } from "obsidian";
+import { App, Component } from "obsidian";
 import { TaskItem, TaskParams } from "@features/task-index";
 import { renderTaskTree } from "./task-renderer";
 import {
@@ -23,7 +23,8 @@ export function processAndRenderInitiatives(
 	app: App,
 	taskMap: Map<string, TaskItem>,
 	childrenMap: Map<string, TaskItem[]>,
-	taskParams: TaskParams
+	taskParams: TaskParams,
+	owner: Component
 ) {
 	// 1) Filter to tasks shown by current view toggles
 	const sectionTasks = currentTasks.filter((task) =>
@@ -34,8 +35,9 @@ export function processAndRenderInitiatives(
 	const directlyAssigned = sectionTasks.filter(
 		(task) =>
 			activeForMember(task, status, selectedAlias) &&
-			getAgileArtifactType(task) === "initiative"
-	);
+			(t === "initiative" || t === "learning-initiative")
+		);
+	});
 
 	// Sorting helper (used at every depth)
 	const group = (t: TaskItem) =>
@@ -292,6 +294,7 @@ export function processAndRenderInitiatives(
 		renderTaskTree(
 			initiativesOnly,
 			container,
+			owner,
 			app,
 			0,
 			false,

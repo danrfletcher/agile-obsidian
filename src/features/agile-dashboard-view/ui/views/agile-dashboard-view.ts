@@ -1,4 +1,10 @@
-import { ItemView, WorkspaceLeaf, TFile, TAbstractFile } from "obsidian";
+import {
+	ItemView,
+	WorkspaceLeaf,
+	TFile,
+	TAbstractFile,
+	Component,
+} from "obsidian";
 import manifest from "manifest.json";
 
 import { processAndRenderObjectives } from "../components/objectives";
@@ -42,6 +48,9 @@ export class AgileDashboardView extends ItemView {
 	private activeToggleLabel!: HTMLSpanElement;
 	private memberSelect!: HTMLSelectElement;
 	private suppressedFiles = new Set<string>();
+
+	// Render ownership for MarkdownRenderer
+	private renderRoot: Component | null = null;
 
 	// Team selection UI
 	private orgStructurePort?: OrgStructurePort;
@@ -360,6 +369,13 @@ export class AgileDashboardView extends ItemView {
 			} catch {}
 			this.outsideClickHandler = null;
 		}
+		// Ensure any lingering render root is disposed
+		if (this.renderRoot) {
+			try {
+				this.renderRoot.unload();
+			} catch {}
+			this.renderRoot = null;
+		}
 	}
 
 	// NEW: Refresh method used by templating handler for double-buffered re-render
@@ -385,6 +401,10 @@ export class AgileDashboardView extends ItemView {
 		);
 	}
 
+	/**
+	 * Double-buffered update: render into an off-DOM container with a fresh Component,
+	 * then atomically swap into the view. This prevents "blank flashes" during refresh.
+	 */
 	private async updateView() {
 		const viewContainer = this.containerEl.children[1] as HTMLElement;
 		const existingContent = viewContainer.querySelector(
@@ -393,31 +413,62 @@ export class AgileDashboardView extends ItemView {
 		const prevContainerScrollTop = viewContainer.scrollTop;
 		const prevContentScrollTop = existingContent?.scrollTop ?? 0;
 
-		const contentContainer =
-			existingContent ??
-			viewContainer.createEl("div", { cls: "content-container" });
-		contentContainer.empty();
+		const myPass = ++this.renderPass;
+		const newRoot = new Component();
+		this.addChild(newRoot);
+		const newContent = document.createElement("div");
+		newContent.className = "content-container";
 
 		const selectedView = this.viewSelect.value;
 		const isActive = this.activeToggle ? this.activeToggle.checked : true;
 		const selectedAlias = this.getSelectedAlias();
 
 		if (selectedView === "projects") {
-			await this.projectView(contentContainer, isActive, selectedAlias);
+			await this.projectView(
+				newContent,
+				isActive,
+				selectedAlias,
+				newRoot
+			);
 		} else if (selectedView === "completed") {
-			contentContainer.createEl("h2", {
+			newContent.createEl("h2", {
 				text: "✅ Completed (Coming Soon)",
 			});
 		}
 
+		// If a newer render started, discard this one
+		if (myPass !== this.renderPass) {
+			try {
+				newRoot.unload();
+			} catch {}
+			return;
+		}
+
+		// Swap in the new content atomically; keep the old until this moment.
+		if (existingContent) {
+			viewContainer.replaceChild(newContent, existingContent);
+		} else {
+			viewContainer.appendChild(newContent);
+		}
+
+		// Restore scroll positions
 		viewContainer.scrollTop = prevContainerScrollTop;
-		contentContainer.scrollTop = prevContentScrollTop;
+		newContent.scrollTop = prevContentScrollTop;
+
+		// Dispose previous render root
+		if (this.renderRoot) {
+			try {
+				this.renderRoot.unload();
+			} catch {}
+		}
+		this.renderRoot = newRoot;
 	}
 
 	private async projectView(
 		container: HTMLElement,
 		status = true,
-		selectedAlias: string | null = null
+		selectedAlias: string | null = null,
+		owner: Component
 	) {
 		if (!this.implicitAllSelected && this.selectedTeamSlugs.size === 0) {
 			const msg = container.createEl("div", {
@@ -470,7 +521,8 @@ export class AgileDashboardView extends ItemView {
 				this.app,
 				taskMap,
 				childrenMap,
-				taskParams
+				taskParams,
+				owner
 			);
 		}
 		if (settings.showResponsibilities) {
@@ -482,7 +534,8 @@ export class AgileDashboardView extends ItemView {
 				this.app,
 				taskMap,
 				childrenMap,
-				taskParams
+				taskParams,
+				owner
 			);
 		}
 		processAndRenderArtifacts(
@@ -494,7 +547,8 @@ export class AgileDashboardView extends ItemView {
 			taskMap,
 			childrenMap,
 			taskParams,
-			settings
+			settings,
+			owner
 		);
 		if (settings.showInitiatives) {
 			processAndRenderInitiatives(
@@ -505,7 +559,8 @@ export class AgileDashboardView extends ItemView {
 				this.app,
 				taskMap,
 				childrenMap,
-				taskParams
+				taskParams,
+				owner
 			);
 		}
 		if (settings.showPriorities) {
@@ -517,7 +572,8 @@ export class AgileDashboardView extends ItemView {
 				this.app,
 				taskMap,
 				childrenMap,
-				taskParams
+				taskParams,
+				owner
 			);
 		}
 	}
@@ -548,9 +604,12 @@ export class AgileDashboardView extends ItemView {
 		if (!task) return;
 
 		const tmp = document.createElement("div");
+		const owner = this.renderRoot ?? new Component();
+		if (!this.renderRoot) this.addChild(owner);
 		renderTaskTree(
 			[task],
 			tmp,
+			owner,
 			this.app,
 			0,
 			false,

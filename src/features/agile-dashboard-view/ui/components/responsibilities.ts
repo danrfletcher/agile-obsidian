@@ -1,4 +1,4 @@
-import { App } from "obsidian";
+import { App, Component } from "obsidian";
 import { TaskItem, TaskParams } from "@features/task-index";
 import { renderTaskTree } from "./task-renderer";
 import {
@@ -31,7 +31,8 @@ export function processAndRenderResponsibilities(
 	app: App,
 	taskMap: Map<string, TaskItem>,
 	childrenMap: Map<string, TaskItem[]>,
-	taskParams: TaskParams
+	taskParams: TaskParams,
+	owner: Component
 ) {
 	void childrenMap;
 
@@ -165,7 +166,6 @@ export function processAndRenderResponsibilities(
 		collectRecurring(tree, allRecurring)
 	);
 
-	// Respect DOW schedules like "🗓️ Sundays"
 	allRecurring = allRecurring.filter((task) => {
 		const hasCalendar = /🗓️/.test(task.text);
 		return !hasCalendar || isScheduledForToday(task);
@@ -242,6 +242,7 @@ export function processAndRenderResponsibilities(
 		renderTaskTree(
 			responsibilityTasksParamFilter,
 			container,
+			owner,
 			app,
 			0,
 			false,

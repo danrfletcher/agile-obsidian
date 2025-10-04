@@ -1,4 +1,4 @@
-import { App } from "obsidian";
+import { App, Component } from "obsidian";
 import { TaskItem, TaskParams } from "@features/task-index";
 import { renderTaskTree } from "./task-renderer";
 import { activeForMember, getAgileArtifactType } from "@features/task-filter";
@@ -16,7 +16,8 @@ export function processAndRenderObjectives(
 	app: App,
 	taskMap: Map<string, TaskItem>,
 	childrenMap: Map<string, TaskItem[]>,
-	taskParams: TaskParams
+	taskParams: TaskParams,
+	owner: Component
 ) {
 	const sectionTasks = currentTasks.filter((task) =>
 		isShownByParams(task, taskMap, selectedAlias, taskParams)
@@ -50,24 +51,14 @@ export function processAndRenderObjectives(
 			linkedOKRs.push({ _uniqueId: okrId, linkedTasks: rawLinked });
 		});
 
-		return linkedOKRs;
-	};
-	const linkedOKRs = findLinkedOKRs(assignedOKRSet);
-
-	const prunedOKRs = linkedOKRs
-		.map((entry) => {
-			const okr = taskMap.get(entry._uniqueId);
-			if (!okr) return null;
-
-			const linkedTrees = buildPrunedMergedTrees(
-				entry.linkedTasks,
-				taskMap
-			);
+	const okrEntries = assignedOKRs
+		.map((okr) => {
+			const linkedTasks = findLinkedTasksForOKR(okr, currentTasks);
+			const linkedTrees = buildPrunedMergedTrees(linkedTasks, taskMap);
 
 			const linkedIds = new Set(
-				entry.linkedTasks.map((t) => t._uniqueId ?? "")
+				linkedTasks.map((t) => t._uniqueId ?? "")
 			);
-
 			const updateStatusDFS = (node: TaskItem) => {
 				if (linkedIds.has(node._uniqueId ?? "")) {
 					node.status = "p";
@@ -95,7 +86,6 @@ export function processAndRenderObjectives(
 				}
 				return leaves;
 			};
-
 			const getTreePriority = (tree: TaskItem): number => {
 				const leaves = getTreeLeaves(tree);
 				const hasActive = leaves.some((leaf) =>
@@ -108,23 +98,23 @@ export function processAndRenderObjectives(
 				if (hasInactive) return 2;
 				return 3;
 			};
-
 			linkedTrees.sort((a, b) => getTreePriority(a) - getTreePriority(b));
 
 			return { okr, linkedTrees };
 		})
 		.filter(
 			(item): item is { okr: TaskItem; linkedTrees: TaskItem[] } =>
-				item !== null
+				item.okr != null
 		);
 
-	if (prunedOKRs.length > 0 && status) {
+	if (okrEntries.length > 0 && status) {
 		container.createEl("h2", { text: "🎯 Objectives" });
 
-		prunedOKRs.forEach(({ okr, linkedTrees }) => {
+		okrEntries.forEach(({ okr, linkedTrees }) => {
 			renderTaskTree(
 				[okr],
 				container,
+				owner,
 				app,
 				0,
 				false,

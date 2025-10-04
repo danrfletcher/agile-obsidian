@@ -4,15 +4,19 @@ import { hideTaskAndCollapseAncestors } from "../ui/components/task-buttons";
 import { eventBus } from "./event-bus";
 
 /**
- * Toggle or cancel a task's status in the source file and update the UI optimistically.
+ * Toggle or cancel a task's status in the source file and update the UI via events.
  * - Short press toggles between "/" and "x"
  * - Long press cancels to "-"
  *
  * Returns the new status if updated, otherwise null.
+ *
+ * Notes:
+ * - We still suppress the modify-triggered refresh (to avoid double-refresh),
+ *   but we now dispatch a post-write event to have the view re-render cleanly.
  */
 export const handleStatusChange = async (
 	task: TaskItem,
-	liEl: HTMLElement,
+	_liEl: HTMLElement, // no longer used for DOM-hiding
 	app: App,
 	isCancel = false
 ): Promise<string | null> => {

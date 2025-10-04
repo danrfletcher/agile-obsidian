@@ -220,10 +220,12 @@ function attachOpenOnLongPress(
 
 /**
  * Render a tree of tasks into the given container.
+ * All MarkdownRenderer calls use an owner Component (renderRoot) that is cleaned up on re-render.
  */
 export function renderTaskTree(
 	tasks: TaskItem[],
 	container: HTMLElement,
+	owner: Component,
 	app: App,
 	depth: number,
 	isRoot: boolean,
@@ -248,14 +250,12 @@ export function renderTaskTree(
 			return;
 
 		const tempEl = document.createElement("div");
-		const renderComponent = new Component();
 		MarkdownRenderer.renderMarkdown(
 			(task.visual || task.text || "").trim(),
 			tempEl,
 			task.link?.path || "",
-			renderComponent
+			owner
 		);
-		renderComponent.load();
 
 		const firstEl = tempEl.firstElementChild as HTMLElement | null;
 		let taskItemEl: HTMLElement;
@@ -362,10 +362,12 @@ export function renderTaskTree(
 							app,
 							cancel
 						);
-						if (result === "/") {
+						if (result) {
+							// Optimistically update inline for ANY result (/, x, -)
 							rerenderTaskInline(
 								task,
 								taskItemEl,
+								owner,
 								app,
 								sectionType,
 								result,
@@ -373,9 +375,6 @@ export function renderTaskTree(
 								depth,
 								selectedAlias
 							);
-						} else if (result === "x") {
-							checkbox.checked = true;
-							initialChecked = true;
 						}
 					} finally {
 						isUpdating = false;
@@ -442,6 +441,7 @@ export function renderTaskTree(
 			renderTaskTree(
 				task.children,
 				taskItemEl,
+				owner,
 				app,
 				depth + 1,
 				false,
@@ -455,6 +455,7 @@ export function renderTaskTree(
 function rerenderTaskInline(
 	task: TaskItem,
 	liEl: HTMLElement,
+	owner: Component,
 	app: App,
 	sectionType: string,
 	newStatus: string,
@@ -487,14 +488,12 @@ function rerenderTaskInline(
 		liEl.innerHTML = "";
 
 		const tempEl = document.createElement("div");
-		const renderComponent = new Component();
 		MarkdownRenderer.renderMarkdown(
 			lineMd,
 			tempEl,
 			task.link?.path || "",
-			renderComponent
+			owner
 		);
-		renderComponent.load();
 
 		const firstEl = tempEl.firstElementChild as HTMLElement | null;
 		if (
@@ -603,10 +602,12 @@ function rerenderTaskInline(
 							app,
 							cancel
 						);
-						if (result === "/") {
+						if (result) {
+							// Optimistic update again for any follow-up changes
 							rerenderTaskInline(
 								task,
 								liEl,
+								owner,
 								app,
 								sectionType,
 								result,
@@ -614,9 +615,6 @@ function rerenderTaskInline(
 								depth,
 								selectedAlias
 							);
-						} else if (result === "x") {
-							checkbox.checked = true;
-							initialChecked = true;
 						}
 					} finally {
 						isUpdating = false;

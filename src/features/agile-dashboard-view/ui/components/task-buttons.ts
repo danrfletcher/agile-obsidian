@@ -10,7 +10,8 @@ import { eventBus } from "../../app/event-bus";
 
 /**
  * Hide a task's LI and collapse empty ancestors/sections afterward.
- * Kept as-is but slightly annotated; exported for reuse.
+ * NOTE: Kept exported for compatibility, but not used by the dashboard anymore.
+ * We now prefer event-driven re-rendering at the view level instead of DOM-hiding here.
  */
 export function hideTaskAndCollapseAncestors(liEl: HTMLElement): void {
 	if (!liEl) return;
@@ -267,7 +268,7 @@ function createSnoozeButton(
 						date: val,
 					});
 				}
-				hideTaskAndCollapseAncestors(liEl);
+				// No DOM-hiding; the view re-renders when it catches agile:task-snoozed
 			} catch (err) {
 				restoreButton();
 				btn.textContent = "💤";
@@ -319,7 +320,7 @@ function createSnoozeButton(
 					date,
 				});
 			}
-			hideTaskAndCollapseAncestors(liEl);
+			// No DOM-hiding; let the dashboard re-render
 		} catch (err) {
 			btn.textContent = "💤";
 			throw err;
