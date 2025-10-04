@@ -4,12 +4,11 @@ import { renderTaskTree } from "./task-renderer";
 import {
 	activeForMember,
 	isCancelled,
-	isInProgress,
 	isCompleted,
-	isSnoozed,
 	getAgileArtifactType,
 } from "@features/task-filter";
 import { buildPrunedMergedTrees } from "@features/task-tree-builder";
+import { isShownByParams } from "../utils/filters";
 
 /**
  * Process and render the Initiatives section.
@@ -26,23 +25,10 @@ export function processAndRenderInitiatives(
 	childrenMap: Map<string, TaskItem[]>,
 	taskParams: TaskParams
 ) {
-	const { inProgress, completed, sleeping, cancelled } = taskParams;
-
 	// 1) Filter to tasks shown by current view toggles
-	const sectionTasks = currentTasks.filter((task) => {
-		const snoozedForAlias = isSnoozed(task, taskMap, selectedAlias);
-
-		const inProg =
-			inProgress &&
-			isInProgress(task, taskMap, selectedAlias) &&
-			!snoozedForAlias;
-
-		const compl = completed && isCompleted(task);
-		const sleep = sleeping && snoozedForAlias;
-		const canc = cancelled && isCancelled(task);
-
-		return inProg || compl || sleep || canc;
-	});
+	const sectionTasks = currentTasks.filter((task) =>
+		isShownByParams(task, taskMap, selectedAlias, taskParams)
+	);
 
 	// 2) Only initiatives assigned/active for member
 	const directlyAssigned = sectionTasks.filter(
@@ -89,9 +75,7 @@ export function processAndRenderInitiatives(
 			taskMap,
 			undefined,
 			childrenMap,
-			{
-				depth: 0,
-			}
+			{ depth: 0 }
 		);
 		const tmp = document.createElement("div");
 		renderTaskTree(topOnly, tmp, app, 1, false, section, selectedAlias);
@@ -107,8 +91,6 @@ export function processAndRenderInitiatives(
 	}
 
 	// Try to pick a UL whose direct LIs exactly match the expected children UIDs.
-	// 1) Prefer a UL where all direct LIs are in expected set and there is at least one LI.
-	// 2) If not found, walk down single-child LI wrappers to the first nested UL.
 	function selectChildrenUl(
 		generated: HTMLElement,
 		expectedUIDs: Set<string>
@@ -134,8 +116,8 @@ export function processAndRenderInitiatives(
 		while (true) {
 			const lis = directChildLisOfUl(ul);
 			if (lis.length !== 1) break;
-			const inner = lis[0].querySelector(
-				":scope > ul.agile-dashboard.contains-task-list"
+			const inner = ul.querySelector(
+				":scope > li > ul.agile-dashboard.contains-task-list"
 			) as HTMLElement | null;
 			if (!inner) break;
 			ul = inner;
@@ -149,27 +131,17 @@ export function processAndRenderInitiatives(
 		(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ??
 			false);
 
-	// Track ancestor wrappers’ heights in sync with the child’s current animated height.
-	// Measure exact height: temporarily set height:auto to get precise px, return rounded px
 	function measureExactAutoHeight(el: HTMLElement): number {
-		// Save previous styles
 		const prevH = el.style.height;
 		const prevT = el.style.transition;
-
-		// Disable transition and set height:auto to measure
 		el.style.transition = "none";
 		el.style.height = "auto";
 		const h = Math.round(el.getBoundingClientRect().height);
-
-		// Restore
 		el.style.height = prevH;
 		el.style.transition = prevT;
-
 		return h;
 	}
 
-	// Track ancestor wrappers’ heights using exact child delta (rounded px)
-	// Ensures no “end snap” due to sub-pixel mismatches.
 	function cascadeTrackHeightsExact(
 		childWrap: HTMLElement,
 		ancestors: HTMLElement[],
@@ -178,12 +150,13 @@ export function processAndRenderInitiatives(
 	) {
 		if (prefersReducedMotion() || ancestors.length === 0) return;
 
-		const bases = ancestors.map((a) => {
-			const h = Math.round(a.getBoundingClientRect().height);
-			return Math.max(0, h - childStartPx);
-		});
+		const bases = ancestors.map((a) =>
+			Math.max(
+				0,
+				Math.round(a.getBoundingClientRect().height) - childStartPx
+			)
+		);
 
-		// Lock ancestors and remove transitions for synchronous set-up
 		ancestors.forEach((a, i) => {
 			a.style.transition = "none";
 			a.style.overflow = "hidden";
@@ -193,17 +166,14 @@ export function processAndRenderInitiatives(
 			)}px`;
 		});
 
-		// Reflow
 		void childWrap.offsetHeight;
 
-		// Arm transitions and set final target in the same frame
 		requestAnimationFrame(() => {
 			ancestors.forEach((a, i) => {
 				a.style.transition = "height 180ms ease";
 				a.style.height = `${Math.max(0, bases[i] + childTargetPx)}px`;
 			});
 
-			// Cleanup at the end of the child's height transition to ensure exact finish
 			const onEnd = (ev: TransitionEvent) => {
 				if (ev.propertyName !== "height") return;
 				childWrap.removeEventListener("transitionend", onEnd);
@@ -225,37 +195,30 @@ export function processAndRenderInitiatives(
 		if (prefersReducedMotion()) {
 			wrap.style.height = "auto";
 			wrap.style.opacity = "1";
-			wrap.style.overflow = ""; // important: release clipping when motion is reduced
+			wrap.style.overflow = "";
 			return;
 		}
 
-		// Prepare
 		wrap.style.transition = "none";
 		wrap.style.overflow = "hidden";
 		wrap.style.opacity = "0";
 
-		const targetPx = measureExactAutoHeight(wrap); // rounded exact target
+		const targetPx = measureExactAutoHeight(wrap);
 		const startPx = 0;
 
-		// Lock start state
 		wrap.style.height = `${startPx}px`;
-
-		// Reflow
 		void wrap.offsetHeight;
 
-		// Sync ancestors based on exact delta (0 -> targetPx)
 		cascadeTrackHeightsExact(wrap, ancestorWraps, startPx, targetPx);
 
-		// Arm transitions and animate both height and opacity
 		requestAnimationFrame(() => {
 			const onEnd = (ev: TransitionEvent) => {
 				if (ev.propertyName !== "height") return;
 				wrap.removeEventListener("transitionend", onEnd);
-				// Unlock to auto and release clipping
 				wrap.style.transition = "";
 				wrap.style.height = "auto";
 				wrap.style.opacity = "1";
-				wrap.style.overflow = ""; // <-- release overflow so chevrons aren’t clipped
+				wrap.style.overflow = "";
 			};
 
 			wrap.addEventListener("transitionend", onEnd);
@@ -275,7 +238,6 @@ export function processAndRenderInitiatives(
 			return;
 		}
 
-		// Lock current exact height as the start (rounded)
 		wrap.style.transition = "none";
 		wrap.style.overflow = "hidden";
 		wrap.style.opacity = "1";
@@ -284,18 +246,15 @@ export function processAndRenderInitiatives(
 		const targetPx = 0;
 
 		wrap.style.height = `${startPx}px`;
-
-		// Reflow
 		void wrap.offsetHeight;
 
-		// Sync ancestors based on exact delta (startPx -> 0)
 		cascadeTrackHeightsExact(wrap, ancestorWraps, startPx, targetPx);
 
 		requestAnimationFrame(() => {
 			const onEnd = (ev: TransitionEvent) => {
 				if (ev.propertyName !== "height") return;
 				wrap.removeEventListener("transitionend", onEnd);
-				onDone(); // caller removes the wrap
+				onDone();
 			};
 
 			wrap.addEventListener("transitionend", onEnd);
@@ -305,7 +264,6 @@ export function processAndRenderInitiatives(
 		});
 	};
 
-	// Collect ancestor collapsible wrappers of the given LI (nearest first).
 	function getAncestorWraps(liEl: HTMLElement): HTMLElement[] {
 		const wraps: HTMLElement[] = [];
 		let p: HTMLElement | null = liEl.parentElement as HTMLElement | null;
@@ -351,18 +309,13 @@ export function processAndRenderInitiatives(
 			const initiativesUl = lists[lists.length - 1];
 
 			// Add chevrons to the initiatives UL (each LI toggles direct epics only)
-			attachChevronSet(initiativesUl, {
-				childrenType: "epic", // initiatives -> only epics
-			});
+			attachChevronSet(initiativesUl, { childrenType: "epic" });
 		};
 
-		// Recursively attach chevrons to a UL. Each LI toggles its direct children
-		// filtered by options.childrenType (or all types if undefined).
 		function attachChevronSet(
 			ul: HTMLElement,
 			options: { childrenType?: "epic" }
 		) {
-			// Only direct children of this UL
 			const lis = Array.from(
 				ul.querySelectorAll(":scope > li[data-task-uid]")
 			) as HTMLElement[];
@@ -371,22 +324,15 @@ export function processAndRenderInitiatives(
 				const uid = liEl.getAttribute("data-task-uid") || "";
 				if (!uid) return;
 
-				// Find the item's checkbox and its label container
 				const checkbox = liEl.querySelector(
 					'input[type="checkbox"]'
 				) as HTMLInputElement | null;
 
 				// Remove any existing toggle UI (avoid duplicates on re-renders)
-				const existingChevron = liEl.querySelector(
-					'span[data-epic-toggle="true"]'
-				) as HTMLElement | null;
-				if (existingChevron) existingChevron.remove();
-				const existingHit = liEl.querySelector(
-					'span[data-epic-toggle-hit="true"]'
-				) as HTMLElement | null;
-				if (existingHit) existingHit.remove();
+				liEl.querySelectorAll(
+					'span[data-epic-toggle="true"], span[data-epic-toggle-hit="true"]'
+				).forEach((n) => n.remove());
 
-				// Determine if this LI has filtered direct children (respect allowed type, exclude done/cancelled)
 				const filteredChildren = getFilteredSortedDirectChildren(
 					uid,
 					options.childrenType
@@ -409,7 +355,7 @@ export function processAndRenderInitiatives(
 				chevron.style.transition = "transform 120ms ease";
 				chevron.style.pointerEvents = "none";
 
-				// Hitbox placed inside the label (to preserve layout and stay above label overlays)
+				// Hitbox inside label to stay aligned
 				const hit = document.createElement("span");
 				hit.setAttribute("data-epic-toggle-hit", "true");
 				hit.setAttribute("role", "button");
@@ -431,7 +377,6 @@ export function processAndRenderInitiatives(
 				hit.style.pointerEvents = "auto";
 				hit.style.background = "transparent";
 
-				// Anchor: prefer label around the checkbox
 				let anchorEl: HTMLElement = liEl;
 				let labelEl: HTMLElement | null = null;
 				if (checkbox) {
@@ -448,10 +393,8 @@ export function processAndRenderInitiatives(
 					if (getComputedStyle(anchorEl).position === "static") {
 						anchorEl.style.position = "relative";
 					}
-				} else {
-					if (getComputedStyle(liEl).position === "static") {
-						liEl.style.position = "relative";
-					}
+				} else if (getComputedStyle(liEl).position === "static") {
+					liEl.style.position = "relative";
 				}
 
 				hit.appendChild(chevron);
@@ -479,16 +422,15 @@ export function processAndRenderInitiatives(
 				requestAnimationFrame(positionToggle);
 
 				// Reposition on resize/scroll
-				const resizeHandler = () => positionToggle();
-				const scrollHandler = () => positionToggle();
-				window.addEventListener("resize", resizeHandler, {
+				const reposition = () => positionToggle();
+				window.addEventListener("resize", reposition, {
 					passive: true,
 				});
-				window.addEventListener("scroll", scrollHandler, {
+				window.addEventListener("scroll", reposition, {
 					passive: true,
 					capture: true,
 				});
-				container.addEventListener("scroll", scrollHandler, {
+				container.addEventListener("scroll", reposition, {
 					passive: true,
 					capture: true,
 				});
@@ -501,16 +443,16 @@ export function processAndRenderInitiatives(
 							if (n === liEl || (n as any).contains?.(liEl)) {
 								window.removeEventListener(
 									"resize",
-									resizeHandler
+									reposition
 								);
 								window.removeEventListener(
 									"scroll",
-									scrollHandler,
+									reposition,
 									{ capture: true } as any
 								);
 								container.removeEventListener(
 									"scroll",
-									scrollHandler,
+									reposition,
 									{ capture: true } as any
 								);
 								mo.disconnect();
@@ -523,12 +465,10 @@ export function processAndRenderInitiatives(
 					subtree: true,
 				});
 
-				// Expand/collapse for this LI
 				const expand = () => {
 					if (liEl.getAttribute("data-children-expanded") === "true")
 						return;
 
-					// Render ONLY direct children for this node (respecting allowed type at this level)
 					const children = getFilteredSortedDirectChildren(
 						uid,
 						options.childrenType
@@ -538,7 +478,6 @@ export function processAndRenderInitiatives(
 					let generated = renderTopOnlyList(children, "children");
 					if (!generated) return;
 
-					// Select a UL that lists these children as direct LIs; unwrap if needed
 					const expectedSet = new Set(
 						children
 							.map((c) => c._uniqueId)
@@ -546,31 +485,21 @@ export function processAndRenderInitiatives(
 					);
 					generated = selectChildrenUl(generated, expectedSet);
 
-					// Collapsible wrapper
 					const wrap = document.createElement("div");
 					wrap.className = "agile-children-collapse";
 					wrap.setAttribute("data-children-wrap-for", uid);
 					wrap.style.overflow = "hidden";
-					// Append before measuring
 					wrap.appendChild(generated);
 					liEl.appendChild(wrap);
 
-					// Ancestors (nearest first) to track during animation
 					const ancestorWraps = getAncestorWraps(liEl);
-
-					// Animate child open with ancestor cascade
 					animateOpen(wrap, ancestorWraps);
 
-					// For the next depth, allow all types (still excluding completed/cancelled)
 					attachChevronSet(generated, { childrenType: undefined });
 
-					// Rotate chevron and update ARIA/state
 					chevron.style.transform = "rotate(90deg)";
 					liEl.setAttribute("data-children-expanded", "true");
-					const hitNode = liEl.querySelector(
-						'span[data-epic-toggle-hit="true"]'
-					) as HTMLElement | null;
-					if (hitNode) hitNode.setAttribute("aria-expanded", "true");
+					hit.setAttribute("aria-expanded", "true");
 				};
 
 				const collapse = () => {
@@ -581,27 +510,16 @@ export function processAndRenderInitiatives(
 					if (!wrap) {
 						chevron.style.transform = "rotate(0deg)";
 						liEl.setAttribute("data-children-expanded", "false");
-						const hitNode = liEl.querySelector(
-							'span[data-epic-toggle-hit="true"]'
-						) as HTMLElement | null;
-						if (hitNode)
-							hitNode.setAttribute("aria-expanded", "false");
+						hit.setAttribute("aria-expanded", "false");
 						return;
 					}
 
-					// Ancestors (nearest first) to track during animation
 					const ancestorWraps = getAncestorWraps(liEl);
-
-					// Child close animates; ancestors track shrinking child; then remove
 					animateClose(wrap, ancestorWraps, () => {
 						wrap.remove();
 						chevron.style.transform = "rotate(0deg)";
 						liEl.setAttribute("data-children-expanded", "false");
-						const hitNode = liEl.querySelector(
-							'span[data-epic-toggle-hit="true"]'
-						) as HTMLElement | null;
-						if (hitNode)
-							hitNode.setAttribute("aria-expanded", "false");
+						hit.setAttribute("aria-expanded", "false");
 					});
 				};
 
@@ -611,7 +529,6 @@ export function processAndRenderInitiatives(
 					expanded ? collapse() : expand();
 				};
 
-				// Prevent label/checkbox behavior when clicking our toggle
 				const suppress = (ev: Event) => {
 					ev.preventDefault();
 					ev.stopPropagation();
@@ -635,7 +552,6 @@ export function processAndRenderInitiatives(
 			});
 		}
 
-		// Kick off
 		try {
 			attachToggles();
 		} catch {

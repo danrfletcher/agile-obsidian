@@ -1,6 +1,7 @@
 import { App, TFile } from "obsidian";
 import { TaskItem } from "@features/task-index";
 import { hideTaskAndCollapseAncestors } from "../ui/components/task-buttons";
+import { eventBus } from "./event-bus";
 
 /**
  * Toggle or cancel a task's status in the source file and update the UI optimistically.
@@ -16,45 +17,46 @@ export const handleStatusChange = async (
 	isCancel = false
 ): Promise<string | null> => {
 	try {
-		const filePath = task.link?.path;
-		if (!filePath) throw new Error("Missing task.link.path");
+		const filePath = task.link?.path || task._uniqueId?.split(":")[0];
+		if (!filePath) throw new Error("Missing task file path");
 
 		const file = app.vault.getAbstractFileByPath(filePath) as TFile;
 		if (!file) throw new Error(`File not found: ${filePath}`);
 
-		window.dispatchEvent(
-			new CustomEvent("agile:prepare-optimistic-file-change", {
-				detail: { filePath },
-			})
-		);
+		eventBus.dispatch("agile:prepare-optimistic-file-change", { filePath });
 
 		const content = await app.vault.read(file);
 		const lines = content.split(/\r?\n/);
 
-		let effectiveStatus = (task.status ?? " ").trim() || " ";
-		let targetLineIndex = -1;
-
+		// Helpers
 		const parseStatusFromLine = (line: string): string | null => {
 			const m = line.match(/^\s*[-*]\s*\[\s*(.)\s*\]/);
 			return m ? m[1] : null;
 		};
-
 		const normalize = (s: string) =>
 			(s || "")
 				.replace(/\s*(✅|❌)\s+\d{4}-\d{2}-\d{2}\b/g, "")
 				.replace(/\s+/g, " ")
 				.trim();
-
 		const getLineRestNormalized = (line: string): string | null => {
 			const m = line.match(/^\s*[-*]\s*\[\s*.\s*\]\s*(.*)$/);
 			return m ? normalize(m[1]) : null;
 		};
 
+		let effectiveStatus = (task.status ?? " ").trim() || " ";
+		let targetLineIndex = -1;
+
 		const targetTextNorm = normalize(
 			(task.text || task.visual || "").trim()
 		);
 
-		const baseIdx = typeof task.line === "number" ? task.line : -1;
+		// Candidate indices prefer parsed task position
+		const baseIdx =
+			typeof (task as any)?.position?.start?.line === "number"
+				? (task as any).position.start.line
+				: typeof task.line === "number"
+				? task.line
+				: -1;
 		const candidates = [baseIdx, baseIdx - 1, baseIdx + 1].filter(
 			(i) => i >= 0 && i < lines.length
 		);
@@ -75,6 +77,7 @@ export const handleStatusChange = async (
 		}
 
 		if (targetLineIndex === -1 && targetTextNorm) {
+			// Exact match anywhere
 			for (let i = 0; i < lines.length; i++) {
 				const rest = getLineRestNormalized(lines[i]);
 				if (rest && rest === targetTextNorm) {
@@ -84,6 +87,7 @@ export const handleStatusChange = async (
 					break;
 				}
 			}
+			// Prefix match anywhere
 			if (targetLineIndex === -1) {
 				for (let i = 0; i < lines.length; i++) {
 					const rest = getLineRestNormalized(lines[i]);
@@ -113,6 +117,7 @@ export const handleStatusChange = async (
 			const bracketSuffix = m[3];
 			let rest = m[4] ?? "";
 
+			// Remove previous completion/cancel markers
 			rest = rest
 				.replace(/\s*(✅|❌)\s+\d{4}-\d{2}-\d{2}\b/g, "")
 				.trimEnd();
@@ -130,52 +135,49 @@ export const handleStatusChange = async (
 			return updated;
 		};
 
-		let newContent: string | null = null;
-
-		const tryReplaceAtIndex = (idx: number) => {
-			if (idx < 0 || idx >= lines.length) return false;
-			const originalLine = lines[idx];
-			const replaced = updateLine(originalLine);
-			if (replaced !== originalLine) {
+		const tryReplaceAtIndex = (idx: number): string | null => {
+			if (idx < 0 || idx >= lines.length) return null;
+			const original = lines[idx];
+			const replaced = updateLine(original);
+			if (replaced !== original) {
 				lines[idx] = replaced;
-				newContent = lines.join("\n");
-				return true;
+				return lines.join("\n");
 			}
-			return false;
+			return null;
 		};
 
+		let newContent: string | null = null;
+
 		if (targetLineIndex !== -1) {
-			tryReplaceAtIndex(targetLineIndex);
+			newContent = tryReplaceAtIndex(targetLineIndex);
 		}
 
 		if (newContent == null) {
-			const targetText = normalize(
-				(task.text || task.visual || "").trim()
-			);
-			if (targetText) {
+			// Exact match scan
+			if (targetTextNorm) {
 				for (let i = 0; i < lines.length; i++) {
 					const m = lines[i].match(/^\s*[-*]\s*\[\s*.\s*\]\s*(.*)$/);
 					if (!m) continue;
-					const rest = normalize(m[1]);
-					if (rest === targetText) {
-						if (tryReplaceAtIndex(i)) break;
+					if (normalize(m[1]) === targetTextNorm) {
+						newContent = tryReplaceAtIndex(i);
+						if (newContent) break;
 					}
 				}
-				if (newContent == null) {
-					for (let i = 0; i < lines.length; i++) {
-						const m = lines[i].match(
-							/^\s*[-*]\s*\[\s*.\s*\]\s*(.*)$/
-						);
-						if (!m) continue;
-						const rest = normalize(m[1]);
-						if (rest.startsWith(targetText)) {
-							if (tryReplaceAtIndex(i)) break;
-						}
+			}
+			// Prefix match scan
+			if (newContent == null && targetTextNorm) {
+				for (let i = 0; i < lines.length; i++) {
+					const m = lines[i].match(/^\s*[-*]\s*\[\s*.\s*\]\s*(.*)$/);
+					if (!m) continue;
+					if (normalize(m[1]).startsWith(targetTextNorm)) {
+						newContent = tryReplaceAtIndex(i);
+						if (newContent) break;
 					}
 				}
 			}
 		}
 
+		// Final fallback: raw regex replace (exact text)
 		if (newContent == null) {
 			const escaped = (task.text || "")
 				.trim()
@@ -199,6 +201,7 @@ export const handleStatusChange = async (
 		await app.vault.modify(file, newContent);
 		(task as any).status = newStatus;
 
+		// UI: hide completed/cancelled and collapse ancestors
 		if (newStatus === "x" || newStatus === "-") {
 			try {
 				hideTaskAndCollapseAncestors(liEl);

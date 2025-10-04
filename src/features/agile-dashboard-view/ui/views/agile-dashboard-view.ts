@@ -13,11 +13,13 @@ import type { SettingsService } from "@settings";
 import type { OrgStructurePort } from "@features/org-structure";
 import { renderTeamsPopupContent, TeamsPopupContext } from "./teams-popup";
 
-// headless reassignment menu for dashboard
-import { openAssignmentMenuAt } from "@features/task-assignment/ui/reassignment-menu";
+// Headless reassignment menu handler
+import { attachDashboardAssignmentHandler } from "../handlers/assignment-handler";
 
-// NEW: Import the templating handler for parameterized template editing in the dashboard
+// Parameterized template editing handler
 import { attachDashboardTemplatingHandler } from "../handlers/templating-handler";
+
+import { eventBus } from "../../app/event-bus";
 
 export const VIEW_TYPE_AGILE_DASHBOARD = "agile-dashboard-view";
 
@@ -51,9 +53,6 @@ export class AgileDashboardView extends ItemView {
 	private selectedTeamSlugs: Set<string> = new Set();
 	private implicitAllSelected = true;
 	private storageKey: string;
-
-	// Track whether we’ve attached the dashboard assignment click handler
-	private dashboardAssignHandlerAttached = false;
 
 	constructor(leaf: WorkspaceLeaf, ports: AgileDashboardViewPorts) {
 		super(leaf);
@@ -140,7 +139,7 @@ export class AgileDashboardView extends ItemView {
 			this.toggleTeamsPopup(this.selectTeamsBtn!);
 		});
 
-		// Active/Inactive toggle — right next to "Select Teams"
+		// Active/Inactive toggle
 		const statusToggleContainer = controlsContainer.createEl("span", {
 			attr: {
 				style: "display:inline-flex; align-items:center; gap:6px;",
@@ -169,7 +168,7 @@ export class AgileDashboardView extends ItemView {
 			this.updateView();
 		});
 
-		// Listen for settings changes to auto-refresh
+		// Settings changes
 		this.registerEvent(
 			// @ts-ignore
 			this.app.workspace.on("agile-settings-changed", () => {
@@ -187,33 +186,19 @@ export class AgileDashboardView extends ItemView {
 			})
 		);
 
-		// Local optimistic updates suppression
-		this.registerDomEvent(
-			window,
-			"agile:prepare-optimistic-file-change" as any,
-			(e: Event) => {
-				const ev = e as CustomEvent<{ filePath: string }>;
-				if (ev.detail?.filePath) {
-					this.suppressedFiles.add(ev.detail.filePath);
+		// Local optimistic updates suppression (typed bus)
+		this.register(() =>
+			eventBus.on(
+				"agile:prepare-optimistic-file-change",
+				({ filePath }) => {
+					if (filePath) this.suppressedFiles.add(filePath);
 				}
-			}
+			)
 		);
 
-		// Listen for assignment changes: FULL view rerender
-		this.registerDomEvent(
-			window,
-			"agile:assignee-changed" as any,
-			async (e: Event) => {
-				const ev = e as CustomEvent<{
-					filePath: string;
-					parentLine0: number;
-					beforeLines?: string[] | null;
-					newAssigneeSlug: string | null;
-					oldAssigneeSlug?: string | null;
-					parentUid?: string | null;
-				}>;
-				const filePath = ev.detail?.filePath;
-
+		// Assignment events => full rerender
+		this.register(() =>
+			eventBus.on("agile:assignee-changed", async ({ filePath }) => {
 				try {
 					if (filePath) {
 						this.suppressedFiles.add(filePath);
@@ -223,27 +208,13 @@ export class AgileDashboardView extends ItemView {
 							await this.taskIndexService.updateFile(af);
 						}
 					}
-				} catch {
-					/* ignore */
-				}
-
-				// Rerender entire dashboard (instead of localized subtree refresh)
+				} catch {}
 				await this.updateView();
-			}
+			})
 		);
 
-		// Also respond to the legacy/general event that's dispatched elsewhere
-		this.registerDomEvent(
-			window,
-			"agile:assignment-changed" as any,
-			async (e: Event) => {
-				const ev = e as CustomEvent<{
-					uid: string;
-					filePath: string;
-					newAlias: string;
-				}>;
-				const filePath = ev.detail?.filePath;
-
+		this.register(() =>
+			eventBus.on("agile:assignment-changed", async ({ filePath }) => {
 				try {
 					if (filePath) {
 						this.suppressedFiles.add(filePath);
@@ -253,34 +224,17 @@ export class AgileDashboardView extends ItemView {
 							await this.taskIndexService.updateFile(af);
 						}
 					}
-				} catch {
-					/* ignore */
-				}
-
-				// Full view rerender to reflect assignment changes across sections
+				} catch {}
 				await this.updateView();
-			}
+			})
 		);
 
-		// NEW: Localized subtree refresh on snooze events (used by 💤 and 💤⬇️)
-		// Avoid re-rendering leaf tasks that were optimistically hidden (single-task snooze).
-		this.registerDomEvent(
-			window,
-			"agile:task-snoozed" as any,
-			async (e: Event) => {
+		// Snooze events => localized subtree refresh when visible
+		this.register(() =>
+			eventBus.on("agile:task-snoozed", async ({ uid, filePath }) => {
 				try {
-					const ev = e as CustomEvent<{
-						uid: string;
-						filePath?: string;
-						date?: string;
-					}>;
-					const uid = ev?.detail?.uid || "";
-					const filePath = ev?.detail?.filePath || "";
-
 					if (!uid) return;
 
-					// If the element for uid is currently hidden (e.g., single-task 💤),
-					// skip the refresh to preserve the optimistic disappearance.
 					const viewContainer = this.containerEl
 						.children[1] as HTMLElement;
 					const contentRoot = viewContainer.querySelector(
@@ -317,11 +271,9 @@ export class AgileDashboardView extends ItemView {
 						})();
 
 					if (isHidden) {
-						// Leaf task snooze or already removed: do nothing.
 						return;
 					}
 
-					// Keep local modify-driven refresh suppressed and update index
 					try {
 						if (filePath) {
 							this.suppressedFiles.add(filePath);
@@ -331,22 +283,21 @@ export class AgileDashboardView extends ItemView {
 								await this.taskIndexService.updateFile(af);
 							}
 						}
-					} catch {
-						/* ignore */
-					}
+					} catch {}
 
-					// Localized subtree refresh for the updated node (e.g., parent for 💤⬇️)
 					await this.refreshTaskTreeByUid(uid);
-				} catch {
-					/* ignore */
-				}
-			}
+				} catch {}
+			})
 		);
 
-		// Attach dashboard-level click handler for assignment wrappers (once)
-		this.attachDashboardAssignmentHandler();
+		// Attach dashboard-level click handlers (assignment + templating)
+		attachDashboardAssignmentHandler({
+			app: this.app,
+			orgStructurePort: this.orgStructurePort,
+			viewContainer: container,
+			registerDomEvent: this.registerDomEvent.bind(this),
+		});
 
-		// NEW: Attach dashboard-level click handler for parameterized template editing
 		attachDashboardTemplatingHandler({
 			app: this.app,
 			viewContainer: container,
@@ -411,88 +362,6 @@ export class AgileDashboardView extends ItemView {
 		}
 	}
 
-	private attachDashboardAssignmentHandler() {
-		if (this.dashboardAssignHandlerAttached) return;
-		const viewContainer = this.containerEl.children[1] as HTMLElement;
-
-		// Delegate clicks inside the content container (bubble phase)
-		this.registerDomEvent(viewContainer, "click", (evt: MouseEvent) => {
-			const tgt = evt.target as HTMLElement | null;
-			const span = tgt?.closest(
-				'span[data-template-key="members.assignee"]'
-			) as HTMLElement | null;
-			if (!span) return;
-
-			// Prevent other handlers (checkboxes, links, etc.) only for the assignee span
-			evt.preventDefault();
-			evt.stopPropagation();
-			// @ts-ignore
-			(evt as any).stopImmediatePropagation?.();
-
-			try {
-				const templateKey =
-					span.getAttribute("data-template-key") ?? "";
-				if (templateKey !== "members.assignee") return;
-
-				const instanceId =
-					span.getAttribute("data-template-wrapper") ?? "";
-				if (!instanceId) return;
-
-				const assignTypeAttr = (
-					span.getAttribute("data-assign-type") || ""
-				).toLowerCase();
-				const assignType: "assignee" | "delegate" =
-					assignTypeAttr === "delegate" ? "delegate" : "assignee";
-
-				const currentState = (
-					(
-						span.getAttribute("data-assignment-state") || ""
-					).toLowerCase() === "inactive"
-						? "inactive"
-						: "active"
-				) as "active" | "inactive";
-
-				const currentSlug = (
-					span.getAttribute("data-member-slug") || ""
-				).trim();
-
-				// Map to task LI
-				const li = span.closest(
-					"li[data-file-path]"
-				) as HTMLElement | null;
-				const filePath = li?.getAttribute("data-file-path") || "";
-				if (!filePath) return;
-
-				const parentUid = li?.getAttribute("data-task-uid") || null;
-				const lineHintStr = li?.getAttribute("data-line") || "";
-				const lineHint0 =
-					lineHintStr && /^\d+$/.test(lineHintStr)
-						? parseInt(lineHintStr, 10)
-						: null;
-
-				if (!this.orgStructurePort) return;
-
-				openAssignmentMenuAt({
-					mode: "headless",
-					app: this.app,
-					plugin: null,
-					ports: { orgStructure: this.orgStructurePort },
-					at: { x: evt.clientX, y: evt.clientY },
-					filePath,
-					instanceId,
-					assignType,
-					currentState,
-					currentSlug,
-					parentUid,
-					lineHint0,
-				});
-			} catch (err) {
-				console.error("[AgileDashboard] assignment menu error:", err);
-			}
-		});
-		this.dashboardAssignHandlerAttached = true;
-	}
-
 	// NEW: Refresh method used by templating handler for double-buffered re-render
 	private async refreshForFile(filePath?: string | null) {
 		try {
@@ -502,7 +371,9 @@ export class AgileDashboardView extends ItemView {
 					await this.taskIndexService.updateFile(af);
 				}
 			}
-		} catch { /* ignore */ }
+		} catch {
+			/* ignore */
+		}
 		await this.updateView();
 	}
 
@@ -561,9 +432,6 @@ export class AgileDashboardView extends ItemView {
 		}
 
 		let currentTasks: TaskItem[] = this.taskIndexService.getAllTasks();
-
-		// NOTE: Metadata cleanup (expired snoozes) is now run by the global
-		// task-metadata-cleanup module on startup and daily. We do not run it here.
 
 		currentTasks = currentTasks.filter((t) =>
 			this.isTaskAllowedByTeam(t as unknown as TaskItem)
@@ -697,7 +565,7 @@ export class AgileDashboardView extends ItemView {
 		li.replaceWith(newLi);
 	}
 
-		// -----------------------
+	// -----------------------
 	// Member select (grouped)
 	// -----------------------
 	private populateMemberSelectGrouped() {
@@ -798,6 +666,7 @@ export class AgileDashboardView extends ItemView {
 			this.memberSelect.value = all[0].alias;
 		}
 	}
+
 	private loadSelectedTeamSlugs() {
 		try {
 			const raw = window.localStorage.getItem(this.storageKey);
@@ -820,6 +689,7 @@ export class AgileDashboardView extends ItemView {
 			this.selectedTeamSlugs = new Set();
 		}
 	}
+
 	private persistSelectedTeamSlugs() {
 		try {
 			this.implicitAllSelected = false;
@@ -827,6 +697,7 @@ export class AgileDashboardView extends ItemView {
 			window.localStorage.setItem(this.storageKey, JSON.stringify(arr));
 		} catch {}
 	}
+
 	private isTaskAllowedByTeam(task: TaskItem): boolean {
 		const filePath =
 			task.link?.path || (task._uniqueId?.split(":")[0] ?? "");
@@ -849,6 +720,7 @@ export class AgileDashboardView extends ItemView {
 		}
 		return true;
 	}
+
 	private getTeamSlugForFile(filePath: string): string | null {
 		try {
 			if (!this.orgStructurePort) return null;
@@ -860,6 +732,7 @@ export class AgileDashboardView extends ItemView {
 			return null;
 		}
 	}
+
 	private aliasFromMemberLike(x: unknown): string {
 		const normalizeAlias = (input: string): string => {
 			if (!input) return "";
@@ -880,6 +753,7 @@ export class AgileDashboardView extends ItemView {
 			typeof cand === "string" ? cand : String(cand || "")
 		);
 	}
+
 	private extractAliases(members: unknown): string[] {
 		if (!members) return [];
 		if (Array.isArray(members)) {
@@ -894,6 +768,7 @@ export class AgileDashboardView extends ItemView {
 		}
 		return [];
 	}
+
 	private teamNodeHasUser(node: any, aliasNorm: string): boolean {
 		const pools = [
 			node?.members,
@@ -909,6 +784,7 @@ export class AgileDashboardView extends ItemView {
 		}
 		return false;
 	}
+
 	private tryPortMembershipMethods(aliasNorm: string): Set<string> | null {
 		if (!this.orgStructurePort) return null;
 		const port = this.orgStructurePort as unknown as Record<
@@ -960,6 +836,7 @@ export class AgileDashboardView extends ItemView {
 		}
 		return null;
 	}
+
 	private deriveMembershipFromStructure(
 		aliasNorm: string
 	): Set<string> | null {
@@ -997,6 +874,7 @@ export class AgileDashboardView extends ItemView {
 			return null;
 		}
 	}
+
 	private deriveMembershipFromSettings(
 		aliasNorm: string
 	): Set<string> | null {
@@ -1019,6 +897,7 @@ export class AgileDashboardView extends ItemView {
 			return null;
 		}
 	}
+
 	private getAllowedTeamSlugsForSelectedUser(): Set<string> | null {
 		const normalizeAlias = (input: string): string => {
 			if (!input) return "";
@@ -1038,6 +917,7 @@ export class AgileDashboardView extends ItemView {
 		}
 		return union.size > 0 ? union : null;
 	}
+
 	private restrictSelectedTeamsToUserMembership() {
 		const allowed = this.getAllowedTeamSlugsForSelectedUser();
 		if (!allowed) return;
@@ -1052,6 +932,7 @@ export class AgileDashboardView extends ItemView {
 			this.persistSelectedTeamSlugs();
 		}
 	}
+
 	private toggleTeamsPopup(anchor: HTMLElement) {
 		if (this.teamsPopupEl) {
 			this.closeTeamsPopup();
@@ -1059,6 +940,7 @@ export class AgileDashboardView extends ItemView {
 		}
 		this.openTeamsPopup(anchor);
 	}
+
 	private openTeamsPopup(anchor: HTMLElement) {
 		this.closeTeamsPopup();
 		const popup = document.createElement("div");
@@ -1080,6 +962,7 @@ export class AgileDashboardView extends ItemView {
 		anchor.parentElement?.appendChild(popup);
 		this.renderTeamsPopup();
 	}
+
 	private closeTeamsPopup() {
 		if (this.teamsPopupEl) {
 			try {
@@ -1088,6 +971,7 @@ export class AgileDashboardView extends ItemView {
 			this.teamsPopupEl = null;
 		}
 	}
+
 	private renderTeamsPopup() {
 		if (!this.teamsPopupEl) return;
 		const ctx: TeamsPopupContext = {

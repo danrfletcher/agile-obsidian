@@ -1,15 +1,9 @@
 import { App } from "obsidian";
 import { TaskItem, TaskParams } from "@features/task-index";
 import { renderTaskTree } from "./task-renderer";
-import {
-	activeForMember,
-	isCancelled,
-	isInProgress,
-	isCompleted,
-	isSnoozed,
-	getAgileArtifactType,
-} from "@features/task-filter";
+import { activeForMember, getAgileArtifactType } from "@features/task-filter";
 import { buildPrunedMergedTrees } from "@features/task-tree-builder";
+import { isShownByParams } from "../utils/filters";
 
 /**
  * Process and render Objectives (OKRs) and their linked item trees.
@@ -24,21 +18,9 @@ export function processAndRenderObjectives(
 	childrenMap: Map<string, TaskItem[]>,
 	taskParams: TaskParams
 ) {
-	const { inProgress, completed, sleeping, cancelled } = taskParams;
-	const sectionTasks = currentTasks.filter((task) => {
-		const snoozedForAlias = isSnoozed(task, taskMap, selectedAlias);
-
-		const inProg =
-			inProgress &&
-			isInProgress(task, taskMap, selectedAlias) &&
-			!snoozedForAlias;
-
-		const compl = completed && isCompleted(task);
-		const sleep = sleeping && snoozedForAlias;
-		const canc = cancelled && isCancelled(task);
-
-		return inProg || compl || sleep || canc;
-	});
+	const sectionTasks = currentTasks.filter((task) =>
+		isShownByParams(task, taskMap, selectedAlias, taskParams)
+	);
 
 	const assignedOKRs = sectionTasks.filter(
 		(task) =>
@@ -61,7 +43,7 @@ export function processAndRenderObjectives(
 			}
 
 			const linkedPattern = new RegExp(`${sixDigitCode}">🔗🎯`);
-			const rawLinked = currentTasks.filter((t) =>
+			const rawLinked = sectionTasks.filter((t) =>
 				linkedPattern.test(t.text)
 			);
 			if (!rawLinked.length) return;
@@ -140,7 +122,6 @@ export function processAndRenderObjectives(
 		container.createEl("h2", { text: "🎯 Objectives" });
 
 		prunedOKRs.forEach(({ okr, linkedTrees }) => {
-			// Render the OKR itself under "objectives"
 			renderTaskTree(
 				[okr],
 				container,
@@ -151,8 +132,6 @@ export function processAndRenderObjectives(
 				selectedAlias
 			);
 
-			// Render the linked items, but mark the section as "objectives-linked"
-			// so snooze policy can show only on leaf items here.
 			container.createEl("h5", {
 				text: "🔗 Linked Items",
 				attr: { style: "margin-left: 20px;" },

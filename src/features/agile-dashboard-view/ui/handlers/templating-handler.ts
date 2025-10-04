@@ -15,6 +15,7 @@ import {
 } from "@features/templating/app/templating-service";
 import { showSchemaModal } from "@features/templating/ui/template-schema-modal";
 import { showJsonModal } from "@features/templating/ui/template-json-modal";
+import { eventBus } from "../../app/event-bus";
 
 type RegisterDomEvent = (
 	el: HTMLElement | Window | Document,
@@ -53,13 +54,11 @@ export function attachDashboardTemplatingHandler(
 			if (!def || def.hiddenFromDynamicCommands) return;
 			if (!def.hasParams) return;
 
-			// Intercept click for parameterized template editing
 			evt.preventDefault();
 			evt.stopPropagation();
 			// @ts-ignore
 			evt.stopImmediatePropagation?.();
 
-			// Map to task LI to get filePath and (optional) line hint
 			const li = wrapper.closest(
 				"li[data-file-path]"
 			) as HTMLElement | null;
@@ -104,12 +103,10 @@ async function handleTemplateEditOnDashboard(
 	const def = findTemplateById(templateKey);
 	if (!def?.hasParams) return;
 
-	// Prefill strictly from [data-tpl-var] markers (or template parser override)
 	const prefill =
 		prefillTemplateParams(templateKey, wrapperEl) ??
 		({} as Record<string, unknown>);
 
-	// Show modal (schema or JSON)
 	let params: Record<string, unknown> | undefined;
 	if (def.paramsSchema && def.paramsSchema.fields?.length) {
 		const schema = {
@@ -131,7 +128,6 @@ async function handleTemplateEditOnDashboard(
 	}
 	if (!params) return; // cancelled
 
-	// Render replacement HTML and preserve original instance id
 	let newHtml = renderTemplateOnly(templateKey, params);
 	const instanceId = wrapperEl.getAttribute("data-template-wrapper") || "";
 	if (instanceId) {
@@ -141,21 +137,15 @@ async function handleTemplateEditOnDashboard(
 		);
 	}
 
-	// Optimistic UI update in dashboard (double-buffered approach)
+	// Optimistic UI update in dashboard
 	try {
 		wrapperEl.outerHTML = newHtml;
 	} catch {
-		// ignore - if DOM replacement fails, we still proceed with disk update + refresh
+		/* ignore */
 	}
 
-	// Prepare for optimistic refresh suppression (so our "modify" listener doesn't re-render twice)
-	window.dispatchEvent(
-		new CustomEvent("agile:prepare-optimistic-file-change", {
-			detail: { filePath },
-		})
-	);
+	eventBus.dispatch("agile:prepare-optimistic-file-change", { filePath });
 
-	// Update the source file in the vault
 	const file = app.vault.getAbstractFileByPath(filePath) as TFile;
 	if (!file) throw new Error(`File not found: ${filePath}`);
 	const content = await app.vault.read(file);
@@ -247,13 +237,9 @@ async function handleTemplateEditOnDashboard(
 
 	await app.vault.modify(file, updated);
 
-	// Index refresh + dashboard refresh (sync pass after optimistic)
 	await refreshForFile(filePath);
 
-	// Optional broadcast for other listeners
-	window.dispatchEvent(
-		new CustomEvent("agile:task-updated", { detail: { filePath } })
-	);
+	eventBus.dispatch("agile:task-updated", { filePath });
 }
 
 function escapeRegExp(s: string): string {

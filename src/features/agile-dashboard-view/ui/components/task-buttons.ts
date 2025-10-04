@@ -1,8 +1,12 @@
 import { App } from "obsidian";
 import { TaskItem } from "@features/task-index";
 import { snoozeTask } from "@features/task-snooze";
-import { TaskUIPolicy } from "./ui-policy";
+import {
+	TaskUIPolicy,
+	normalizeSection as normalizeSectionPolicy,
+} from "./ui-policy";
 import { getAgileArtifactType } from "@features/task-filter";
+import { eventBus } from "../../app/event-bus";
 
 /**
  * Hide a task's LI and collapse empty ancestors/sections afterward.
@@ -54,10 +58,7 @@ export function hideTaskAndCollapseAncestors(liEl: HTMLElement): void {
 		let cur: HTMLElement | null = el;
 		while (cur && cur.parentElement) {
 			const parent = cur.parentElement as HTMLElement;
-			if (
-				parent.classList &&
-				parent.classList.contains("content-container")
-			) {
+			if (parent.classList?.contains("content-container")) {
 				return cur;
 			}
 			cur = parent;
@@ -86,16 +87,7 @@ export function hideTaskAndCollapseAncestors(liEl: HTMLElement): void {
 
 // Convert sectionType to normalized key for policy checks
 function normalizeSection(sectionType: string): TaskUIPolicy["section"] {
-	const s = (sectionType || "").toLowerCase();
-	// Keep an explicit branch for objectives-linked before the generic "objective" match
-	if (s.includes("objectives-linked")) return "objectives-linked";
-	if (s.includes("objective")) return "objectives";
-	if (s.includes("responsibil")) return "responsibilities";
-	if (s.includes("priorit")) return "priorities";
-	if (s.includes("epic")) return "epics";
-	if (s.includes("story")) return "stories";
-	if (s.includes("initiative")) return "initiatives";
-	return "tasks";
+	return normalizeSectionPolicy(sectionType);
 }
 
 function isLeafTask(task: TaskItem): boolean {
@@ -133,7 +125,7 @@ function shouldShowSnoozeButton(task: TaskItem, sectionType: string): boolean {
 		return true;
 	}
 
-	// Priorities (not explicitly requested): keep conservative default – leaves only
+	// Priorities: conservative default – leaves only
 	if (section === "priorities") {
 		return isLeafTask(task);
 	}
@@ -168,22 +160,17 @@ function removeExistingSnoozeButtons(liEl: HTMLElement) {
 // Insert the button reliably at the very end of the task line,
 // i.e., after all inline content and before any nested child <ul>.
 function placeSnoozeButtonAtLineEnd(liEl: HTMLElement, btn: HTMLButtonElement) {
-	// Wrap to enforce inline layout without breaking baseline alignment.
 	const wrap = document.createElement("span");
 	wrap.classList.add("agile-snooze-btn-wrap");
 	wrap.style.display = "inline-block";
 	wrap.style.marginLeft = "8px";
 	wrap.style.verticalAlign = "baseline";
 
-	// Ensure the button doesn't add extra left margin (wrapper handles spacing)
 	btn.style.marginLeft = "0";
-
 	wrap.appendChild(btn);
 
-	// Find the first direct child UL (subtasks list), and insert before it.
 	const firstChildList = liEl.querySelector(":scope > ul");
 	if (firstChildList) {
-		// Insert before the UL, which naturally keeps any previously added wraps in order.
 		liEl.insertBefore(wrap, firstChildList);
 	} else {
 		liEl.appendChild(wrap);
@@ -207,8 +194,8 @@ function createSnoozeButton(
 	btn.style.background = "none";
 	btn.style.border = "none";
 	btn.style.fontSize = "1em";
-	btn.style.verticalAlign = "baseline"; // keep on the same text baseline
-	btn.style.marginLeft = "0"; // spacing handled by wrapper
+	btn.style.verticalAlign = "baseline";
+	btn.style.marginLeft = "0";
 
 	const uid = task._uniqueId || "";
 	const filePath = uid.split(":")[0] || "";
@@ -227,7 +214,6 @@ function createSnoozeButton(
 	const showCustomDateInput = () => {
 		longPressed = true;
 
-		// Make the input replace the snooze button "in place"
 		const input = document.createElement("input");
 		input.type = "text";
 		input.placeholder = "YYYY-MM-DD";
@@ -238,7 +224,6 @@ function createSnoozeButton(
 		input.style.fontSize = "0.95em";
 		input.style.verticalAlign = "baseline";
 
-		// Replace button with input at the same position
 		const parent = btn.parentElement || liEl;
 		try {
 			btn.replaceWith(input);
@@ -248,7 +233,6 @@ function createSnoozeButton(
 		}
 
 		const restoreButton = () => {
-			// If the LI is still visible (not hidden by snooze), restore the button in-place
 			if (input.isConnected) {
 				try {
 					input.replaceWith(btn);
@@ -267,26 +251,22 @@ function createSnoozeButton(
 				restoreButton();
 				return;
 			}
-			// Show progress on the (soon-to-be-restored) button
 			btn.textContent = "⏳";
 
 			if (filePath) {
-				window.dispatchEvent(
-					new CustomEvent("agile:prepare-optimistic-file-change", {
-						detail: { filePath },
-					})
-				);
+				eventBus.dispatch("agile:prepare-optimistic-file-change", {
+					filePath,
+				});
 			}
 			try {
 				await snoozeTask(task, app, userSlug, val);
 				if (uid && filePath) {
-					window.dispatchEvent(
-						new CustomEvent("agile:task-snoozed", {
-							detail: { uid, filePath, date: val },
-						})
-					);
+					eventBus.dispatch("agile:task-snoozed", {
+						uid,
+						filePath,
+						date: val,
+					});
 				}
-				// The task will vanish if filtered; collapse the tree
 				hideTaskAndCollapseAncestors(liEl);
 			} catch (err) {
 				restoreButton();
@@ -319,28 +299,25 @@ function createSnoozeButton(
 		clearTimer();
 	};
 
-	// Click to snooze until tomorrow (ignore if this click concluded a long-press)
 	btn.addEventListener("click", async (e) => {
 		e.preventDefault();
 		e.stopPropagation();
 		if (longPressed) return;
 		btn.textContent = "⏳";
 		if (filePath) {
-			window.dispatchEvent(
-				new CustomEvent("agile:prepare-optimistic-file-change", {
-					detail: { filePath },
-				})
-			);
+			eventBus.dispatch("agile:prepare-optimistic-file-change", {
+				filePath,
+			});
 		}
 		try {
 			const date = getTomorrowISO();
 			await snoozeTask(task, app, userSlug, date);
 			if (uid && filePath) {
-				window.dispatchEvent(
-					new CustomEvent("agile:task-snoozed", {
-						detail: { uid, filePath, date },
-					})
-				);
+				eventBus.dispatch("agile:task-snoozed", {
+					uid,
+					filePath,
+					date,
+				});
 			}
 			hideTaskAndCollapseAncestors(liEl);
 		} catch (err) {
@@ -364,10 +341,6 @@ function createSnoozeButton(
 
 /**
  * Create and wire the "Snooze All Subtasks" button (💤⬇️).
- * - Click: snooze all subtasks until tomorrow
- * - Long-press: enter custom date (YYYY-MM-DD)
- * Behavior mirrors DataviewJS: only the parent receives a '💤⬇️' marker; children are considered sleeping via inheritance.
- * NEW: After snoozing all descendants, hide the parent and collapse ancestors/section if it becomes empty — same behavior as single-task snooze (💤).
  */
 function createSnoozeAllButton(
 	task: TaskItem,
@@ -393,7 +366,6 @@ function createSnoozeAllButton(
 
 	const optimisticallyHideChildren = () => {
 		try {
-			// Hide direct nested subtree immediately (optimistic)
 			const directWraps = Array.from(
 				liEl.querySelectorAll(
 					":scope > ul, :scope > div.agile-children-collapse"
@@ -404,7 +376,6 @@ function createSnoozeAllButton(
 				wrap.setAttribute("aria-hidden", "true");
 			});
 
-			// Reset any chevron UI to collapsed state
 			liEl.setAttribute("data-children-expanded", "false");
 			const hit = liEl.querySelector(
 				'span[data-epic-toggle-hit="true"]'
@@ -421,28 +392,21 @@ function createSnoozeAllButton(
 
 	const performSnoozeAll = async (dateStr: string) => {
 		if (filePath) {
-			window.dispatchEvent(
-				new CustomEvent("agile:prepare-optimistic-file-change", {
-					detail: { filePath },
-				})
-			);
+			eventBus.dispatch("agile:prepare-optimistic-file-change", {
+				filePath,
+			});
 		}
 		await snoozeAllSubtasks(task, app, userSlug, dateStr);
-
-		// Localized optimistic collapse so UI responds immediately
 		optimisticallyHideChildren();
 
 		if (uid && filePath) {
-			window.dispatchEvent(
-				new CustomEvent("agile:task-snoozed", {
-					detail: { uid, filePath, date: dateStr },
-				})
-			);
+			eventBus.dispatch("agile:task-snoozed", {
+				uid,
+				filePath,
+				date: dateStr,
+			});
 		}
 
-		// NEW: The parent now has no displayable children — hide it and collapse ancestors,
-		// and if the section becomes empty, hide the section header as well.
-		// This mirrors the single-task snooze behavior.
 		try {
 			hideTaskAndCollapseAncestors(liEl);
 		} catch {
@@ -509,20 +473,15 @@ function createSnoozeAllButton(
 				restoreButton();
 				throw err;
 			}
-			// Restore immediately; parent may already be hidden by cascade
 			btn.textContent = "💤⬇️";
 			restoreButton();
 		};
 
 		input.addEventListener("keydown", (e: KeyboardEvent) => {
 			if (e.key === "Enter") submit();
-			if (e.key === "Escape") {
-				restoreButton();
-			}
+			if (e.key === "Escape") restoreButton();
 		});
-		input.addEventListener("blur", () => {
-			restoreButton();
-		});
+		input.addEventListener("blur", () => restoreButton());
 
 		input.focus();
 	};
@@ -552,7 +511,6 @@ function createSnoozeAllButton(
 		btn.textContent = "💤⬇️";
 	});
 
-	// Mouse & touch long-press
 	btn.addEventListener("mousedown", startLongPress);
 	btn.addEventListener("mouseup", cancelLongPress);
 	btn.addEventListener("mouseleave", cancelLongPress);
@@ -563,36 +521,20 @@ function createSnoozeAllButton(
 	return btn;
 }
 
-/**
- * Decide if a "Snooze All Subtasks" button should be shown for the given task node in a given section.
- * General rule: show when the node has at least two immediate children that would themselves be eligible
- * for a snooze button in this section (i.e., parents one level up from the bottom).
- *
- * Special-casing is achieved implicitly by reusing shouldShowSnoozeButton on children:
- * - objectives-linked: leaf children under linked items
- * - responsibilities: child recurring responsibilities
- * - tasks/stories/epics: leaf children
- * - epics: initiatives with leaf epic children
- * - initiatives: any parent with 2+ children (since all nodes are eligible)
- */
+// Decide if a "Snooze All Subtasks" button should be shown
 function shouldShowSnoozeAllButton(
 	task: TaskItem,
 	sectionType: string
 ): boolean {
 	const section = normalizeSection(sectionType);
-
-	// We do not show snooze-all on the OKR line itself ("objectives"),
-	// only under the linked items ("objectives-linked").
 	if (section === "objectives") return false;
 
 	const children = task.children || [];
 	if (children.length < 2) return false;
 
-	// Count children that would themselves be eligible for a regular snooze button in this section.
 	const eligibleChildren = children.filter((child) =>
 		shouldShowSnoozeButton(child, sectionType)
 	);
-
 	return eligibleChildren.length >= 2;
 }
 
@@ -617,7 +559,6 @@ async function snoozeAllSubtasks(
 	const content = await app.vault.read(file as any);
 	const lines = content.split(/\r?\n/);
 
-	// Helpers from status update: normalize and find the task line robustly
 	const normalize = (s: string) =>
 		(s || "")
 			.replace(/\s*(✅|❌)\s+\d{4}-\d{2}-\d{2}\b/g, "")
@@ -631,7 +572,6 @@ async function snoozeAllSubtasks(
 
 	const targetTextNorm = normalize((task.text || task.visual || "").trim());
 
-	// Prefer task.position.line if available
 	let targetLineIndex = -1;
 	const baseIdx =
 		typeof (task as any)?.position?.start?.line === "number"
@@ -690,24 +630,18 @@ async function snoozeAllSubtasks(
 	);
 	const globalInheritedRegex = /💤⬇️\s*(\d{4}-\d{2}-\d{2})(?!\s*<span)/g;
 
-	// Update the target line: remove previous user-specific markers; convert expired global to user-specific; then append new user-specific
 	let line = lines[targetLineIndex];
 
-	// Strip existing user-specific inherited snoozes
 	line = line.replace(userMarkerRegex, "").trimRight();
 
-	// Replace expired global inherited snooze, if any
 	line = line.replace(globalInheritedRegex, (match, date) => {
 		const d = parseISO(date);
 		if (d && d.getTime() > today.getTime()) {
-			// still active — keep it
 			return match;
 		}
-		// convert expired global to user-specific for this action
 		return `💤⬇️${userSpan} ${dateStr}`;
 	});
 
-	// Append a space if needed and add the user-specific inherited snooze
 	if (!/\s$/.test(line)) line += " ";
 	line += `💤⬇️${userSpan} ${dateStr}`;
 
@@ -740,14 +674,10 @@ export function appendSnoozeButtonIfEligible(
 ) {
 	const uid = task._uniqueId || "";
 	const filePath = uid.split(":")[0] || "";
-
-	// We don’t require selectedAlias for snoozing anymore (per placement rules),
-	// but we still need it for snoozeTask attribution; fallback to empty if null.
 	const userSlug = selectedAlias || "";
 
 	const eligible = shouldShowSnoozeButton(task, sectionType);
 	if (!eligible) {
-		// If not eligible, ensure we don't leave around stale buttons from previous renders.
 		removeExistingSnoozeButtons(liEl);
 		return;
 	}
@@ -755,20 +685,13 @@ export function appendSnoozeButtonIfEligible(
 	if (uid) liEl.setAttribute("data-task-uid", uid);
 	if (filePath) liEl.setAttribute("data-file-path", filePath);
 
-	// Avoid duplicates on re-render/optimistic updates
 	removeExistingSnoozeButtons(liEl);
-
 	const btn = createSnoozeButton(task, liEl, sectionType, app, userSlug);
-
-	// Place the button at the end of the task line, i.e., after all inline content
-	// (including assignee templates) but before any nested child UL with subtasks.
 	placeSnoozeButtonAtLineEnd(liEl, btn);
 }
 
 /**
  * Append "Snooze All Subtasks" button if eligible for this task and section.
- * Important: This does NOT remove existing wrappers so that it can be called
- * after appendSnoozeButtonIfEligible without wiping the single-button UI.
  */
 export function appendSnoozeAllSubtasksButtonIfEligible(
 	task: TaskItem,
@@ -788,8 +711,5 @@ export function appendSnoozeAllSubtasksButtonIfEligible(
 	if (filePath) liEl.setAttribute("data-file-path", filePath);
 
 	const btnAll = createSnoozeAllButton(task, liEl, app, userSlug);
-
-	// Place after the regular snooze button (since we insert before the first UL,
-	// sequential calls will keep insertion order: [ ...text ][ snooze ][ snooze-all ][ UL ])
 	placeSnoozeButtonAtLineEnd(liEl, btnAll);
 }

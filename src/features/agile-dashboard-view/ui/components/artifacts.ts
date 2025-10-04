@@ -1,16 +1,10 @@
 import { App } from "obsidian";
 import { TaskItem, TaskParams } from "@features/task-index";
 import { renderTaskTree } from "./task-renderer";
-import {
-	activeForMember,
-	isCancelled,
-	isInProgress,
-	isCompleted,
-	isSnoozed,
-	getAgileArtifactType,
-} from "@features/task-filter";
+import { activeForMember, getAgileArtifactType } from "@features/task-filter";
 import { buildPrunedMergedTrees } from "@features/task-tree-builder";
 import type { AgileObsidianSettings } from "@settings/index";
+import { isShownByParams } from "../utils/filters";
 
 export type ArtifactPredicate = (
 	task: TaskItem,
@@ -37,22 +31,9 @@ export function processAndRenderArtifact(
 	taskParams: TaskParams,
 	options: ArtifactOptions
 ) {
-	const { inProgress, completed, sleeping, cancelled } = taskParams;
-
-	const sectionTasks = currentTasks.filter((task) => {
-		const snoozedForAlias = isSnoozed(task, taskMap, selectedAlias);
-
-		const inProg =
-			inProgress &&
-			isInProgress(task, taskMap, selectedAlias) &&
-			!snoozedForAlias;
-
-		const compl = completed && isCompleted(task);
-		const sleep = sleeping && snoozedForAlias;
-		const canc = cancelled && isCancelled(task);
-
-		return inProg || compl || sleep || canc;
-	});
+	const sectionTasks = currentTasks.filter((task) =>
+		isShownByParams(task, taskMap, selectedAlias, taskParams)
+	);
 
 	const directlyAssigned = sectionTasks.filter(
 		(task) =>

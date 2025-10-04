@@ -5,24 +5,17 @@ import {
 	appendSnoozeAllSubtasksButtonIfEligible,
 } from "./task-buttons";
 import { handleStatusChange } from "../../app/status-update";
+import { normalizeSection as normalizeSectionPolicy } from "./ui-policy";
+import { eventBus } from "../../app/event-bus";
 
 function isLeaf(task: TaskItem): boolean {
 	return !task.children || task.children.length === 0;
 }
 
 function normalizeSection(sectionType: string) {
-	const s = (sectionType || "").toLowerCase();
-	// Detect objectives-linked before generic objectives
-	if (s.includes("objectives-linked")) return "objectives-linked";
-	if (s.includes("initiative")) return "initiatives";
-	if (s.includes("objective")) return "objectives";
-	if (s.includes("task")) return "tasks";
-	if (s.includes("story")) return "stories";
-	if (s.includes("epic")) return "epics";
-	if (s.includes("priorit")) return "priorities";
-	if (s.includes("responsibil")) return "responsibilities";
-	return "tasks";
+	return normalizeSectionPolicy(sectionType);
 }
+
 function shouldEnableCheckbox(
 	sectionType: string,
 	depth: number,
@@ -52,13 +45,10 @@ function ensureAssignmentEventListener(app: App) {
 	if (assignmentEventListenerAttached) return;
 	assignmentEventListenerAttached = true;
 
-	window.addEventListener(
-		"agile:request-assign-propagate" as any,
-		async (ev: Event) => {
+	eventBus.on(
+		"agile:request-assign-propagate",
+		async (detail) => {
 			try {
-				const ce = ev as CustomEvent<any>;
-				const detail =
-					ce && typeof ce.detail === "object" ? ce.detail : {};
 				const uid = detail?.uid;
 				const newAlias = detail?.newAlias;
 				if (
@@ -68,21 +58,15 @@ function ensureAssignmentEventListener(app: App) {
 				) {
 					const filePath = uid.split(":")[0] || "";
 					if (filePath) {
-						window.dispatchEvent(
-							new CustomEvent(
-								"agile:prepare-optimistic-file-change",
-								{
-									detail: { filePath },
-								}
-							)
+						eventBus.dispatch(
+							"agile:prepare-optimistic-file-change",
+							{ filePath }
 						);
-					}
-					if (filePath) {
-						window.dispatchEvent(
-							new CustomEvent("agile:assignment-changed", {
-								detail: { uid, filePath, newAlias },
-							})
-						);
+						eventBus.dispatch("agile:assignment-changed", {
+							uid,
+							filePath,
+							newAlias,
+						});
 					}
 				}
 			} catch {
@@ -309,7 +293,6 @@ export function renderTaskTree(
 		if (filePath) {
 			taskItemEl.setAttribute("data-file-path", filePath);
 		}
-		// NEW: stamp with source line when known (helps headless updates)
 		const line = getTaskLine(task);
 		if (line != null) {
 			taskItemEl.setAttribute("data-line", String(line));
@@ -322,7 +305,6 @@ export function renderTaskTree(
 		}
 
 		try {
-			// Regular snooze (💤)
 			appendSnoozeButtonIfEligible(
 				task,
 				taskItemEl,
@@ -330,7 +312,6 @@ export function renderTaskTree(
 				app,
 				selectedAlias
 			);
-			// Snooze all subtasks (💤⬇️), placed after the regular snooze button
 			appendSnoozeAllSubtasksButtonIfEligible(
 				task,
 				taskItemEl,
@@ -565,7 +546,6 @@ function rerenderTaskInline(
 		childLists.forEach((ul) => liEl.appendChild(ul));
 
 		try {
-			// Re-append snooze buttons on rerender
 			appendSnoozeButtonIfEligible(
 				task,
 				liEl,
