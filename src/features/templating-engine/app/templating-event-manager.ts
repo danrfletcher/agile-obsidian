@@ -137,23 +137,4 @@ export function wireTemplatingDomHandlers(
 		getLineHint0,
 		useObsidianNotice: true,
 	});
-
-	// Enter key handler remains (create flow)
-	const onKeyDown = async (evt: KeyboardEvent) => {
-		if (evt.key !== "Enter") return;
-		// Defer to orchestration (kept separate)
-		// Minimal delay to allow editor to apply the line split
-		setTimeout(async () => {
-			try {
-				const mod = await import("./templating-orchestration");
-				await mod.processEnter(app, view, {
-					taskIndex: _ports.taskIndex,
-				});
-			} catch {
-				// Notice is handled inside processEnter
-			}
-		}, 24);
-	};
-
-	plugin.registerDomEvent(targetEl, "keydown", onKeyDown, { capture: true });
 }

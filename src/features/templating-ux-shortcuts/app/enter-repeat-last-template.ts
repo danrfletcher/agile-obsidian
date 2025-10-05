@@ -1,20 +1,23 @@
 /**
- * Templating orchestrators (wiring-agnostic).
+ * UX Shortcuts orchestration: Enter-to-repeat template on next task line.
+ *
+ * When the user presses Enter at the logical EOL on a line adjacent to a rendered
+ * agile artifact item type (data-order-tag="artifact-item-type"), open the create
+ * params modal for that same template and insert it at the cursor.
  */
 
 import type { App } from "obsidian";
-import type { TemplateDefinition } from "../domain/types";
-import { insertTemplateAtCursor, findTemplateById } from "./templating-service";
-import { getCursorContext } from "@platform/obsidian/";
 import { MarkdownView, Notice } from "obsidian";
-import type { TaskIndexPort } from "./templating-ports";
+import { getCursorContext } from "@platform/obsidian/";
+import {
+	insertTemplateAtCursor,
+	findTemplateById,
+} from "@features/templating-engine";
 
-import { showSchemaModal } from "@features/templating-params-editor";
-import { showJsonModal } from "@features/templating-params-editor";
-
-// Centralize param collection for create flows
 import {
 	requestTemplateParams,
+	showSchemaModal,
+	showJsonModal,
 	type ParamsTemplatingPorts,
 } from "@features/templating-params-editor";
 
@@ -32,8 +35,7 @@ let enterSession: EnterSession | null = null;
 
 export async function processEnter(
 	app: App,
-	view: MarkdownView,
-	_ports: { taskIndex: TaskIndexPort }
+	view: MarkdownView
 ): Promise<void> {
 	try {
 		const editor = view.editor;
@@ -161,9 +163,7 @@ export async function processEnter(
 			return;
 		}
 
-		const def = findTemplateById(found.templateKey) as
-			| TemplateDefinition
-			| undefined;
+		const def = findTemplateById(found.templateKey) as any;
 		if (!def || !def.hasParams) return;
 		if (def.hiddenFromDynamicCommands) return;
 
@@ -171,7 +171,8 @@ export async function processEnter(
 			? {
 					...def.paramsSchema,
 					fields:
-						def.paramsSchema.fields?.map((f) => ({ ...f })) ?? [],
+						def.paramsSchema.fields?.map((f: any) => ({ ...f })) ??
+						[],
 			  }
 			: undefined;
 		if (!schema) return;
@@ -215,7 +216,7 @@ export async function processEnter(
 		}
 	} catch (err) {
 		console.error(
-			"[templating] processEnter: error",
+			"[templating-ux-shortcuts] processEnter: error",
 			(err as Error)?.message ?? err
 		);
 		new Notice(

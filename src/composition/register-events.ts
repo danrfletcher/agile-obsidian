@@ -8,6 +8,7 @@ import {
 import { createObsidianAppAdapter } from "@platform/obsidian";
 import type { TaskIndexPort } from "@features/templating-engine";
 import { wireTemplatingDomHandlers } from "@features/templating-engine";
+import { wireTemplatingUxShortcutsDomHandlers } from "@features/templating-ux-shortcuts";
 import {
 	createOrgStructureService,
 	type OrgStructurePort,
@@ -412,6 +413,10 @@ export async function registerEvents(container: Container) {
 		if (!view) return;
 		try {
 			wireTemplatingDomHandlers(app, view, plugin, templatingPorts);
+		} catch {}
+		try {
+			// UX Shortcuts (Enter-to-repeat template)
+			wireTemplatingUxShortcutsDomHandlers(app, view, plugin);
 		} catch {}
 		try {
 			const orgPorts = (container as any).orgStructurePorts as

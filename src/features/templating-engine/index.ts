@@ -6,6 +6,7 @@ export { wireTemplatingDomHandlers } from "./app/templating-event-manager";
 export {
 	insertTemplateAtCursor,
 	renderTemplateOnly,
+	findTemplateById,
 } from "./app/templating-service";
 
 export { getTemplateKeysFromTask } from "./domain/templates-in-tasks";
