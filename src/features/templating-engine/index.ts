@@ -1,4 +1,5 @@
 export type { TaskIndexPort } from "./app/templating-ports";
+export type { ParamsSchema, ParamsSchemaField } from "./domain/types";
 
 export { wireTemplatingDomHandlers } from "./app/templating-event-manager";
 

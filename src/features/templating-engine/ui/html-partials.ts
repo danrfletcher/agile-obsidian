@@ -1,4 +1,4 @@
-import { escapeHtml } from "../domain/template-utils";
+import { escapeHtml } from "@utils";
 
 /**
  * markChip renders a <mark> with optional style/attrs.

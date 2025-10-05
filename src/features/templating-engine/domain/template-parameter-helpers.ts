@@ -1,4 +1,4 @@
-import { escapeHtml } from "./template-utils";
+import { escapeHtml } from "@utils";
 
 // Render helper: wraps a user-editable variable so it’s discoverable by the template modal (text content).
 export function wrapVar(name: string, value: unknown): string {

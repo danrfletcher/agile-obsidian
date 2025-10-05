@@ -4,110 +4,19 @@
 
 import type { App } from "obsidian";
 import type { TemplateDefinition } from "../domain/types";
-import {
-	insertTemplateAtCursor,
-	renderTemplateOnly,
-	prefillTemplateParams,
-	replaceTemplateWrapperOnCurrentLine,
-	findTemplateById,
-} from "./templating-service";
+import { insertTemplateAtCursor, findTemplateById } from "./templating-service";
 import { getCursorContext } from "@platform/obsidian/";
-import { showSchemaModal } from "../ui/template-schema-modal";
-import { showJsonModal } from "../ui/template-json-modal";
 import { MarkdownView, Notice } from "obsidian";
 import type { TaskIndexPort } from "./templating-ports";
 
-export async function processClick(app: App, el: HTMLElement): Promise<void> {
-	try {
-		const templateKey = el.getAttribute("data-template-key") ?? "";
-		if (!templateKey) return;
+import { showSchemaModal } from "@features/templating-params-editor";
+import { showJsonModal } from "@features/templating-params-editor";
 
-		// Robust resolution: supports multi-dot ids like "workflows.states.blocked"
-		const def = findTemplateById(templateKey) as
-			| TemplateDefinition
-			| undefined;
-
-		// If this template is excluded from dynamic commands (like members.assignee),
-		// do not open parameter modals on click. Let other feature handlers manage it.
-		if (def?.hiddenFromDynamicCommands) return;
-
-		if (!def || !def.hasParams) return;
-
-		// Prefill strictly from explicit markers (plus template-specific override)
-		const prefill = prefillTemplateParams(templateKey, el) ?? {};
-		let params: Record<string, unknown> | undefined;
-		if (def.paramsSchema && def.paramsSchema.fields?.length) {
-			const schema = {
-				...def.paramsSchema,
-				fields: def.paramsSchema.fields.map((f) => ({
-					...f,
-					defaultValue:
-						prefill[f.name] != null
-							? String(prefill[f.name] ?? "")
-							: f.defaultValue,
-				})),
-			};
-			params = await showSchemaModal(app, templateKey, schema, true);
-		} else {
-			const jsonParams = JSON.stringify(prefill ?? {}, null, 2);
-			params = (await showJsonModal(app, templateKey, jsonParams)) as
-				| Record<string, unknown>
-				| undefined;
-		}
-		if (!params) return;
-
-		try {
-			const view =
-				app.workspace.getActiveViewOfType(MarkdownView) ?? null;
-			const editor: any = (view as any)?.editor;
-			if (!view || !editor) {
-				// Fallback: DOM-only update
-				const fresh = renderTemplateOnly(templateKey, params);
-				// Preserve original instance id if present
-				const instanceId =
-					el.getAttribute("data-template-wrapper") ?? "";
-				const freshWithSameId = instanceId
-					? fresh.replace(
-							/data-template-wrapper="[^"]*"/,
-							`data-template-wrapper="${instanceId}"`
-					  )
-					: fresh;
-
-				el.outerHTML = freshWithSameId;
-				return;
-			}
-
-			// Render new HTML and preserve the original instance id
-			const instanceId = el.getAttribute("data-template-wrapper") ?? "";
-			let newHtml = renderTemplateOnly(templateKey, params);
-			if (instanceId) {
-				newHtml = newHtml.replace(
-					/data-template-wrapper="[^"]*"/,
-					`data-template-wrapper="${instanceId}"`
-				);
-			}
-
-			await replaceTemplateWrapperOnCurrentLine(
-				app,
-				view,
-				editor,
-				templateKey,
-				newHtml,
-				instanceId // <-- pass exact wrapper instance id
-			);
-		} catch (e) {
-			new Notice(
-				`Failed to update template: ${String(
-					(e as Error)?.message ?? e
-				)}`
-			);
-		}
-	} catch (err) {
-		new Notice(
-			`Template edit failed: ${String((err as Error)?.message ?? err)}`
-		);
-	}
-}
+// Centralize param collection for create flows
+import {
+	requestTemplateParams,
+	type ParamsTemplatingPorts,
+} from "@features/templating-params-editor";
 
 /**
  * Enter handling with a lightweight, single-shot guard:
@@ -129,10 +38,8 @@ export async function processEnter(
 	try {
 		const editor = view.editor;
 
-		// Capture a fresh context after Enter.
 		const ctx = await getCursorContext(app, view, editor);
 
-		// Detect if cursor was at end-of-line (ignoring trailing spaces) when Enter occurred.
 		const lineText = ctx.lineText ?? editor.getLine(ctx.lineNumber) ?? "";
 		const afterCursor = lineText.slice(ctx.column ?? 0);
 		const cursorAtLogicalEOL = /^\s*$/.test(afterCursor);
@@ -156,7 +63,6 @@ export async function processEnter(
 		const prevLine = safeGetLine(prevLineNo);
 		const curLine = safeGetLine(curLineNo);
 
-		// Scan a line for ALL wrappers, pick the right-most artifact-item-type
 		type Found = {
 			templateKey: string;
 			orderTag: string | null;
@@ -178,7 +84,6 @@ export async function processEnter(
 				const gt = s.indexOf(">", openIdx);
 				if (gt === -1) break;
 
-				// Deterministic close finder
 				let depth = 1;
 				let i = gt + 1;
 				let closeEnd = -1;
@@ -252,12 +157,10 @@ export async function processEnter(
 			prevFound ? prevLineNo : curLineNo
 		}#${found.wrapperId ?? found.templateKey}#${found.start}`;
 
-		// If a session is active for the same cause, do nothing.
 		if (enterSession?.active && enterSession.key === causeKey) {
 			return;
 		}
 
-		// Resolve definition quickly; bail if not parameterized or hidden.
 		const def = findTemplateById(found.templateKey) as
 			| TemplateDefinition
 			| undefined;
@@ -273,23 +176,34 @@ export async function processEnter(
 			: undefined;
 		if (!schema) return;
 
-		// Start single-shot session BEFORE opening the modal to block re-triggers caused by DOM/editor ripples.
 		enterSession = { key: causeKey, active: true };
 
 		try {
-			const params = await showSchemaModal(
-				app,
+			// Delegate parameter flow to templating-params-editor
+			const ports: ParamsTemplatingPorts = {
+				findTemplateById: (tid) => findTemplateById(tid) as any,
+				showSchemaModal: (tid, sch, isEdit) =>
+					showSchemaModal(app, tid, sch as any, isEdit) as Promise<
+						Record<string, unknown> | undefined
+					>,
+				showJsonModal: (tid, initialJson) =>
+					showJsonModal(app, tid, initialJson) as Promise<
+						Record<string, unknown> | undefined
+					>,
+			};
+
+			const params = await requestTemplateParams(
+				ports,
 				found.templateKey,
-				schema,
-				false
+				{}, // create flow => no prefill
+				false,
+				undefined
 			);
 
 			if (!params) {
-				// Cancelled: end the session and return cleanly.
 				return;
 			}
 
-			// Insert once. This update will not retrigger the modal because session is still active.
 			insertTemplateAtCursor(
 				found.templateKey,
 				editor as any,
@@ -297,8 +211,6 @@ export async function processEnter(
 				params as Record<string, unknown> | undefined
 			);
 		} finally {
-			// Session ends after we have either cancelled or inserted.
-			// This guarantees no duplicate modal opens for the same Enter press.
 			enterSession = null;
 		}
 	} catch (err) {
