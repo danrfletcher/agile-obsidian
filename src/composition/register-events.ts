@@ -6,8 +6,8 @@ import {
 	createTaskIndexOrchestrator,
 } from "@features/task-index";
 import { createObsidianAppAdapter } from "@platform/obsidian";
-import type { TaskIndexPort } from "@features/templating";
-import { wireTemplatingDomHandlers } from "@features/templating";
+import type { TaskIndexPort } from "@features/templating-engine";
+import { wireTemplatingDomHandlers } from "@features/templating-engine";
 import {
 	createOrgStructureService,
 	type OrgStructurePort,

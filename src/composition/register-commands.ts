@@ -1,6 +1,6 @@
 import type { Container } from "./container";
 import { registerAgileDashboardView } from "@features/agile-dashboard-view";
-import { registerTemplatingDynamicCommands } from "@features/templating";
+import { registerTemplatingDynamicCommands } from "@features/templating-engine";
 import { registerTaskAssignmentDynamicCommands } from "@features/task-assignment";
 
 export async function registerAllCommands(container: Container) {
