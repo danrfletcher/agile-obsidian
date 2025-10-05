@@ -1,5 +1,5 @@
 import type { App, MarkdownView, Plugin } from "obsidian";
-import { processEnter } from "../app/enter-repeat-last-template";
+import { processEnter } from "../app/enter-repeat-agile-template";
 
 /**
  * Wires editor-level UX shortcuts related to templating.
