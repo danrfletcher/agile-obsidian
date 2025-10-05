@@ -1,7 +1,7 @@
 import type { App, Plugin } from "obsidian";
 import { MarkdownView, Notice, TFile } from "obsidian";
 import type { TaskIndexService } from "@features/task-index";
-import { renderTemplateOnly } from "@features/templating";
+import { renderTemplateOnly } from "@features/templating-engine";
 import { removeWrappersOfTypeOnLine } from "@features/task-assignment";
 import { getDisplayNameFromAlias } from "@shared/identity";
 import {

@@ -1,6 +1,6 @@
 import type { App, Plugin } from "obsidian";
 import { MarkdownView, Notice } from "obsidian";
-import { insertTemplateAtCursor } from "@features/templating";
+import { insertTemplateAtCursor } from "@features/templating-engine";
 import type {
 	OrgStructurePort,
 	MemberInfo,
@@ -9,10 +9,7 @@ import type {
 import { classifyMember } from "@features/org-structure";
 import { getCursorContext } from "@platform/obsidian";
 import { removeWrappersOfTypeOnLine } from "./assignment-inline-utils";
-import {
-	AddMemberModal,
-	type AddMemberKind,
-} from "../ui/add-member-modal";
+import { AddMemberModal, type AddMemberKind } from "../ui/add-member-modal";
 
 /**
  * Map org-structure member kind to templating "Members.assignee" memberType.
