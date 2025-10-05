@@ -88,7 +88,10 @@ export class EventBus {
 		);
 	}
 
-	dispatch<N extends EventName>(name: N, payload: AgileEvents[N]): void {
+	dispatch<N extends EventName>(name: N, payload: AgileEvents[N]): void;
+
+	dispatch(name: string, payload?: any): void;
+	dispatch(name: string, payload?: any): void {
 		if (!this.target) return;
 		this.target.dispatchEvent(
 			new CustomEvent(name as string, { detail: payload })

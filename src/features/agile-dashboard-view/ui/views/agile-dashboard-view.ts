@@ -16,7 +16,7 @@ import { renderTeamsPopupContent, TeamsPopupContext } from "./teams-popup";
 // Headless reassignment menu handler
 import { attachDashboardAssignmentHandler } from "../handlers/assignment-handler";
 
-// Parameterized template editing handler
+// Parameterized template editing handler (adapter delegates to feature-agnostic impl)
 import { attachDashboardTemplatingHandler } from "../handlers/templating-handler";
 
 import { eventBus } from "../../app/event-bus";
@@ -290,7 +290,7 @@ export class AgileDashboardView extends ItemView {
 			})
 		);
 
-		// Attach dashboard-level click handlers (assignment + templating)
+		// Attach dashboard-level handlers (assignment + templating)
 		attachDashboardAssignmentHandler({
 			app: this.app,
 			orgStructurePort: this.orgStructurePort,
@@ -505,7 +505,8 @@ export class AgileDashboardView extends ItemView {
 				this.app,
 				taskMap,
 				childrenMap,
-				taskParams
+				taskParams,
+				this.registerDomEvent.bind(this)
 			);
 		}
 		if (settings.showPriorities) {
