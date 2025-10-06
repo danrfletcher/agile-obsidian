@@ -4,10 +4,21 @@ import { renderTaskTree } from "./task-renderer";
 import { activeForMember, getAgileArtifactType } from "@features/task-filter";
 import { buildPrunedMergedTrees } from "@features/task-tree-builder";
 import { isShownByParams } from "../utils/filters";
+import { attachSectionFolding } from "@features/task-tree-fold";
+
+type RegisterDomEvent = (
+	el: HTMLElement | Window | Document,
+	type: string,
+	handler: (evt: any) => void,
+	options?: AddEventListenerOptions | boolean
+) => void;
 
 /**
- * Process and render Objectives (OKRs) and their linked item trees.
- */
+Process and render Objectives (OKRs) and their linked item trees.
+Folding behavior:
+- Render objectives (OKRs) without their native children, and enable fold/unfold on the OKR itself.
+- In the "Linked Items" section, only add fold toggles on bottom-level items currently displayed.
+*/
 export function processAndRenderObjectives(
 	container: HTMLElement,
 	currentTasks: TaskItem[],
@@ -16,7 +27,8 @@ export function processAndRenderObjectives(
 	app: App,
 	taskMap: Map<string, TaskItem>,
 	childrenMap: Map<string, TaskItem[]>,
-	taskParams: TaskParams
+	taskParams: TaskParams,
+	registerDomEvent?: RegisterDomEvent
 ) {
 	const sectionTasks = currentTasks.filter((task) =>
 		isShownByParams(task, taskMap, selectedAlias, taskParams)
@@ -122,8 +134,11 @@ export function processAndRenderObjectives(
 		container.createEl("h2", { text: "🎯 Objectives" });
 
 		prunedOKRs.forEach(({ okr, linkedTrees }) => {
+			// Render the OKR itself without its native children;
+			// folding will be enabled on the objective to unfold its task tree.
+			const okrShallow: TaskItem = { ...okr, children: [] };
 			renderTaskTree(
-				[okr],
+				[okrShallow],
 				container,
 				app,
 				0,
@@ -132,6 +147,22 @@ export function processAndRenderObjectives(
 				selectedAlias
 			);
 
+			// Folding on the OKR itself
+			try {
+				attachSectionFolding(container, {
+					app,
+					taskMap,
+					childrenMap,
+					selectedAlias,
+					renderTaskTree,
+					registerDomEvent,
+					sectionName: "objectives",
+				});
+			} catch {
+				/* ignore */
+			}
+
+			// Linked trees (as-is), with folding only on bottom-level nodes currently displayed.
 			container.createEl("h5", {
 				text: "🔗 Linked Items",
 				attr: { style: "margin-left: 20px;" },
@@ -149,6 +180,20 @@ export function processAndRenderObjectives(
 				"objectives-linked",
 				selectedAlias
 			);
+
+			try {
+				attachSectionFolding(indentedWrapper, {
+					app,
+					taskMap,
+					childrenMap,
+					selectedAlias,
+					renderTaskTree,
+					registerDomEvent,
+					sectionName: "objectives-linked",
+				});
+			} catch {
+				/* ignore */
+			}
 		});
 	}
 }

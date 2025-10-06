@@ -98,7 +98,8 @@ export async function renderProjectView(opts: ProjectViewOptions) {
 			app,
 			taskMap,
 			childrenMap,
-			taskParams
+			taskParams,
+			registerDomEvent
 		);
 	}
 	if (settings.showResponsibilities) {
@@ -110,7 +111,8 @@ export async function renderProjectView(opts: ProjectViewOptions) {
 			app,
 			taskMap,
 			childrenMap,
-			taskParams
+			taskParams,
+			registerDomEvent
 		);
 	}
 	processAndRenderArtifacts(
@@ -122,7 +124,8 @@ export async function renderProjectView(opts: ProjectViewOptions) {
 		taskMap,
 		childrenMap,
 		taskParams,
-		settings
+		settings,
+		registerDomEvent
 	);
 	if (settings.showInitiatives) {
 		processAndRenderInitiatives(
@@ -146,7 +149,8 @@ export async function renderProjectView(opts: ProjectViewOptions) {
 			app,
 			taskMap,
 			childrenMap,
-			taskParams
+			taskParams,
+			registerDomEvent
 		);
 	}
 }

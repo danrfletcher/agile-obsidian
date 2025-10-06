@@ -1,6 +1,7 @@
 import { TFile, type App } from "obsidian";
 import type { TaskItem, TaskIndexService } from "@features/task-index";
 import { renderTaskTree } from "../ui/components/task-renderer";
+import { normalizeSection } from "../ui/components/ui-policy";
 
 export async function refreshForFile(
 	app: App,
@@ -39,15 +40,26 @@ export async function refreshTaskTreeByUid(
 	);
 	if (!li) return;
 
-	const ul = li.closest(
-		"ul.agile-dashboard.contains-task-list"
-	) as HTMLElement | null;
-	const sectionType = ul?.getAttribute("data-section") || "tasks";
+	// Prefer most-local section type: LI -> nearest UL -> enclosing section root -> fallback
+	const rawSectionType =
+		li.getAttribute("data-section") ||
+		(
+			li.closest(
+				"ul.agile-dashboard.contains-task-list"
+			) as HTMLElement | null
+		)?.getAttribute("data-section") ||
+		(li.closest("[data-section-root]") as HTMLElement | null)?.getAttribute(
+			"data-section-root"
+		) ||
+		"tasks";
+
+	const sectionType = normalizeSection(rawSectionType);
 
 	const task = (taskIndexService.getById?.(uid) || null) as TaskItem | null;
 	if (!task) return;
 
 	const tmp = document.createElement("div");
+
 	renderTaskTree([task], tmp, app, 0, false, sectionType, selectedAlias);
 	const newLi = tmp.querySelector(
 		"ul.agile-dashboard.contains-task-list > li"

@@ -1,13 +1,13 @@
 import type { App } from "obsidian";
 import type { TaskItem } from "@features/task-index";
-import { buildPrunedMergedTrees } from "@features/task-tree-builder";
-import { getFilteredSortedDirectChildren } from "../domain/utils";
+import { defaultTaskComparator } from "../domain/utils";
 import { animateClose, animateOpen } from "./animations";
-import { selectChildrenUl, getAncestorWraps } from "./dom-utils";
+import { getAncestorWraps } from "./dom-utils";
+import { getAgileArtifactType } from "@features/task-filter";
 
 /**
- * Lifecycle-aware event registration. Use Obsidian's registerDomEvent underneath.
- */
+Lifecycle-aware event registration. Use Obsidian's registerDomEvent underneath.
+*/
 export type RegisterDomEvent = (
 	el: HTMLElement | Window | Document,
 	type: string,
@@ -33,16 +33,68 @@ interface SectionFoldingDeps {
 }
 
 /**
- * Attach a set of chevrons to direct LI children of a UL.
- * Expands filtered/sorted direct children upon toggle.
- */
+Resolve a TaskItem for a given LI:
+- Prefer data-task-uid lookups
+- Fallback to file path + line resolution into taskMap
+*/
+function resolveTaskFromLi(
+	liEl: HTMLElement,
+	taskMap: Map<string, TaskItem>
+): TaskItem | null {
+	const uidAttr = liEl.getAttribute("data-task-uid") || "";
+	if (uidAttr) {
+		const t = taskMap.get(uidAttr);
+		if (t) return t;
+	}
+
+	const filePath = liEl.getAttribute("data-file-path") || "";
+	const lineStr = liEl.getAttribute("data-line") || "";
+	const line =
+		lineStr && /^\d+$/.test(lineStr) ? parseInt(lineStr, 10) : null;
+
+	if (filePath && line != null) {
+		for (const t of taskMap.values()) {
+			try {
+				const tPath =
+					t.link?.path || (t._uniqueId?.split(":")[0] ?? "");
+				const tLine =
+					typeof (t as any)?.position?.start?.line === "number"
+						? (t as any).position.start.line
+						: typeof (t as any)?.line === "number"
+						? (t as any).line
+						: null;
+				if (tPath === filePath && tLine === line) return t;
+			} catch {
+				/* ignore */
+			}
+		}
+	}
+	return null;
+}
+
+/**
+Attach a set of chevrons to direct LI children of a UL.
+Expands direct children upon toggle.
+
+Important: We only attach toggles to LIs that do NOT already display a direct child UL.
+This ensures we never "fold away" currently visible parts of the task tree,
+and only allow additional expansion from bottom-level items.
+*/
 export function attachChevronSet(
 	ul: HTMLElement,
 	deps: SectionFoldingDeps,
-	options: { childrenType?: string; sectionName: string }
+	options: {
+		childrenType?: string;
+		sectionName: string;
+		/**
+		 * Optional override for computing children (e.g., Objectives linked items).
+		 */
+		getChildren?: (uid: string) => TaskItem[];
+	}
 ) {
 	const {
 		childrenMap,
+		taskMap,
 		renderTaskTree,
 		app,
 		selectedAlias,
@@ -63,29 +115,92 @@ export function attachChevronSet(
 		}
 	};
 
-	const lis = Array.from(
-		ul.querySelectorAll(":scope > li[data-task-uid]")
-	) as HTMLElement[];
+	// Consider all direct child LIs, not only those which already expose data-task-uid
+	const lis = Array.from(ul.querySelectorAll(":scope > li")) as HTMLElement[];
 
 	lis.forEach((liEl) => {
-		const uid = liEl.getAttribute("data-task-uid") || "";
-		if (!uid) return;
+		// Skip if this LI already displays a direct child UL: we only fold from bottom-level items.
+		const hasDirectDisplayedUl = !!liEl.querySelector(
+			":scope > ul.agile-dashboard.contains-task-list"
+		);
+		if (hasDirectDisplayedUl) return;
+
+		// Resolve the associated task and its UID (using fallback path+line resolution)
+		const task = resolveTaskFromLi(liEl, taskMap);
+		
+		const uid = task?._uniqueId || liEl.getAttribute("data-task-uid") || "";
+		if (!task || !uid) {
+			// No resolvable task/uid — cannot find children reliably; skip.
+			return;
+		}
 
 		const checkbox = liEl.querySelector(
 			'input[type="checkbox"]'
 		) as HTMLInputElement | null;
 
-		// Remove any stale toggles (generalized from "epic" to "fold")
+		// Remove any stale toggles
 		liEl.querySelectorAll(
 			'span[data-fold-toggle="true"], span[data-fold-toggle-hit="true"]'
 		).forEach((n) => n.remove());
 
-		const filteredChildren = getFilteredSortedDirectChildren(
-			uid,
-			childrenMap,
-			options.childrenType
-		);
-		if (filteredChildren.length === 0) {
+		// Compute direct children:
+		// - Include ALL direct children (do not filter by completed/cancelled)
+		// - Optionally gate by artifact type on first level if childrenType provided
+		const computeChildren = (): TaskItem[] => {
+			let raw: TaskItem[] = [];
+			if (options.getChildren) {
+				raw = options.getChildren(uid) || [];
+			} else {
+				raw = childrenMap.get(uid) || [];
+				if (options.childrenType) {
+					raw = raw.filter(
+						(c) =>
+							(getAgileArtifactType(c) ?? "") ===
+							options.childrenType
+					);
+				}
+				// Sort deterministically
+				raw = raw.slice().sort(defaultTaskComparator);
+			}
+
+			// Deduplicate:
+			// - Prefer _uniqueId when present
+			// - Fall back to a stable composite of file path + line + text
+			const unique: TaskItem[] = [];
+			const seenId = new Set<string>();
+			const seenKey = new Set<string>();
+
+			const stableKey = (t: TaskItem): string => {
+				const fp = (t.link?.path || "").toLowerCase();
+				const line =
+					typeof (t as any)?.position?.start?.line === "number"
+						? String((t as any).position.start.line)
+						: typeof (t as any)?.line === "number"
+						? String((t as any).line)
+						: "";
+				const txt = (t.text || t.visual || "").trim();
+				return `${fp}::${line}::${txt}`;
+			};
+
+			for (const c of raw) {
+				const id = c._uniqueId || "";
+				if (id) {
+					if (id === uid) continue; // prevent self-loop
+					if (seenId.has(id)) continue;
+					seenId.add(id);
+					unique.push(c);
+					continue;
+				}
+				const key = stableKey(c);
+				if (seenKey.has(key)) continue;
+				seenKey.add(key);
+				unique.push(c);
+			}
+			return unique;
+		};
+
+		const initialChildren = computeChildren();
+		if (initialChildren.length === 0) {
 			liEl.setAttribute("data-children-expanded", "false");
 			return;
 		}
@@ -128,6 +243,7 @@ export function attachChevronSet(
 		let anchorEl: HTMLElement = liEl;
 		let labelEl: HTMLElement | null = null;
 		if (checkbox) {
+			// Try to find the label wrapper around the checkbox; fall back to LI if not present
 			labelEl = checkbox.closest("label") as HTMLElement | null;
 			if (!labelEl) {
 				const alt = checkbox.closest(
@@ -148,10 +264,16 @@ export function attachChevronSet(
 		hit.appendChild(chevron);
 		anchorEl.appendChild(hit);
 
-		// Position hitbox left of the checkbox
+		// Position hitbox left of the checkbox (fallbacks to top-left of anchor if no checkbox)
 		const gapPx = 6;
 		const positionToggle = () => {
-			if (!checkbox || !hit.isConnected) return;
+			if (!hit.isConnected) return;
+			if (!checkbox) {
+				// No checkbox: pin near the start of the anchor
+				hit.style.left = `-22px`;
+				hit.style.top = `2px`;
+				return;
+			}
 			const anchorRect = anchorEl.getBoundingClientRect();
 			const cbRect = checkbox.getBoundingClientRect();
 			if (cbRect.width === 0 && cbRect.height === 0) return;
@@ -180,45 +302,32 @@ export function attachChevronSet(
 		const expand = () => {
 			if (liEl.getAttribute("data-children-expanded") === "true") return;
 
-			const children = getFilteredSortedDirectChildren(
-				uid,
-				childrenMap,
-				options.childrenType
-			);
+			const children = computeChildren();
 			if (children.length === 0) return;
 
-			// Build top-only list
-			const topOnly = buildPrunedMergedTrees(
-				children,
-				deps.taskMap,
-				undefined,
-				deps.childrenMap,
-				{
-					depth: 0,
-				}
-			);
+			// Render direct children SHALLOWLY
+			const shallowChildren = children.map((c) => ({
+				...c,
+				children: [],
+			}));
 
-			// Render into a temporary fragment
 			const tmp = document.createElement("div");
+			const sectionForChildren = `${options.sectionName}-children`;
 			renderTaskTree(
-				topOnly,
+				shallowChildren,
 				tmp,
 				app,
 				1,
 				false,
-				"children",
+				sectionForChildren,
 				selectedAlias
 			);
 
-			// Pick the expected UL
-			const expectedSet = new Set(
-				children.map((c) => c._uniqueId).filter((x): x is string => !!x)
-			);
-			let generated = tmp.querySelector(
+			// Take the first generated UL directly — it contains the shallow children we passed in.
+			const generated = tmp.querySelector(
 				"ul.agile-dashboard.contains-task-list"
 			) as HTMLElement | null;
 			if (!generated) return;
-			generated = selectChildrenUl(generated, expectedSet);
 
 			// Wrap and animate open
 			const wrap = document.createElement("div");
@@ -235,6 +344,7 @@ export function attachChevronSet(
 			attachChevronSet(generated, deps, {
 				childrenType: undefined,
 				sectionName: options.sectionName,
+				getChildren: options.getChildren, // allow override deeper too
 			});
 
 			chevron.style.transform = "rotate(90deg)";

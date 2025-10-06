@@ -238,6 +238,7 @@ export function renderTaskTree(
 		cls: "agile-dashboard contains-task-list",
 	});
 	taskList.setAttribute("data-section", normalizedSection);
+	console.log("⚡ ~ taskList:", taskList);
 
 	tasks.forEach((task) => {
 		if (
@@ -282,6 +283,9 @@ export function renderTaskTree(
 			}
 		}
 
+		// Stamp the section on each LI so localized refreshes can reliably read it
+		taskItemEl.setAttribute("data-section", normalizedSection);
+
 		if (task.annotated) {
 			taskItemEl.addClass("annotated-task");
 		}
@@ -308,14 +312,14 @@ export function renderTaskTree(
 			appendSnoozeButtonIfEligible(
 				task,
 				taskItemEl,
-				sectionType,
+				normalizedSection,
 				app,
 				selectedAlias
 			);
 			appendSnoozeAllSubtasksButtonIfEligible(
 				task,
 				taskItemEl,
-				sectionType,
+				normalizedSection,
 				app,
 				selectedAlias
 			);
@@ -445,7 +449,7 @@ export function renderTaskTree(
 				app,
 				depth + 1,
 				false,
-				sectionType,
+				normalizedSection,
 				selectedAlias
 			);
 		}
@@ -463,6 +467,11 @@ function rerenderTaskInline(
 	selectedAlias: string | null
 ): void {
 	try {
+		const normalizedSection = normalizeSection(sectionType);
+
+		// Preserve section on the LI after re-render
+		liEl.setAttribute("data-section", normalizedSection);
+
 		const childLists = Array.from(
 			liEl.querySelectorAll(":scope > ul")
 		) as HTMLElement[];
@@ -549,14 +558,14 @@ function rerenderTaskInline(
 			appendSnoozeButtonIfEligible(
 				task,
 				liEl,
-				sectionType,
+				normalizedSection,
 				app,
 				selectedAlias
 			);
 			appendSnoozeAllSubtasksButtonIfEligible(
 				task,
 				liEl,
-				sectionType,
+				normalizedSection,
 				app,
 				selectedAlias
 			);

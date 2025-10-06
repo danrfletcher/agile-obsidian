@@ -1,7 +1,6 @@
 /**
- * DOM helpers for task UL/LI traversal and section querying.
- */
-
+DOM helpers for task UL/LI traversal and section querying.
+*/
 export function directChildLisOfUl(ul: HTMLElement): HTMLElement[] {
 	return Array.from(ul.children).filter(
 		(el): el is HTMLElement =>
@@ -10,8 +9,8 @@ export function directChildLisOfUl(ul: HTMLElement): HTMLElement[] {
 }
 
 /**
- * Given a generated subtree container, pick the UL whose LI children match the expected set of UIDs.
- */
+Given a generated subtree container, pick the UL whose LI children match the expected set of UIDs.
+*/
 export function selectChildrenUl(
 	generated: HTMLElement,
 	expectedUIDs: Set<string>
@@ -50,8 +49,8 @@ export function selectChildrenUl(
 }
 
 /**
- * Climb ancestors and collect wrapper elements to track during animations.
- */
+Climb ancestors and collect wrapper elements to track during animations.
+*/
 export function getAncestorWraps(liEl: HTMLElement): HTMLElement[] {
 	const wraps: HTMLElement[] = [];
 	let p: HTMLElement | null = liEl.parentElement as HTMLElement | null;
@@ -65,8 +64,8 @@ export function getAncestorWraps(liEl: HTMLElement): HTMLElement[] {
 }
 
 /**
- * Locate the latest initiatives (or other section) UL to attach folding to.
- */
+Locate the latest initiatives (or other section) UL to attach folding to.
+*/
 export function findSectionUl(
 	container: HTMLElement,
 	sectionName: string
@@ -78,4 +77,19 @@ export function findSectionUl(
 	) as HTMLElement[];
 	if (lists.length === 0) return null;
 	return lists[lists.length - 1];
+}
+
+/**
+Locate all ULs for a given section within the container.
+Useful when we need to attach fold toggles to bottom-level items across nested trees.
+*/
+export function findSectionUls(
+	container: HTMLElement,
+	sectionName: string
+): HTMLElement[] {
+	return Array.from(
+		container.querySelectorAll(
+			`ul.agile-dashboard.contains-task-list[data-section="${sectionName}"]`
+		)
+	) as HTMLElement[];
 }
