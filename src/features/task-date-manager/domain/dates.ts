@@ -3,6 +3,16 @@ import { escapeRegExp } from "@utils";
 import { DateRe, parseYyyyMmDd } from "./types";
 
 /**
+ * Format a Date (local) into YYYY-MM-DD.
+ */
+export function toYyyyMmDd(d: Date): string {
+	const y = d.getFullYear();
+	const m = String(d.getMonth() + 1).padStart(2, "0");
+	const day = String(d.getDate()).padStart(2, "0");
+	return `${y}-${m}-${day}`;
+}
+
+/**
  * Relevant today if not completed/cancelled and start/scheduled <= today (or absent).
  */
 export const isRelevantToday = (task: TaskItem): boolean => {

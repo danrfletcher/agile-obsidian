@@ -27,9 +27,10 @@ import type { CanonicalFormatterPort } from "@features/task-canonical-formatter"
 import { wireTaskAssignmentCascade } from "@features/task-assignment-cascade";
 import {
 	wireTaskClosedCascade,
-	wireTaskClosedCascadeObserver,
+	// wireTaskClosedCascadeObserver, // removed: superseded by task-close-manager
 } from "@features/task-close-cascade";
 import { registerTaskMetadataCleanup } from "@features/task-metadata-cleanup";
+import { wireTaskCloseManager } from "@features/task-close-manager";
 
 // Strong singleton-per-run progress UI (per view)
 class ProgressNotice {
@@ -496,10 +497,13 @@ export async function registerEvents(container: Container) {
 	}
 
 	try {
-		// Optional custom-event adapter (for your own commands)
+		// Custom-event adapter (still available for manual commands)
 		wireTaskClosedCascade(app, plugin);
-		// Passive observer adapter (works with Obsidian Tasks)
-		wireTaskClosedCascadeObserver(app, plugin);
+		// New: Task Close Manager wiring (replaces Obsidian Tasks for dates)
+		wireTaskCloseManager(app, plugin);
+
+		// Note: Removed passive observer so cascade runs AFTER manager adds dates
+		// wireTaskClosedCascadeObserver(app, plugin);
 	} catch (e) {
 		console.error("[boot] closed cascade wiring failed", e);
 	}

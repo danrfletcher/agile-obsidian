@@ -115,9 +115,19 @@ export function isListLine(line: string): boolean {
  * Tabs are expanded to 4 spaces.
  */
 export function indentWidth(line: string): number {
-	const expanded = line.replace(/\t/g, "    ");
-	const m = expanded.match(/^\s*/);
-	return m ? m[0].length : 0;
+	// Count leading spaces; treat tabs as 4 spaces
+	let width = 0;
+	for (const ch of line) {
+		if (ch === " ") width += 1;
+		else if (ch === "\t") width += 4;
+		else break;
+	}
+	return width;
+}
+
+export function getCheckboxStatusChar(line: string): string | null {
+	const m = /^\s*(?:[-*+]|\d+[.)])\s*\[\s*([^\]]?)\s*\]/.exec(line);
+	return m ? m[1] ?? "" : null;
 }
 
 /**

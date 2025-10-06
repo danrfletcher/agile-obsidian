@@ -79,6 +79,55 @@ export function createTaskIndexService(
 		return parser.parseFile({ file, contents, cache });
 	};
 
+	type Status = string | undefined | null;
+	type StatusChangedDetail = {
+		filePath: string;
+		id: string;
+		line0: number;
+		fromStatus: Status;
+		toStatus: Status;
+	};
+
+	const dispatchStatusChanged = (detail: StatusChangedDetail) => {
+		try {
+			document.dispatchEvent(
+				new CustomEvent<StatusChangedDetail>(
+					"agile:task-status-changed" as any,
+					{ detail }
+				)
+			);
+		} catch (e) {
+			// Non-fatal
+			console.warn(
+				"[task-index] dispatch agile:task-status-changed failed",
+				e
+			);
+		}
+	};
+
+	const flatten = (nodes: TaskNode[]): TaskNode[] => {
+		const out: TaskNode[] = [];
+		const walk = (n: TaskNode) => {
+			out.push(n);
+			for (const c of (n.children as TaskNode[]) ?? []) walk(c);
+		};
+		for (const n of nodes) walk(n);
+		return out;
+	};
+
+	const mapById = (nodes: TaskNode[]): Map<string, TaskNode> => {
+		const m = new Map<string, TaskNode>();
+		for (const n of flatten(nodes)) {
+			if (n._uniqueId) m.set(n._uniqueId, n);
+		}
+		return m;
+	};
+
+	const norm = (s: Status): string => {
+		const v = (s ?? "").toString();
+		return v.length ? v.toLowerCase() : "";
+	};
+
 	return {
 		async buildAll() {
 			const files = app.getMarkdownFiles();
@@ -93,8 +142,45 @@ export function createTaskIndexService(
 
 		async updateFile(file) {
 			if (!isMarkdown(file)) return;
+
+			// Capture previous snapshot before re-parse
+			const prevSnap = repo.getByFile(file.path);
+
 			const snapshot = await parseOne(file);
 			if (!snapshot) return;
+
+			// Emit status-change events before updating repo
+			if (prevSnap?.lists?.length) {
+				try {
+					const prevMap = mapById(prevSnap.lists);
+					const nextFlat = flatten(snapshot.lists);
+					for (const next of nextFlat) {
+						// We only care about checkbox lines
+						if (!next.status) continue;
+						const prev = next._uniqueId
+							? prevMap.get(next._uniqueId)
+							: undefined;
+						const prevStatus = prev?.status ?? "";
+						const nextStatus = next.status ?? "";
+						if (norm(prevStatus) !== norm(nextStatus)) {
+							dispatchStatusChanged({
+								filePath: snapshot.filePath,
+								id: next._uniqueId!,
+								line0: next.position.start.line,
+								fromStatus: prevStatus,
+								toStatus: nextStatus,
+							});
+						}
+					}
+				} catch (e) {
+					console.warn(
+						"[task-index] failed to diff for status changes",
+						e
+					);
+				}
+			}
+
+			// Update repository after events
 			repo.upsertFileSnapshot(snapshot);
 		},
 
