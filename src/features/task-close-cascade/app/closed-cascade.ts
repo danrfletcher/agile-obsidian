@@ -1,9 +1,22 @@
 import type { App, Plugin } from "obsidian";
 import { MarkdownView, Notice, TFile } from "obsidian";
 import type { TaskIndexService } from "@features/task-index";
-import { getCheckboxStatusChar, indentWidth, isListLine, isTaskLine } from "@platform/obsidian";
+import {
+	getCheckboxStatusChar,
+	indentWidth,
+	isListLine,
+	isTaskLine,
+} from "@platform/obsidian";
 import { escapeRegExp } from "@utils";
-import { appendEmojiWithDate, CANCELLED_EMOJI, COMPLETED_EMOJI, hasEmoji, ISO_DATE_RE, removeEmoji, setCheckboxStatusChar } from "@features/task-close-manager";
+import {
+	appendEmojiWithDate,
+	CANCELLED_EMOJI,
+	COMPLETED_EMOJI,
+	hasEmoji,
+	ISO_DATE_RE,
+	removeEmoji,
+} from "@features/task-close-manager";
+import { setCheckboxStatusChar } from "@features/task-status-sequence";
 
 // ---------- types ----------
 export type ClosedCascadePorts = { taskIndex?: TaskIndexService };

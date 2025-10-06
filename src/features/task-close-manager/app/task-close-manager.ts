@@ -1,5 +1,5 @@
 import { toYyyyMmDd } from "@features/task-date-manager";
-import { getCheckboxStatusChar, isTaskLine } from "@platform/obsidian";
+import { getCheckboxStatusChar } from "@platform/obsidian";
 import type { App, Plugin, TFile } from "obsidian";
 import { MarkdownView, TFile as ObsidianTFile } from "obsidian";
 import {
@@ -8,30 +8,32 @@ import {
 	COMPLETED_EMOJI,
 	hasEmoji,
 	removeEmoji,
-	setCheckboxStatusChar,
 } from "../domain/task-close-utils";
+import {
+	getNextStatusChar,
+	DEFAULT_STATUS_SEQUENCE,
+	type StatusChar,
+} from "@features/task-status-sequence";
 
 /**
  * Task Close Manager
  * - Listens to:
- *   - agile:task-status-changed (emitted by task-index) for headless/non-editor changes
  *   - editor-change for immediate, in-editor changes
- * - Appends/removes ✅/❌ date markers according to status transitions
- * - Emits:
- *   - agile:task-completed-date-added
- *   - agile:task-cancelled-date-added
+ *   - agile:task-status-changed (emitted by task-status-sequence/headless) for non-editor changes
+ * - Appends/removes ✅/❌ date markers according to status transitions to/from [x] and [-]
+ *
+ * Responsibility separation:
+ * - This module DOES NOT change the checkbox status character.
+ * - Status progression is handled entirely by @features/task-status-sequence.
  *
  * Notes on suppression and reliability:
  * - Suppression is used to avoid double-writing when the index re-parses after our edits.
- * - We DO NOT suppress the immediate editor-change path so user toggles are always handled instantly.
- * - We DO suppress handling of 'to x'/'to -' events from the index (to avoid duplicates),
- *   but we allow 'reopen' (to neither x nor -) events even during suppression, so that reopening
- *   right after completion/cancellation reliably removes the date.
  *
  * Cursor preservation:
  * - When we modify a line in the active editor, we preserve the user's cursor/selection if it was on
  *   that line, clamping to the new line length. This prevents the caret from jumping to column 0.
  */
+
 function removeAllMarkers(line: string): string {
 	let out = line;
 	out = removeEmoji(out, COMPLETED_EMOJI);
@@ -126,7 +128,6 @@ export function wireTaskCloseManager(app: App, plugin: Plugin) {
 		const selectionOnLine =
 			hasCursorAPI &&
 			(from.line === line0 || to.line === line0) &&
-			// Only attempt to restore if selection is entirely within the same line (common typing case)
 			from.line === to.line;
 
 		const orig = editor.getLine(line0) ?? "";
@@ -144,7 +145,6 @@ export function wireTaskCloseManager(app: App, plugin: Plugin) {
 		// Restore selection/caret if it was on this line
 		if (selectionOnLine) {
 			try {
-				// Clamp to the new line length
 				const newLen = updated.length;
 				const newFromCh = Math.max(
 					0,
@@ -204,49 +204,47 @@ export function wireTaskCloseManager(app: App, plugin: Plugin) {
 		return { beforeLines: lines.slice(), didChange: true };
 	}
 
+	/**
+	 * Compute desired next status according to our default circular sequence.
+	 */
+	function desiredNextStatus(prev: string | null | undefined): StatusChar {
+		return getNextStatusChar(prev ?? " ", DEFAULT_STATUS_SEQUENCE);
+	}
+
 	// 1) Immediate path for open editor changes (never blocked by suppression)
 	const detectTransitions = (
 		prevLines: string[],
 		nextLines: string[]
 	): Array<{
 		line0: number;
-		kind: "toCompleted" | "toCancelled" | "reopened";
+		before: string; // previous checkbox char
+		after: string; // new checkbox char after user action (Obsidian default or manual edit)
+		desired: StatusChar; // what we want according to our sequence
 	}> => {
 		const maxLen = Math.max(prevLines.length, nextLines.length);
 		const changes: Array<{
 			line0: number;
-			kind: "toCompleted" | "toCancelled" | "reopened";
+			before: string;
+			after: string;
+			desired: StatusChar;
 		}> = [];
 		let inspected = 0;
 
 		for (let i = 0; i < maxLen; i++) {
-			const before = prevLines[i] ?? "";
-			const after = nextLines[i] ?? "";
-			if (before === after) continue;
+			const beforeLine = prevLines[i] ?? "";
+			const afterLine = nextLines[i] ?? "";
+			if (beforeLine === afterLine) continue;
 
-			// Only consider checkbox task lines
-			const wasTask = isTaskLine(before);
-			const isTask = isTaskLine(after);
-			if (!wasTask && !isTask) {
-				if (++inspected > 500) break;
-				continue;
-			}
-
-			const b = (getCheckboxStatusChar(before) ?? "").toLowerCase();
-			const a = (getCheckboxStatusChar(after) ?? "").toLowerCase();
+			const b = (getCheckboxStatusChar(beforeLine) ?? "").toLowerCase();
+			const a = (getCheckboxStatusChar(afterLine) ?? "").toLowerCase();
 
 			if (b === a) {
 				if (++inspected > 500) break;
 				continue;
 			}
 
-			if (a === "x") {
-				changes.push({ line0: i, kind: "toCompleted" });
-			} else if (a === "-") {
-				changes.push({ line0: i, kind: "toCancelled" });
-			} else if (b === "x" || b === "-") {
-				changes.push({ line0: i, kind: "reopened" });
-			}
+			const d = desiredNextStatus(b);
+			changes.push({ line0: i, before: b, after: a, desired: d });
 
 			if (++inspected > 500) break;
 		}
@@ -282,18 +280,41 @@ export function wireTaskCloseManager(app: App, plugin: Plugin) {
 		const last = transitions[transitions.length - 1];
 		const today = toYyyyMmDd(new Date());
 
+		// Decide the resulting "kind" from our desired status (not Obsidian's)
+		const desired = last.desired;
+		const prev = last.before;
+
+		type Kind = "toCompleted" | "toCancelled" | "reopened" | "none";
+
+		// Only add/remove dates when the observed "after" matches our desired closed state,
+		// or when the desired indicates a reopen from a closed state.
+		let kind: Kind = "none";
+		if (desired === "x" && last.after === "x") kind = "toCompleted";
+		else if (desired === "-" && last.after === "-") kind = "toCancelled";
+		else if (
+			(prev === "x" || prev === "-") &&
+			(desired === " " || desired === "/")
+		)
+			kind = "reopened";
+
+		if (kind === "none") {
+			// Do nothing; either not a closed transition, or Obsidian's default toggle
+			// that will be corrected by task-status-sequence.
+			viewSnapshots.set(view, { path, lines: nextLines });
+			return;
+		}
+
 		const mutateForKind =
-			(kind: "toCompleted" | "toCancelled" | "reopened") =>
+			(target: Kind) =>
 			(orig: string): string | null => {
 				// Ensure acting on a checkbox line
 				const present = getCheckboxStatusChar(orig);
 				if (present == null) return null;
 
-				if (kind === "toCompleted") {
-					// Append ✅ date if not already present; normalize checkbox to [x]
+				if (target === "toCompleted") {
+					// Append ✅ date if not already present; do NOT change checkbox char here
 					if (hasEmoji(orig, COMPLETED_EMOJI)) return null;
-					let updated = setCheckboxStatusChar(orig, "x");
-					updated = removeEmoji(updated, CANCELLED_EMOJI);
+					let updated = removeEmoji(orig, CANCELLED_EMOJI);
 					updated = removeEmoji(updated, COMPLETED_EMOJI);
 					updated = appendEmojiWithDate(
 						updated,
@@ -302,10 +323,9 @@ export function wireTaskCloseManager(app: App, plugin: Plugin) {
 					);
 					return updated;
 				}
-				if (kind === "toCancelled") {
+				if (target === "toCancelled") {
 					if (hasEmoji(orig, CANCELLED_EMOJI)) return null;
-					let updated = setCheckboxStatusChar(orig, "-");
-					updated = removeEmoji(updated, COMPLETED_EMOJI);
+					let updated = removeEmoji(orig, COMPLETED_EMOJI);
 					updated = removeEmoji(updated, CANCELLED_EMOJI);
 					updated = appendEmojiWithDate(
 						updated,
@@ -314,7 +334,7 @@ export function wireTaskCloseManager(app: App, plugin: Plugin) {
 					);
 					return updated;
 				}
-				// Reopen: strip both markers
+				// Reopen: strip both markers (leave current char untouched)
 				const cleaned = removeAllMarkers(orig);
 				return cleaned === orig ? null : cleaned;
 			};
@@ -322,7 +342,7 @@ export function wireTaskCloseManager(app: App, plugin: Plugin) {
 		const result = await modifyInEditor(
 			view,
 			last.line0,
-			mutateForKind(last.kind)
+			mutateForKind(kind)
 		);
 
 		// Update snapshot from the editor after our write
@@ -331,16 +351,15 @@ export function wireTaskCloseManager(app: App, plugin: Plugin) {
 		for (let i = 0; i < lc; i++) refreshed.push(editor.getLine(i));
 		viewSnapshots.set(view, { path, lines: refreshed });
 
-		// Emit events only if we actually added a date (not on reopen)
+		// Emit events only if we actually added a date (completed/cancelled)
 		if (
 			result?.didChange &&
-			(last.kind === "toCompleted" || last.kind === "toCancelled")
+			(kind === "toCompleted" || kind === "toCancelled")
 		) {
 			// Suppress feedback loop for the upcoming file-level modify/index parse
 			suppressPath(path, 1200);
-			const kind =
-				last.kind === "toCompleted" ? "completed" : "cancelled";
-			emitDateAdded(kind, path, last.line0, today, result.beforeLines);
+			const kindOut = kind === "toCompleted" ? "completed" : "cancelled";
+			emitDateAdded(kindOut, path, last.line0, today, result.beforeLines);
 		}
 	};
 
@@ -401,7 +420,7 @@ export function wireTaskCloseManager(app: App, plugin: Plugin) {
 		})
 	);
 
-	// 2) Event-driven path from task-index for headless/non-editor changes
+	// 2) Event-driven path from task-status-sequence for headless/non-editor changes
 	const onStatusChanged = async (e: Event) => {
 		const ce = e as CustomEvent<StatusChangedDetail>;
 		const detail = ce?.detail;
@@ -426,8 +445,7 @@ export function wireTaskCloseManager(app: App, plugin: Plugin) {
 
 				if (toStatus === "x") {
 					if (hasEmoji(orig, COMPLETED_EMOJI)) return null;
-					let updated = setCheckboxStatusChar(orig, "x");
-					updated = removeEmoji(updated, CANCELLED_EMOJI);
+					let updated = removeEmoji(orig, CANCELLED_EMOJI);
 					updated = removeEmoji(updated, COMPLETED_EMOJI);
 					updated = appendEmojiWithDate(
 						updated,
@@ -438,8 +456,7 @@ export function wireTaskCloseManager(app: App, plugin: Plugin) {
 				}
 				if (toStatus === "-") {
 					if (hasEmoji(orig, CANCELLED_EMOJI)) return null;
-					let updated = setCheckboxStatusChar(orig, "-");
-					updated = removeEmoji(updated, COMPLETED_EMOJI);
+					let updated = removeEmoji(orig, COMPLETED_EMOJI);
 					updated = removeEmoji(updated, CANCELLED_EMOJI);
 					updated = appendEmojiWithDate(
 						updated,
@@ -448,7 +465,7 @@ export function wireTaskCloseManager(app: App, plugin: Plugin) {
 					);
 					return updated;
 				}
-				// Reopen
+				// Support non-closed states from status sequence ("/" and " ") and generic reopen:
 				const cleaned = removeAllMarkers(orig);
 				return cleaned === orig ? null : cleaned;
 			};
@@ -463,19 +480,15 @@ export function wireTaskCloseManager(app: App, plugin: Plugin) {
 		) {
 			result = await modifyInEditor(activeView, line0, mutateForTo(to));
 			// Refresh snapshot if this view is tracked
-			const snap = viewSnapshots.get(activeView);
-			if (snap && snap.path === filePath) {
-				const editor: any = (activeView as any).editor;
-				if (editor) {
-					const refreshed: string[] = [];
-					const lc = editor.lineCount();
-					for (let i = 0; i < lc; i++)
-						refreshed.push(editor.getLine(i));
-					viewSnapshots.set(activeView, {
-						path: filePath,
-						lines: refreshed,
-					});
-				}
+			const editor: any = (activeView as any).editor;
+			if (editor) {
+				const refreshed: string[] = [];
+				const lc = editor.lineCount();
+				for (let i = 0; i < lc; i++) refreshed.push(editor.getLine(i));
+				viewSnapshots.set(activeView, {
+					path: filePath,
+					lines: refreshed,
+				});
 			}
 		} else {
 			result = await modifyHeadless(filePath, line0, mutateForTo(to));

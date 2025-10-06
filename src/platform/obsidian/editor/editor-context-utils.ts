@@ -89,17 +89,18 @@ export function findTargetLineFromClick(
  * Determine if a given line is a Markdown task line.
  *
  * Supported:
- * - "- [ ]", "- [x]", "* [ ]", "+ [ ]", "1. [ ]" with arbitrary indentation
+ * - "- [ ]", "- [x]/[X]", "- [-]", "- [/]" and similarly for "*", "+", "1." etc. with arbitrary indentation
  * - Treats tabs as 4 spaces
  *
  * Note:
- * - This is broader than isUncheckedTaskLine; it matches both checked and unchecked tasks.
+ * - This is broader than isUncheckedTaskLine; it matches both checked and unchecked tasks,
+ *   including cancelled (-) and in-progress (/).
  * @param line A single line of text.
  */
 export function isTaskLine(line: string): boolean {
 	const expanded = line.replace(/\t/g, "    ");
-	// optional indent, list marker (- * + or 1.), space, then [ ] or [x]/[X], then at least one space or end
-	return /^\s*(?:[-*+]|\d+\.)\s+\[(?: |x|X)\](?:\s+|$)/.test(expanded);
+	// optional indent, list marker (- * + or 1.), space, then [ ] or [x]/[X]/[-][/], then at least one space or end
+	return /^\s*(?:[-*+]|\d+\.)\s+\[(?: |x|X|-|\/)\](?:\s+|$)/.test(expanded);
 }
 
 /**

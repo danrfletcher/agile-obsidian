@@ -31,6 +31,7 @@ import {
 } from "@features/task-close-cascade";
 import { registerTaskMetadataCleanup } from "@features/task-metadata-cleanup";
 import { wireTaskCloseManager } from "@features/task-close-manager";
+import { wireTaskStatusSequence } from "@features/task-status-sequence";
 
 // Strong singleton-per-run progress UI (per view)
 class ProgressNotice {
@@ -499,7 +500,11 @@ export async function registerEvents(container: Container) {
 	try {
 		// Custom-event adapter (still available for manual commands)
 		wireTaskClosedCascade(app, plugin);
-		// New: Task Close Manager wiring (replaces Obsidian Tasks for dates)
+
+		// 1) Status sequence first: ensures our checkbox char overrides Obsidian defaults immediately
+		wireTaskStatusSequence(app, plugin);
+
+		// 2) Then date manager: reacts to closed/reopen transitions immediately and via events
 		wireTaskCloseManager(app, plugin);
 
 		// Note: Removed passive observer so cascade runs AFTER manager adds dates
