@@ -7,7 +7,7 @@ import { getDisplayNameFromAlias } from "@shared/identity";
 import {
 	indentWidth,
 	isListLine,
-} from "@platform/obsidian/editor/editor-context-utils";
+} from "@platform/obsidian";
 
 // ---------- helpers ----------
 function getExplicitAssigneeSlugFromText(line: string): string | null {
