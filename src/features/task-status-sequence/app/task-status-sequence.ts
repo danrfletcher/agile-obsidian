@@ -17,17 +17,31 @@ export const DEFAULT_STATUS_SEQUENCE: ReadonlyArray<StatusChar> = [
 ];
 
 /**
+ * Normalize a status-like input into a canonical single-char string.
+ * - Treats "" (empty) as " " (unchecked) so that sequence advances to "/".
+ * - Downcases "X" to "x".
+ */
+function normalizeStatusInput(current: string | null | undefined): string {
+	const s = (current ?? "").toString().toLowerCase();
+	if (s === "" || s === " ") return " ";
+	if (s === "x" || s === "-" || s === "/") return s;
+	// Any other single-char custom code (e.g. "c") stays as-is for eventing,
+	// but when computing "next" for clicks we will treat unknowns as " ".
+	return s.length === 1 ? s : " ";
+}
+
+/**
  * Return the next status char in a circular sequence.
- * If current is not found, start from " ".
+ * If current is not found (including ""), start from " ".
  */
 export function getNextStatusChar(
 	current: string | null | undefined,
 	sequence: ReadonlyArray<StatusChar> = DEFAULT_STATUS_SEQUENCE
 ): StatusChar {
-	const norm = (current ?? "").toLowerCase();
-	const canonical = norm === "x" ? "x" : (norm as StatusChar | "");
+	const norm = normalizeStatusInput(current);
+	const canonical = (norm === "" ? " " : norm) as string;
 	const idx = sequence.findIndex((c) => c === canonical);
-	if (idx < 0) return sequence[0]; // treat unknown as " "
+	if (idx < 0) return sequence[0]; // treat unknown/custom as " "
 	const next = (idx + 1) % sequence.length;
 	return sequence[next];
 }
@@ -246,10 +260,11 @@ export async function advanceTaskStatusForTaskItem(params: {
  * follows our custom circular sequence. This module writes the checkbox status
  * immediately, then emits "agile:task-status-changed" for downstream consumers.
  *
- * IMPORTANT: This overrides Obsidian's default toggle (" " ↔ "x") by
- * immediately replacing with our desired char. Manual typing inside [ ]
- * is respected: if the user types one of our supported chars directly,
- * we do not revert it; we still emit the event for downstream handling.
+ * IMPORTANT:
+ * - Overrides Obsidian's default toggle (" " ↔ "x") AND also overrides toggles
+ *   from custom states (e.g., "/" or "-") when the change was initiated by a click.
+ * - Allows MANUAL TYPING of any custom code inside [ ] (e.g., - [c]) without reverting it.
+ *   Only click-driven toggles are overridden.
  */
 export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 	// Track per-view snapshots to diff line changes
@@ -257,6 +272,13 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 		MarkdownView,
 		{ path: string; lines: string[] }
 	>();
+
+	// Track recent click intent per-view to disambiguate clicks vs manual typing
+	const recentClick = new WeakMap<
+		MarkdownView,
+		{ line0: number; ts: number }
+	>();
+	const CLICK_INTENT_MS = 600;
 
 	const collectLines = (editor: Editor): string[] => {
 		const out: string[] = [];
@@ -270,8 +292,8 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 		nextLines: string[]
 	): Array<{
 		line0: number;
-		before: string; // previous checkbox char
-		after: string; // new checkbox char after user action (Obsidian default or manual edit)
+		before: string; // raw previous checkbox char ('' if none/space)
+		after: string; // raw new checkbox char
 	}> => {
 		const maxLen = Math.max(prevLines.length, nextLines.length);
 		const changes: Array<{
@@ -286,20 +308,25 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 			const afterLine = nextLines[i] ?? "";
 			if (beforeLine === afterLine) continue;
 
-			const b = (getCheckboxStatusChar(beforeLine) ?? "").toLowerCase();
-			const a = (getCheckboxStatusChar(afterLine) ?? "").toLowerCase();
+			// Use raw chars for detection; '' means unchecked/space or not a checkbox.
+			const bRaw = (getCheckboxStatusChar(beforeLine) ?? "")
+				.toString()
+				.toLowerCase();
+			const aRaw = (getCheckboxStatusChar(afterLine) ?? "")
+				.toString()
+				.toLowerCase();
 
 			// Only care when checkbox char actually changed between snapshots
-			if (b === a) {
+			if (bRaw === aRaw) {
 				if (++inspected > 500) break;
 				continue;
 			}
 			// Only consider if at least one side is a checkbox line
-			if (!b && !a) {
+			if (!bRaw && !aRaw) {
 				if (++inspected > 500) break;
 				continue;
 			}
-			changes.push({ line0: i, before: b, after: a });
+			changes.push({ line0: i, before: bRaw, after: aRaw });
 
 			if (++inspected > 500) break;
 		}
@@ -380,12 +407,87 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 			return;
 		}
 
+		// If we have a recent click intent on this view, try to enforce sequence there.
+		const intent = recentClick.get(view);
+		const now = Date.now();
+		if (intent && now - intent.ts <= CLICK_INTENT_MS) {
+			const match = transitions.find((t) => t.line0 === intent.line0);
+			if (match) {
+				// Canonicalize chars
+				const before = normalizeStatusInput(match.before);
+				const after = normalizeStatusInput(match.after);
+				const desired = getNextStatusChar(
+					before ?? " ",
+					DEFAULT_STATUS_SEQUENCE
+				);
+
+				// If already at desired (e.g. user typed quickly), emit and move on.
+				if (after === desired) {
+					try {
+						document.dispatchEvent(
+							new CustomEvent(
+								"agile:task-status-changed" as any,
+								{
+									detail: {
+										filePath: path,
+										id: "",
+										line0: match.line0,
+										fromStatus: before,
+										toStatus: desired,
+									},
+								}
+							)
+						);
+					} catch {}
+					viewSnapshots.set(view, { path, lines: nextLines });
+				} else {
+					// Enforce our desired next state for click-driven change, regardless of what Obsidian toggled to.
+					const changed = applyDesiredToEditor(
+						editor,
+						match.line0,
+						desired
+					);
+
+					// Refresh snapshot post-write to prevent loops
+					const refreshed = collectLines(editor);
+					viewSnapshots.set(view, { path, lines: refreshed });
+
+					// Emit event for downstream consumers
+					try {
+						document.dispatchEvent(
+							new CustomEvent(
+								"agile:task-status-changed" as any,
+								{
+									detail: {
+										filePath: path,
+										id: "",
+										line0: match.line0,
+										fromStatus: changed.from,
+										toStatus: desired,
+									},
+								}
+							)
+						);
+					} catch {}
+				}
+				// Clear this intent so it doesn't apply twice
+				recentClick.delete(view);
+				return;
+			}
+			// If no matching transition for the intended line, fall through to generic handling.
+		}
+
+		// Generic handling (manual typing, programmatic changes, or non-intended lines)
 		// Act on the most recent change only
 		const last = transitions[transitions.length - 1];
-		const before = last.before;
-		const after = last.after;
+		const beforeRaw = last.before; // '' possible for " "
+		const afterRaw = last.after;
 
-		// If we cannot determine a previous checkbox char, skip
+		// Canonical for logic: map '' → ' '
+		const before = normalizeStatusInput(beforeRaw);
+		const after = normalizeStatusInput(afterRaw);
+
+		// If we cannot determine anything useful, bail
 		if (!before && !after) {
 			viewSnapshots.set(view, { path, lines: nextLines });
 			return;
@@ -397,11 +499,13 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 			DEFAULT_STATUS_SEQUENCE
 		);
 
-		// Respect manual typing: if the user typed one of our supported chars directly,
-		// do not overwrite it; still emit an event so downstream can react.
+		// Supported set for sequence-managed states
 		const SUPPORTED = new Set<StatusChar>([" ", "/", "x", "-"]);
 		const afterIsSupported = SUPPORTED.has(after as StatusChar);
 
+		// Click-driven default toggle detection used to be here,
+		// but we now rely on recentClick to decide intent. Without a recent click,
+		// we treat as manual typing and respect the user's value.
 		if (afterIsSupported && after === desired) {
 			// Already at desired; emit event for downstream consumers
 			try {
@@ -421,38 +525,7 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 			return;
 		}
 
-		// If the change looks like Obsidian's default toggle (" " → "x" or "x" → " "),
-		// or after is unsupported, enforce our desired.
-		const looksLikeDefaultToggle =
-			(before === " " && after === "x") ||
-			(before === "x" && after === " ");
-
-		if (looksLikeDefaultToggle || !afterIsSupported) {
-			const changed = applyDesiredToEditor(editor, last.line0, desired);
-
-			// Refresh snapshot post-write to prevent loops
-			const refreshed = collectLines(editor);
-			viewSnapshots.set(view, { path, lines: refreshed });
-
-			// Emit event for downstream consumers
-			try {
-				document.dispatchEvent(
-					new CustomEvent("agile:task-status-changed" as any, {
-						detail: {
-							filePath: path,
-							id: "",
-							line0: last.line0,
-							fromStatus: changed.from,
-							toStatus: desired,
-						},
-					})
-				);
-			} catch {}
-			return;
-		}
-
-		// Otherwise, respect the user-typed supported char even if it doesn't match our desired.
-		// Emit event using the user's chosen char.
+		// Respect manual typing (including unsupported custom codes like "c")
 		try {
 			document.dispatchEvent(
 				new CustomEvent("agile:task-status-changed" as any, {
@@ -527,4 +600,32 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 			} catch {}
 		})
 	);
+
+	// Capture click intent inside the active MarkdownView so we can distinguish clicks from typing.
+	const onPointerDown = (evt: PointerEvent | MouseEvent) => {
+		try {
+			const view = app.workspace.getActiveViewOfType(MarkdownView);
+			if (!view || !view.file) return;
+			const editor: any = (view as any).editor;
+			if (!editor) return;
+			// Only if the event originated inside this view
+			const container: HTMLElement | null =
+				(view as any).contentEl || (view as any).containerEl || null;
+			if (!container || !container.contains(evt.target as Node)) return;
+
+			const line0 = findLineFromEvent(editor, evt as any);
+			if (typeof line0 !== "number") return;
+
+			// Optional: ensure the target line is a checkbox; lightweight check
+			const lineText = editor.getLine(line0) ?? "";
+			if (getCheckboxStatusChar(lineText) == null) return;
+
+			recentClick.set(view, { line0, ts: Date.now() });
+		} catch {
+			/* ignore */
+		}
+	};
+
+	plugin.registerDomEvent(document, "pointerdown", onPointerDown as any);
+	plugin.registerDomEvent(document, "mousedown", onPointerDown as any);
 }
