@@ -10,9 +10,8 @@ import {
 	getAgileArtifactType,
 	isAssignedToMemberOrTeam,
 	isAssignedToAnyUser,
-	isScheduledForToday,
 } from "@features/task-filter";
-import { isRelevantToday } from "@features/task-date-manager";
+import { isRelevantToday, recurringPatternMatchesToday } from "@features/task-date-manager";
 import { buildFullSubtree } from "@features/task-tree-builder";
 import { attachSectionFolding } from "@features/task-tree-fold";
 
@@ -101,7 +100,7 @@ export function processAndRenderResponsibilities(
 	// Respect DOW schedules like "🗓️ Sundays"
 	allRecurring = allRecurring.filter((task) => {
 		const hasCalendar = /🗓️/.test(task.text);
-		return !hasCalendar || isScheduledForToday(task);
+		return !hasCalendar || recurringPatternMatchesToday(task);
 	});
 
 	// Unique by _uniqueId
