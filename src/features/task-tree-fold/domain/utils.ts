@@ -9,9 +9,15 @@ import {
  * Map Obsidian task status to grouping buckets:
  * 0 = unchecked " ", 1 = partial "/", 2 = all others.
  */
+/**
+ * Map Obsidian task status to grouping buckets for sorting:
+ * 0 = all others, 1 = in progress "/", 2 = unstarted " ".
+ */
 export function groupByStatus(task: TaskItem): number {
 	const s = task.status ?? "";
-	return s === " " ? 0 : s === "/" ? 1 : 2;
+	if (s === "/") return 1;
+	if (s === " ") return 2;
+	return 0;
 }
 
 /**

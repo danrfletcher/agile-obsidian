@@ -3,7 +3,8 @@ import type { TaskItem } from "@features/task-index";
 import { defaultTaskComparator } from "../domain/utils";
 import { animateClose, animateOpen } from "./animations";
 import { getAncestorWraps } from "./dom-utils";
-import { getAgileArtifactType } from "@features/task-filter";
+import { getAgileArtifactType, isInProgress } from "@features/task-filter";
+import { stripListItems } from "@features/task-tree-builder";
 
 /**
 Lifecycle-aware event registration. Use Obsidian's registerDomEvent underneath.
@@ -30,6 +31,68 @@ interface SectionFoldingDeps {
 		selectedAlias: string | null
 	) => void;
 	registerDomEvent?: RegisterDomEvent;
+}
+
+/**
+ * Session-scoped fold state persistence.
+ * Requirements:
+ *  - Persist between re-renders and when the dashboard is closed/reopened
+ *  - Reset when Obsidian is closed/reopened entirely
+ *
+ * Implementation: window.sessionStorage
+ * Key format: "agile-dashboard:fold-state:v1" -> array<string> of "{section}::{uid}"
+ */
+const SESSION_STORE_KEY = "agile-dashboard:fold-state:v1";
+
+function safeLoadFoldSet(): Set<string> {
+	try {
+		const raw = window.sessionStorage?.getItem(SESSION_STORE_KEY);
+		if (!raw) return new Set<string>();
+		const arr = JSON.parse(raw);
+		if (Array.isArray(arr)) {
+			return new Set(arr.map((s) => String(s)));
+		}
+		return new Set<string>();
+	} catch {
+		return new Set<string>();
+	}
+}
+
+function safeSaveFoldSet(set: Set<string>): void {
+	try {
+		const arr = Array.from(set);
+		window.sessionStorage?.setItem(SESSION_STORE_KEY, JSON.stringify(arr));
+	} catch {
+		/* ignore */
+	}
+}
+
+let foldSetCache: Set<string> | null = null;
+function getFoldSet(): Set<string> {
+	if (foldSetCache) return foldSetCache;
+	foldSetCache = safeLoadFoldSet();
+	return foldSetCache;
+}
+
+function makeFoldKey(sectionName: string, uid: string): string {
+	return `${(sectionName || "").toLowerCase()}::${uid}`;
+}
+
+function isExpandedStored(sectionName: string, uid: string): boolean {
+	const set = getFoldSet();
+	return set.has(makeFoldKey(sectionName, uid));
+}
+
+function markExpanded(sectionName: string, uid: string): void {
+	const set = getFoldSet();
+	set.add(makeFoldKey(sectionName, uid));
+	safeSaveFoldSet(set);
+}
+
+function unmarkExpanded(sectionName: string, uid: string): void {
+	const set = getFoldSet();
+	set.delete(makeFoldKey(sectionName, uid));
+	safeSaveFoldSet(set);
 }
 
 /**
@@ -79,6 +142,16 @@ Expands direct children upon toggle.
 Important: We only attach toggles to LIs that do NOT already display a direct child UL.
 This ensures we never "fold away" currently visible parts of the task tree,
 and only allow additional expansion from bottom-level items.
+
+New: Persist expanded/collapsed state in sessionStorage so it survives:
+- re-renders
+- closing/reopening dashboard view
+But resets when Obsidian is closed and reopened (sessionStorage semantics).
+
+Update: When restoring from persisted state, expand without animation to avoid replaying the unfold animation on re-render.
+
+Change: Only display in-progress children (via isInProgress). If no in-progress children, do not render a chevron.
+Also strip list items before rendering unfolded children (via stripListItems).
 */
 export function attachChevronSet(
 	ul: HTMLElement,
@@ -127,7 +200,6 @@ export function attachChevronSet(
 
 		// Resolve the associated task and its UID (using fallback path+line resolution)
 		const task = resolveTaskFromLi(liEl, taskMap);
-		
 		const uid = task?._uniqueId || liEl.getAttribute("data-task-uid") || "";
 		if (!task || !uid) {
 			// No resolvable task/uid — cannot find children reliably; skip.
@@ -144,8 +216,10 @@ export function attachChevronSet(
 		).forEach((n) => n.remove());
 
 		// Compute direct children:
-		// - Include ALL direct children (do not filter by completed/cancelled)
-		// - Optionally gate by artifact type on first level if childrenType provided
+		// - Gate by artifact type when provided for the first level
+		// - Filter to in-progress only (via isInProgress)
+		// - Deduplicate
+		// - Sort via defaultTaskComparator (status buckets then by line)
 		const computeChildren = (): TaskItem[] => {
 			let raw: TaskItem[] = [];
 			if (options.getChildren) {
@@ -159,9 +233,10 @@ export function attachChevronSet(
 							options.childrenType
 					);
 				}
-				// Sort deterministically
-				raw = raw.slice().sort(defaultTaskComparator);
 			}
+
+			// Only in-progress children are eligible to display
+			raw = raw.filter((c) => isInProgress(c, taskMap, selectedAlias));
 
 			// Deduplicate:
 			// - Prefer _uniqueId when present
@@ -196,11 +271,14 @@ export function attachChevronSet(
 				seenKey.add(key);
 				unique.push(c);
 			}
-			return unique;
+
+			// Sort after filtering/deduplication
+			return unique.slice().sort(defaultTaskComparator);
 		};
 
 		const initialChildren = computeChildren();
 		if (initialChildren.length === 0) {
+			// No in-progress children => no chevron
 			liEl.setAttribute("data-children-expanded", "false");
 			return;
 		}
@@ -299,14 +377,18 @@ export function attachChevronSet(
 			capture: true,
 		});
 
-		const expand = () => {
+		const expand = (p?: { animate?: boolean }) => {
+			const animate = p?.animate !== false; // default true
 			if (liEl.getAttribute("data-children-expanded") === "true") return;
 
 			const children = computeChildren();
 			if (children.length === 0) return;
 
-			// Render direct children SHALLOWLY
-			const shallowChildren = children.map((c) => ({
+			// Strip list items from the tree items to be rendered
+			const strippedChildren = stripListItems(children);
+
+			// Render direct children SHALLOWLY after stripping list items
+			const shallowChildren = strippedChildren.map((c: TaskItem) => ({
 				...c,
 				children: [],
 			}));
@@ -329,7 +411,7 @@ export function attachChevronSet(
 			) as HTMLElement | null;
 			if (!generated) return;
 
-			// Wrap and animate open
+			// Wrap
 			const wrap = document.createElement("div");
 			wrap.className = "agile-children-collapse";
 			wrap.setAttribute("data-children-wrap-for", uid);
@@ -337,8 +419,24 @@ export function attachChevronSet(
 			wrap.appendChild(generated);
 			liEl.appendChild(wrap);
 
-			const ancestorWraps = getAncestorWraps(liEl);
-			animateOpen(wrap, ancestorWraps);
+			const applyChevronExpanded = () => {
+				const prevTransition = chevron.style.transition;
+				if (!animate) chevron.style.transition = "none";
+				chevron.style.transform = "rotate(90deg)";
+				if (!animate) {
+					// Force reflow to apply transform instantly, then restore transition
+					void chevron.offsetWidth;
+					chevron.style.transition = prevTransition;
+				}
+			};
+
+			if (animate) {
+				const ancestorWraps = getAncestorWraps(liEl);
+				animateOpen(wrap, ancestorWraps);
+			} else {
+				// No animation: show immediately
+				wrap.style.height = "auto";
+			}
 
 			// Attach next level chevrons (no type gating at deeper levels)
 			attachChevronSet(generated, deps, {
@@ -347,9 +445,12 @@ export function attachChevronSet(
 				getChildren: options.getChildren, // allow override deeper too
 			});
 
-			chevron.style.transform = "rotate(90deg)";
+			applyChevronExpanded();
 			liEl.setAttribute("data-children-expanded", "true");
 			hit.setAttribute("aria-expanded", "true");
+
+			// Persist expanded state
+			markExpanded(options.sectionName, uid);
 		};
 
 		const collapse = () => {
@@ -361,6 +462,8 @@ export function attachChevronSet(
 				chevron.style.transform = "rotate(0deg)";
 				liEl.setAttribute("data-children-expanded", "false");
 				hit.setAttribute("aria-expanded", "false");
+				// Persist collapsed state
+				unmarkExpanded(options.sectionName, uid);
 				return;
 			}
 
@@ -370,13 +473,15 @@ export function attachChevronSet(
 				chevron.style.transform = "rotate(0deg)";
 				liEl.setAttribute("data-children-expanded", "false");
 				hit.setAttribute("aria-expanded", "false");
+				// Persist collapsed state
+				unmarkExpanded(options.sectionName, uid);
 			});
 		};
 
 		const toggle = () => {
 			const expanded =
 				liEl.getAttribute("data-children-expanded") === "true";
-			expanded ? collapse() : expand();
+			expanded ? collapse() : expand({ animate: true });
 		};
 
 		const suppress = (ev: Event) => {
@@ -399,5 +504,16 @@ export function attachChevronSet(
 				toggle();
 			}
 		});
+
+		// Initialize from persisted state
+		const shouldBeExpanded = isExpandedStored(options.sectionName, uid);
+		if (shouldBeExpanded) {
+			// Expand without animation when restoring state to avoid replaying unfold animation after re-render.
+			expand({ animate: false });
+		} else {
+			liEl.setAttribute("data-children-expanded", "false");
+			chevron.style.transform = "rotate(0deg)";
+			hit.setAttribute("aria-expanded", "false");
+		}
 	});
 }
