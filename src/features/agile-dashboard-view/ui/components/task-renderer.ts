@@ -238,7 +238,6 @@ export function renderTaskTree(
 		cls: "agile-dashboard contains-task-list",
 	});
 	taskList.setAttribute("data-section", normalizedSection);
-	console.log("⚡ ~ taskList:", taskList);
 
 	tasks.forEach((task) => {
 		if (
