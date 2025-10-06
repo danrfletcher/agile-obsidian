@@ -31,7 +31,7 @@ import {
 } from "@features/task-close-cascade";
 import { registerTaskMetadataCleanup } from "@features/task-metadata-cleanup";
 import { wireTaskCloseManager } from "@features/task-close-manager";
-import { wireTaskStatusSequence } from "@features/task-status-sequence";
+import { wireTaskStatusSequence } from "@features/task-status-sequencer";
 
 // Strong singleton-per-run progress UI (per view)
 class ProgressNotice {

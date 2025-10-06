@@ -13,7 +13,7 @@ import {
 	getNextStatusChar,
 	DEFAULT_STATUS_SEQUENCE,
 	type StatusChar,
-} from "@features/task-status-sequence";
+} from "@features/task-status-sequencer";
 
 /**
  * Task Close Manager

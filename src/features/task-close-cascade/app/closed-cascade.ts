@@ -16,7 +16,7 @@ import {
 	ISO_DATE_RE,
 	removeEmoji,
 } from "@features/task-close-manager";
-import { setCheckboxStatusChar } from "@features/task-status-sequence";
+import { setCheckboxStatusChar } from "@features/task-status-sequencer";
 
 // ---------- types ----------
 export type ClosedCascadePorts = { taskIndex?: TaskIndexService };
