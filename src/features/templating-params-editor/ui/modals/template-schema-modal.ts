@@ -1,5 +1,8 @@
 import { App, Modal, Notice } from "obsidian";
-import type { ParamsSchema, ParamsSchemaField } from "@features/templating-engine";
+import type {
+	ParamsSchema,
+	ParamsSchemaField,
+} from "@features/templating-engine";
 import { resolveModalTitleFromSchema } from "../../app/params-editor-service";
 import { escapeHtml } from "@utils";
 
@@ -40,8 +43,6 @@ function filenameFromPath(filePath: string): string {
 let vaultIndexPromise: Promise<VaultIndex> | null = null;
 
 function detectBlockIdInLine(line: string): string | undefined {
-	// Detect a trailing ^id or anywhere with whitespace boundary near end
-	// Common convention: "... ^block-id"
 	const m =
 		/(?:^|\s)\^([a-zA-Z0-9-]{3,})\s*$/.exec(line) ||
 		/(?:^|\s)\^([a-zA-Z0-9-]{3,})\b/.exec(line);
@@ -49,7 +50,6 @@ function detectBlockIdInLine(line: string): string | undefined {
 }
 
 function toDisplayPath(filePath: string): string {
-	// Leave as-is (full path). Adjust if you prefer basename.
 	return filePath;
 }
 
@@ -90,7 +90,6 @@ async function buildVaultIndex(app: App): Promise<VaultIndex> {
 	const fileCandidates: FileCandidate[] = files.map(makeFileCandidate);
 
 	const blocks: BlockCandidate[] = [];
-	// Read files sequentially to avoid hammering I/O; can be optimized if needed
 	for (const f of files) {
 		try {
 			const content: string = await (app.vault as any).read(f);
@@ -98,11 +97,10 @@ async function buildVaultIndex(app: App): Promise<VaultIndex> {
 			for (let i = 0; i < lines.length; i++) {
 				const raw = lines[i];
 				if (!raw || !raw.trim()) continue;
-				// Treat every non-empty line as a potential linkable block
 				blocks.push(makeBlockCandidate(String(f.path), i, raw));
 			}
 		} catch {
-			// Best effort; skip unreadable files
+			// skip unreadable files
 		}
 	}
 
@@ -121,7 +119,6 @@ function ensureIndex(app: App): Promise<VaultIndex> {
 }
 
 function generateBlockId(): string {
-	// 8-char base36 id; adjust length/policy as needed
 	return Math.random().toString(36).slice(2, 10);
 }
 
@@ -143,14 +140,10 @@ async function ensureBlockIdOnLine(
 	}
 	let line = lines[lineIndex];
 
-	// If already has a block id, return it
 	const existing = detectBlockIdInLine(line);
 	if (existing) return existing;
 
-	// Generate a new block id and append to the end of the line with a separating space
 	let newId = generateBlockId();
-	// Avoid pathological collisions within same file
-	// (very unlikely, but we can ensure uniqueness by scanning lines for ^newId)
 	const isIdInFile = (id: string) =>
 		lines.some((ln) => new RegExp(`(?:^|\\s)\\^${id}(?:\\s|$)`).test(ln));
 	let attempts = 0;
@@ -159,7 +152,6 @@ async function ensureBlockIdOnLine(
 		attempts++;
 	}
 
-	// Append at end, keeping trailing spaces clean
 	line = line.replace(/\s+$/, "");
 	lines[lineIndex] = `${line} ^${newId}`;
 
@@ -169,16 +161,16 @@ async function ensureBlockIdOnLine(
 	return newId;
 }
 
-function createSuggestionList(container: HTMLElement): HTMLUListElement {
-	const ul = container.createEl("ul");
-	ul.style.position = "absolute";
-	ul.style.left = "0";
-	ul.style.right = "0";
-	ul.style.top = "100%";
-	ul.style.zIndex = "99999";
-	ul.style.maxHeight = "240px";
+/**
+ * Suggestion portal: render dropdown as a child of document.body to avoid clipping inside modals.
+ */
+function createSuggestionPortal(): HTMLUListElement {
+	const ul = document.createElement("ul");
+	ul.style.position = "fixed"; // attach to viewport; easy to align via rect
+	ul.style.zIndex = "999999"; // above modal
+	ul.style.maxHeight = "320px"; // reasonable cap
 	ul.style.overflowY = "auto";
-	ul.style.margin = "4px 0 0 0";
+	ul.style.margin = "0";
 	ul.style.padding = "6px";
 	ul.style.listStyle = "none";
 	ul.style.background = "var(--background-primary)";
@@ -186,6 +178,8 @@ function createSuggestionList(container: HTMLElement): HTMLUListElement {
 	ul.style.borderRadius = "6px";
 	ul.style.boxShadow = "var(--shadow-s)";
 	ul.style.display = "none";
+	ul.style.minWidth = "240px"; // keep usable width
+	document.body.appendChild(ul);
 	return ul;
 }
 
@@ -207,13 +201,11 @@ function filterSuggestions(
 	const q = normalizeQuery(rawQuery);
 	if (!q) return [];
 
-	// If user types something like "<fileQuery>^<blockQuery>" focus on blocks in matching files
 	const hatIdx = q.indexOf("^");
 	if (hatIdx >= 0) {
 		const fileQ = q.slice(0, hatIdx).trim();
 		const blockQ = q.slice(hatIdx + 1).trim();
 
-		// Filter blocks by file first, then block text
 		const inFiles =
 			fileQ.length > 0
 				? index.files
@@ -227,7 +219,7 @@ function filterSuggestions(
 
 		const candidates = index.blocks.filter((b) => {
 			const inFile =
-				!inFiles || inFiles.includes(b.filePath.toLowerCase()); // if no fileQ, accept all files
+				!inFiles || inFiles.includes(b.filePath.toLowerCase());
 			const blockOk =
 				!blockQ ||
 				b.matchText.includes(blockQ) ||
@@ -238,7 +230,6 @@ function filterSuggestions(
 		return candidates.slice(0, limit);
 	}
 
-	// Global search across both files and blocks
 	const files = index.files.filter(
 		(f) =>
 			f.matchText.includes(q) ||
@@ -251,7 +242,6 @@ function filterSuggestions(
 			(b.blockId ? b.blockId.toLowerCase().includes(q) : false)
 	);
 
-	// Interleave some files for convenience, then blocks
 	const out: SuggestionItem[] = [];
 	for (let i = 0; i < Math.min(files.length, 10); i++) out.push(files[i]);
 	for (let i = 0; i < blocks.length && out.length < limit; i++)
@@ -260,30 +250,23 @@ function filterSuggestions(
 }
 
 /**
- * Helpers for rendering block previews with HTML and minimal safety.
+ * Rendering helpers for block previews
  */
-
-// Basic test if a string likely contains HTML tags
 function looksLikeHtml(s: string): boolean {
 	return /<\/?[a-z][\s\S]*>/i.test(s);
 }
 
-// Minimal sanitizer: remove script/style tags, inline event handlers, and javascript: URIs
 function sanitizeHtml(raw: string): string {
 	let s = raw;
-	// Remove <script> and <style> blocks
 	s = s.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "");
 	s = s.replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "");
-	// Strip inline event handlers like onclick="..."
 	s = s.replace(/\s+on\w+\s*=\s*"(?:[^"]*)"/gi, "");
 	s = s.replace(/\s+on\w+\s*=\s*'(?:[^']*)'/gi, "");
-	// Strip javascript: URIs in href/src/action
 	s = s.replace(/\s+(href|src|action)\s*=\s*"(?:\s*javascript:[^"]*)"/gi, "");
 	s = s.replace(/\s+(href|src|action)\s*=\s*'(?:\s*javascript:[^']*)'/gi, "");
 	return s;
 }
 
-// Parse task/list prefix and return HTML for the marker + remaining content
 function splitListOrTaskPrefix(s: string): {
 	leadingHTML: string;
 	content: string;
@@ -334,24 +317,51 @@ function renderSuggestionItem(
 	li.setAttr("data-kind", item.kind);
 
 	if (item.kind === "file") {
-		// Keep file items simple and safe
 		li.innerHTML = `📄 ${escapeHtml(item.display)}`;
 		li.title = item.filePath;
 	} else {
-		// Render block line with HTML if present; keep list/task markers intact
 		li.innerHTML = renderBlockLinePreview(item);
 		li.title = `${item.filePath}:${item.line + 1}`;
 	}
 }
 
+/**
+ * Position a fixed-position portal under (or above) the input element.
+ */
+function positionPortalBelowInput(
+	portal: HTMLUListElement,
+	input: HTMLInputElement
+) {
+	const rect = input.getBoundingClientRect();
+	const viewportH =
+		window.innerHeight || document.documentElement.clientHeight;
+
+	// Defaults: below the input
+	let top = rect.bottom + 4;
+	let maxHeight = Math.min(320, viewportH - top - 12);
+
+	// If not enough space below, place above
+	if (maxHeight < 120) {
+		const spaceAbove = rect.top - 12;
+		maxHeight = Math.min(320, spaceAbove - 4);
+		top = Math.max(8, rect.top - maxHeight - 4);
+	}
+
+	portal.style.left = `${Math.round(rect.left)}px`;
+	portal.style.top = `${Math.round(top)}px`;
+	portal.style.width = `${Math.round(rect.width)}px`;
+	portal.style.maxHeight = `${Math.max(120, Math.floor(maxHeight))}px`;
+}
+
+/**
+ * Attach blockSelect input with body-portal suggestions (prevents clipping in modals).
+ */
 function attachBlockSelectInput(
 	app: App,
 	wrap: HTMLElement,
 	field: ParamsSchemaField
 ): HTMLInputElement {
-	// Container styling so suggestions can be positioned
-	wrap.style.position = "relative";
-
+	// Minimal styling for the input wrapper; portal handles dropdown
 	const inputEl = wrap.createEl("input", {
 		attr: {
 			type: "text",
@@ -361,39 +371,43 @@ function attachBlockSelectInput(
 		},
 	});
 
-	// Status text (e.g., "Indexing vault…")
 	const statusEl = wrap.createEl("div");
 	statusEl.style.fontSize = "12px";
 	statusEl.style.color = "var(--text-muted)";
 	statusEl.style.marginTop = "4px";
 	statusEl.style.display = "none";
 
-	const ul = createSuggestionList(wrap);
+	// Create body-attached portal for suggestions
+	const ul = createSuggestionPortal();
+
 	let suggestions: SuggestionItem[] = [];
 	let highlightIndex = -1;
 	let idx: VaultIndex | null = null;
 	let indexing = false;
+	let portalOpen = false;
 
-	const show = () => {
-		if (suggestions.length === 0) {
-			ul.style.display = "none";
-		} else {
+	const openPortal = () => {
+		if (!portalOpen) {
+			portalOpen = true;
 			ul.style.display = "block";
+			positionPortalBelowInput(ul, inputEl);
 		}
 	};
-	const hide = () => {
-		ul.style.display = "none";
-		highlightIndex = -1;
+	const closePortal = () => {
+		if (portalOpen) {
+			ul.style.display = "none";
+			highlightIndex = -1;
+			portalOpen = false;
+		}
 	};
 
 	function renderSuggestions() {
 		clearChildren(ul);
 		suggestions.forEach((s, i) => {
-			const li = ul.createEl("li");
+			const li = document.createElement("li");
 			renderSuggestionItem(li, s, i === highlightIndex);
 			li.addEventListener("mouseenter", () => {
 				highlightIndex = i;
-				// rerender highlighting
 				Array.from(ul.children).forEach((child, j) => {
 					(child as HTMLElement).style.background =
 						j === highlightIndex
@@ -401,34 +415,30 @@ function attachBlockSelectInput(
 							: "transparent";
 				});
 			});
-			li.addEventListener("mouseleave", () => {
-				// do not reset highlight here; user can move cursor out briefly
-			});
 			li.addEventListener("mousedown", async (e) => {
 				e.preventDefault();
 				e.stopPropagation();
 				await handleSelect(s);
 			});
+			ul.appendChild(li);
 		});
-		show();
+		if (suggestions.length > 0) openPortal();
+		else closePortal();
 	}
 
 	async function handleSelect(item: SuggestionItem) {
 		if (item.kind === "file") {
-			// Prefill with "basename#^"
 			inputEl.value = `${filenameFromPath(item.filePath)}#^`;
 			inputEl.focus();
 			updateSuggestions();
 			return;
 		}
-		// Block selected: ensure it has an id
 		try {
 			const id =
 				item.blockId ??
 				(await ensureBlockIdOnLine(app, item.filePath, item.line));
-			// Use "basename#^id" (no .md)
 			inputEl.value = `${filenameFromPath(item.filePath)}#^${id}`;
-			hide();
+			closePortal();
 		} catch (e) {
 			new Notice(
 				`Failed to set block id: ${String((e as Error)?.message ?? e)}`
@@ -455,19 +465,21 @@ function attachBlockSelectInput(
 
 	function updateSuggestions() {
 		if (!idx) {
-			hide();
+			closePortal();
 			return;
 		}
 		const q = inputEl.value;
 		if (!q || !q.trim()) {
-			hide();
+			closePortal();
 			return;
 		}
 		suggestions = filterSuggestions(idx, q, 50);
 		highlightIndex = suggestions.length > 0 ? 0 : -1;
 		renderSuggestions();
+		positionPortalBelowInput(ul, inputEl);
 	}
 
+	// Event handlers
 	inputEl.addEventListener("focus", async () => {
 		await ensureIndexReady();
 		updateSuggestions();
@@ -478,7 +490,7 @@ function attachBlockSelectInput(
 	});
 
 	inputEl.addEventListener("keydown", async (evt) => {
-		if (ul.style.display === "none") return;
+		if (!portalOpen) return;
 
 		if (evt.key === "ArrowDown") {
 			evt.preventDefault();
@@ -499,20 +511,48 @@ function attachBlockSelectInput(
 			}
 		} else if (evt.key === "Escape") {
 			evt.preventDefault();
-			hide();
+			closePortal();
 		}
 	});
 
-	// Hide on click outside of the suggestions
-	document.addEventListener(
-		"mousedown",
-		(e) => {
-			if (!wrap.contains(e.target as Node)) {
-				hide();
-			}
-		},
-		{ capture: true }
-	);
+	// Reposition portal on scroll/resize
+	const onViewportChange = () => {
+		if (portalOpen) positionPortalBelowInput(ul, inputEl);
+	};
+	window.addEventListener("scroll", onViewportChange, true);
+	window.addEventListener("resize", onViewportChange);
+
+	// Close when clicking outside input or portal
+	const onDocMouseDown = (e: MouseEvent) => {
+		const t = e.target as Node | null;
+		if (!t) return;
+		if (t === inputEl || inputEl.contains(t)) return;
+		if (t === ul || ul.contains(t)) return;
+		closePortal();
+	};
+	document.addEventListener("mousedown", onDocMouseDown, { capture: true });
+
+	// Cleanup when input wrapper is detached (modal close)
+	const cleanup = () => {
+		try {
+			window.removeEventListener("scroll", onViewportChange, true);
+			window.removeEventListener("resize", onViewportChange);
+			document.removeEventListener("mousedown", onDocMouseDown, {
+				capture: true as any,
+			} as any);
+			if (ul && ul.parentNode) ul.parentNode.removeChild(ul);
+		} catch {
+			// ignore
+		}
+	};
+	// When the modal closes, Obsidian removes contentEl; observe detach
+	const obs = new MutationObserver(() => {
+		if (!document.body.contains(inputEl)) {
+			cleanup();
+			obs.disconnect();
+		}
+	});
+	obs.observe(document.body, { childList: true, subtree: true });
 
 	return inputEl;
 }
@@ -583,7 +623,6 @@ export async function showSchemaModal(
 						if (!firstFocusableName)
 							firstFocusableName = field.name;
 					} else if (type === "dropdown") {
-						// If options are not provided for dropdown, gracefully fallback to text input.
 						if (
 							!Array.isArray(field.options) ||
 							field.options.length === 0
@@ -605,21 +644,18 @@ export async function showSchemaModal(
 									style: "width: 100%;",
 								},
 							});
-							// Optional placeholder as a disabled first option when provided
 							if (placeholder) {
 								const opt = select.createEl("option", {
 									text: placeholder,
 									value: "",
 								});
 								opt.disabled = true;
-								// Only preselect placeholder if there is no defaultValue
 								if (
 									field.defaultValue == null ||
 									String(field.defaultValue) === ""
 								) {
 									opt.selected = true;
 								}
-								// visually distinguish placeholder
 								opt.setAttribute("hidden", "true");
 							}
 
@@ -628,7 +664,6 @@ export async function showSchemaModal(
 									text: String(optDef.label ?? optDef.value),
 									value: String(optDef.value),
 								});
-								// Preselect if matches defaultValue
 								if (
 									field.defaultValue != null &&
 									String(field.defaultValue) ===
@@ -642,11 +677,11 @@ export async function showSchemaModal(
 								firstFocusableName = field.name;
 						}
 					} else if (type === "blockSelect") {
+						// Use the portal-based attach function to avoid clipping
 						inputEl = attachBlockSelectInput(app, wrap, field);
 						if (!firstFocusableName)
 							firstFocusableName = field.name;
 					} else {
-						// default: "text"
 						inputEl = wrap.createEl("input", {
 							attr: {
 								type: "text",
@@ -671,7 +706,6 @@ export async function showSchemaModal(
 					}
 				}
 
-				// Autofocus first focusable control and move caret to end if it's an input
 				if (firstFocusableName && this.inputs[firstFocusableName]) {
 					const el = this.inputs[firstFocusableName] as
 						| HTMLInputElement
@@ -680,7 +714,6 @@ export async function showSchemaModal(
 					setTimeout(() => {
 						try {
 							el.focus();
-							// Only put caret at end for text-like controls
 							if (
 								(el as HTMLInputElement).setSelectionRange &&
 								(el as HTMLInputElement).type !== "checkbox" &&
@@ -728,7 +761,6 @@ export async function showSchemaModal(
 							raw = String((el as HTMLElement).textContent ?? "");
 						}
 
-						// Required validation: empty string is invalid
 						if (field.required && raw.trim().length === 0) {
 							new Notice(
 								`"${field.label ?? field.name}" is required`
