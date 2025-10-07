@@ -26,6 +26,8 @@ import {
  * - Short press applies on release (advance).
  * - After either path, suppress the subsequent click to prevent Obsidian's default toggle.
  * - Preserve editor scroll position across edits (handled by applyLineTransform).
+ * - Capture-phase click guard cancels label-synthesized checkbox toggles
+ *   for clicks outside the "[ ]" token (e.g., on the fold chevron).
  */
 export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 	// Per-view snapshots to diff line changes
@@ -48,6 +50,66 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 	// Swallow the immediate next click after handling a press
 	const suppressNextClick = new WeakMap<MarkdownView, number>();
 	const SUPPRESS_CLICK_MS = 600;
+
+	// -------------------------
+	// Helpers
+	// -------------------------
+	const getPathEls = (evt: Event): HTMLElement[] => {
+		const raw = (evt as any).composedPath?.() as EventTarget[] | undefined;
+		if (Array.isArray(raw) && raw.length) {
+			return raw.filter(
+				(n) => n && (n as any).nodeType === 1
+			) as HTMLElement[];
+		}
+		const out: HTMLElement[] = [];
+		let el = evt.target as HTMLElement | null;
+		while (el) {
+			out.push(el);
+			el = el.parentElement;
+		}
+		return out;
+	};
+
+	// Detect fold chevron/bullet elements in the event path
+	const isChevronEvent = (evt: Event): boolean => {
+		const path = getPathEls(evt);
+		return path.some((el) => {
+			const c = el.classList;
+			return (
+				c?.contains("cm-fold-indicator") ||
+				c?.contains("collapse-indicator") ||
+				c?.contains("collapse-icon") ||
+				c?.contains("cm-foldPlaceholder") ||
+				c?.contains("HyperMD-list-bullet")
+			);
+		});
+	};
+
+	// Label/checkbox detection in the path
+	const pathHitsLabelOrCheckbox = (
+		evt: Event
+	): {
+		hitsLabel: boolean;
+		hitsCheckbox: boolean;
+	} => {
+		let hitsLabel = false;
+		let hitsCheckbox = false;
+		for (const el of getPathEls(evt)) {
+			if (
+				el.tagName === "LABEL" ||
+				el.classList?.contains?.("task-list-label")
+			) {
+				hitsLabel = true;
+			}
+			if (
+				(el as HTMLInputElement).tagName === "INPUT" &&
+				(el as HTMLInputElement).type === "checkbox"
+			) {
+				hitsCheckbox = true;
+			}
+		}
+		return { hitsLabel, hitsCheckbox };
+	};
 
 	const collectLines = (editor: Editor): string[] => {
 		const out: string[] = [];
@@ -202,11 +264,19 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 				(view as any).contentEl || (view as any).containerEl || null;
 			if (!container || !container.contains(evt.target as Node)) return;
 
+			// If clicking the chevron/bullet, allow fold and do not intercept.
+			if (isChevronEvent(evt)) return;
+
 			const pos = findPosFromEvent(editor, evt as any);
 			if (!pos) return;
+
 			const line0 = pos.line;
 			const lineText = editor.getLine(line0) ?? "";
-			if (!isPosOnCheckboxToken(lineText, pos.ch)) return;
+			const onToken = isPosOnCheckboxToken(lineText, pos.ch);
+			if (!onToken) {
+				// Not on the checkbox token; let editor handle (including fold, caret, etc.)
+				return;
+			}
 
 			// Stop default checkbox behavior early to avoid flicker/indent jump
 			evt.preventDefault();
@@ -363,7 +433,9 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 		onPointerUpOrCancel as any
 	);
 
-	// Swallow the click right after we handled a press to prevent Obsidian's default toggle
+	// Capture-phase click guard:
+	// - Case 1: Immediately after our handled press → fully swallow (prevent + stop*).
+	// - Case 2: Click outside the "[ ]" token that routes through label/input (label-synth) → preventDefault only.
 	const onClickCapture = (evt: MouseEvent) => {
 		try {
 			const view = app.workspace.getActiveViewOfType(MarkdownView);
@@ -373,6 +445,7 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 				(view as any).contentEl || (view as any).containerEl || null;
 			if (!container || !container.contains(evt.target as Node)) return;
 
+			// Case 1: swallow click after our own press handling
 			const ts = suppressNextClick.get(view);
 			if (ts && Date.now() - ts <= SUPPRESS_CLICK_MS) {
 				evt.preventDefault();
@@ -380,11 +453,35 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 				evt.stopImmediatePropagation?.();
 				evt.stopPropagation();
 				suppressNextClick.delete(view);
+				return;
+			}
+
+			const editor: any = (view as any).editor;
+			if (!editor) return;
+
+			const pos = findPosFromEvent(editor, evt as any);
+			if (!pos) return;
+
+			const lineText = editor.getLine(pos.line) ?? "";
+			const onToken = isPosOnCheckboxToken(lineText, pos.ch);
+
+			const { hitsLabel, hitsCheckbox } = pathHitsLabelOrCheckbox(evt);
+
+			// Case 2: prevent label-synthesized toggles when not clicking the "[ ]" token
+			if (
+				getCheckboxStatusChar(lineText) != null &&
+				!onToken &&
+				(hitsLabel || hitsCheckbox)
+			) {
+				evt.preventDefault();
+				// Do NOT stop propagation; allow fold handlers to run.
+				return;
 			}
 		} catch {
 			/* ignore */
 		}
 	};
+
 	plugin.registerDomEvent(
 		document,
 		"click",
