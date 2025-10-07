@@ -11,12 +11,11 @@ import {
 	DEFAULT_STATUS_SEQUENCE,
 	normalizeStatusInput,
 } from "../domain/task-status-sequence";
+import { findPosFromEvent, isPosOnCheckboxToken } from "@platform/obsidian";
 import {
 	advanceTaskStatusAtEditorLine,
-	findPosFromEvent,
-	isPosOnCheckboxToken,
 	setTaskStatusAtEditorLine,
-} from "../infra/obsidian/editor-status-mutations";
+} from "./task-status-for-task-item";
 
 /**
  * Wire up editor-change handling so that clicking a checkbox in an open note
@@ -26,7 +25,7 @@ import {
  * - Long-press applies immediately on timeout (not waiting for release).
  * - Short press applies on release (advance).
  * - After either path, suppress the subsequent click to prevent Obsidian's default toggle.
- * - Preserve editor scroll position across edits.
+ * - Preserve editor scroll position across edits (handled by applyLineTransform).
  */
 export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 	// Per-view snapshots to diff line changes
@@ -216,11 +215,11 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 			evt.stopImmediatePropagation?.();
 
 			const filePath = view.file?.path || "";
-			const existing = pressState.get(view);
-			if (existing?.timerId != null) {
-				window.clearTimeout(existing.timerId);
+			const state = pressState.get(view);
+			if (state?.timerId != null) {
+				window.clearTimeout(state.timerId);
 			}
-			const state: PressState = {
+			const nextState: PressState = {
 				line0,
 				filePath,
 				timerId: null,
@@ -229,42 +228,42 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 			const timerId = window.setTimeout(() => {
 				// Apply cancel immediately on long-press timeout
 				try {
-					const before = editor.getLine(state.line0) ?? "";
+					const before = editor.getLine(nextState.line0) ?? "";
 					if (getCheckboxStatusChar(before) == null) return;
 
 					const res = setTaskStatusAtEditorLine(
 						editor,
-						state.line0,
+						nextState.line0,
 						"-"
 					);
 					if (res.didChange) {
 						ignoreNextEditorChange.set(view, true);
 						publishTaskStatusChanged({
-							filePath: state.filePath,
+							filePath: nextState.filePath,
 							id: "",
-							line0: state.line0,
+							line0: nextState.line0,
 							fromStatus: res.from,
 							toStatus: res.to,
 						});
 						try {
 							viewSnapshots.set(view, {
-								path: state.filePath,
+								path: nextState.filePath,
 								lines: collectLines(editor),
 							});
 						} catch {}
 					}
-					state.longApplied = true;
+					nextState.longApplied = true;
 
 					// Ensure the click after release is swallowed
 					suppressNextClick.set(view, Date.now());
 				} catch {
 					/* ignore */
 				} finally {
-					state.timerId = null;
+					nextState.timerId = null;
 				}
 			}, LONG_PRESS_CANCEL_MS);
-			state.timerId = timerId as unknown as number;
-			pressState.set(view, state);
+			nextState.timerId = timerId as unknown as number;
+			pressState.set(view, nextState);
 		} catch {
 			/* ignore */
 		}
@@ -393,6 +392,3 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 		{ capture: true } as any
 	);
 }
-
-// Re-export for external compatibility
-export { findLineFromEvent } from "../infra/obsidian/editor-status-mutations";

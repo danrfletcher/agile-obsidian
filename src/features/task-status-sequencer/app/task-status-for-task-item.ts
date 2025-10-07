@@ -1,5 +1,6 @@
 /**
  * App orchestration: advance/set for a task item, preferring active editor if open.
+ * Uses platform/obsidian primitives (editor/vault transforms).
  */
 import type { App, Editor } from "obsidian";
 import { MarkdownView } from "obsidian";
@@ -10,14 +11,48 @@ import {
 	type StatusChar,
 } from "../domain/task-status-sequence";
 import { getCheckboxStatusChar } from "@platform/obsidian";
-import {
-	advanceTaskStatusAtEditorLine,
-	setTaskStatusAtEditorLine,
-} from "../infra/obsidian/editor-status-mutations";
-import {
-	advanceTaskStatusByFileLine,
-	setTaskStatusByFileLine,
-} from "../infra/obsidian/vault-status-mutations";
+import { setCheckboxStatusChar } from "../domain/task-status-utils";
+import { applyLineTransform } from "@platform/obsidian";
+import { applyFileLineTransform } from "@platform/obsidian";
+
+/**
+ * Advance the task status on a specific editor line using the sequence.
+ * Returns the transition details.
+ */
+export function advanceTaskStatusAtEditorLine(
+	editor: Editor,
+	line0: number,
+	sequence: ReadonlyArray<StatusChar> = DEFAULT_STATUS_SEQUENCE
+): { from: string | null; to: StatusChar | null; didChange: boolean } {
+	const res = applyLineTransform(editor, line0, (orig) => {
+		const from = getCheckboxStatusChar(orig);
+		if (from == null) return orig;
+		const to = getNextStatusChar(from, sequence);
+		return setCheckboxStatusChar(orig, to);
+	});
+	const from = getCheckboxStatusChar(res.before);
+	const to: StatusChar | null =
+		from == null ? null : getNextStatusChar(from, sequence);
+	return { from, to, didChange: res.didChange };
+}
+
+/**
+ * Set the task status on a specific editor line to an explicit target char.
+ * Returns the transition details.
+ */
+export function setTaskStatusAtEditorLine(
+	editor: Editor,
+	line0: number,
+	to: StatusChar
+): { from: string | null; to: StatusChar; didChange: boolean } {
+	const res = applyLineTransform(editor, line0, (orig) => {
+		const from = getCheckboxStatusChar(orig);
+		if (from == null) return orig;
+		return setCheckboxStatusChar(orig, to);
+	});
+	const from = getCheckboxStatusChar(res.before);
+	return { from, to, didChange: res.didChange };
+}
 
 export async function advanceTaskStatusForTaskItem(params: {
 	app: App;
@@ -58,7 +93,30 @@ export async function advanceTaskStatusForTaskItem(params: {
 		return;
 	}
 
-	await advanceTaskStatusByFileLine({ app, filePath, line0, sequence });
+	// Path-based mutation via platform vault primitive
+	const vaultRes = await applyFileLineTransform(
+		app,
+		filePath,
+		line0,
+		(orig) => {
+			const f = getCheckboxStatusChar(orig);
+			if (f == null) return orig;
+			const t = getNextStatusChar(f, sequence);
+			return setCheckboxStatusChar(orig, t);
+		}
+	);
+	const fromPath = getCheckboxStatusChar(vaultRes.before);
+	const toPath =
+		fromPath == null ? null : getNextStatusChar(fromPath, sequence);
+	if (vaultRes.didChange) {
+		publishTaskStatusChanged({
+			filePath,
+			id: "",
+			line0,
+			fromStatus: fromPath,
+			toStatus: toPath ?? undefined,
+		});
+	}
 }
 
 export async function setTaskStatusForTaskItem(params: {
@@ -89,5 +147,25 @@ export async function setTaskStatusForTaskItem(params: {
 		return;
 	}
 
-	await setTaskStatusByFileLine({ app, filePath, line0, to });
+	const vaultRes = await applyFileLineTransform(
+		app,
+		filePath,
+		line0,
+		(orig) => {
+			const f = getCheckboxStatusChar(orig);
+			if (f == null) return orig;
+			return setCheckboxStatusChar(orig, to);
+		}
+	);
+	const fromPath = getCheckboxStatusChar(vaultRes.before);
+	if (fromPath == null) return;
+	if (vaultRes.didChange) {
+		publishTaskStatusChanged({
+			filePath,
+			id: "",
+			line0,
+			fromStatus: fromPath,
+			toStatus: to,
+		});
+	}
 }

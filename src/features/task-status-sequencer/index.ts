@@ -12,19 +12,11 @@ export {
 } from "./domain/task-line";
 
 export {
-	advanceTaskStatusAtEditorLine,
-	setTaskStatusAtEditorLine,
-	findLineFromEvent,
-} from "./infra/obsidian/editor-status-mutations";
-
-export {
-	advanceTaskStatusByFileLine,
-	setTaskStatusByFileLine,
-} from "./infra/obsidian/vault-status-mutations";
-
-export {
 	advanceTaskStatusForTaskItem,
 	setTaskStatusForTaskItem,
+	// Editor-line helpers (used by wiring)
+	advanceTaskStatusAtEditorLine,
+	setTaskStatusAtEditorLine,
 } from "./app/task-status-for-task-item";
 
 export { wireTaskStatusSequence } from "./app/wire-task-status-sequence";
@@ -34,3 +26,6 @@ export { attachCustomCheckboxStatusHandlers } from "./ui/attach-custom-checkbox-
 export { LONG_PRESS_CANCEL_MS } from "./app/constants";
 
 export { setCheckboxStatusChar } from "./domain/task-status-utils";
+
+// Optional convenience re-export from platform for callers that used to import it here
+export { findLineFromEvent } from "@platform/obsidian";
