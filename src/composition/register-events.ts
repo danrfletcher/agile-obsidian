@@ -6,8 +6,9 @@ import {
 	createTaskIndexOrchestrator,
 } from "@features/task-index";
 import { createObsidianAppAdapter } from "@platform/obsidian";
-import type { TaskIndexPort } from "@features/templating";
-import { wireTemplatingDomHandlers } from "@features/templating";
+import type { TaskIndexPort } from "@features/templating-engine";
+import { wireTemplatingDomHandlers } from "@features/templating-engine";
+import { wireTemplatingUxShortcutsDomHandlers } from "@features/templating-ux-shortcuts";
 import {
 	createOrgStructureService,
 	type OrgStructurePort,
@@ -26,9 +27,11 @@ import type { CanonicalFormatterPort } from "@features/task-canonical-formatter"
 import { wireTaskAssignmentCascade } from "@features/task-assignment-cascade";
 import {
 	wireTaskClosedCascade,
-	wireTaskClosedCascadeObserver,
+	// wireTaskClosedCascadeObserver, // removed: superseded by task-close-manager
 } from "@features/task-close-cascade";
 import { registerTaskMetadataCleanup } from "@features/task-metadata-cleanup";
+import { wireTaskCloseManager } from "@features/task-close-manager";
+import { wireTaskStatusSequence } from "@features/task-status-sequencer";
 
 // Strong singleton-per-run progress UI (per view)
 class ProgressNotice {
@@ -414,6 +417,10 @@ export async function registerEvents(container: Container) {
 			wireTemplatingDomHandlers(app, view, plugin, templatingPorts);
 		} catch {}
 		try {
+			// UX Shortcuts (Enter-to-repeat template)
+			wireTemplatingUxShortcutsDomHandlers(app, view, plugin);
+		} catch {}
+		try {
 			const orgPorts = (container as any).orgStructurePorts as
 				| { orgStructure: OrgStructurePort }
 				| undefined;
@@ -491,10 +498,17 @@ export async function registerEvents(container: Container) {
 	}
 
 	try {
-		// Optional custom-event adapter (for your own commands)
+		// Custom-event adapter (still available for manual commands)
 		wireTaskClosedCascade(app, plugin);
-		// Passive observer adapter (works with Obsidian Tasks)
-		wireTaskClosedCascadeObserver(app, plugin);
+
+		// 1) Status sequence first: ensures our checkbox char overrides Obsidian defaults immediately
+		wireTaskStatusSequence(app, plugin);
+
+		// 2) Then date manager: reacts to closed/reopen transitions immediately and via events
+		wireTaskCloseManager(app, plugin);
+
+		// Note: Removed passive observer so cascade runs AFTER manager adds dates
+		// wireTaskClosedCascadeObserver(app, plugin);
 	} catch (e) {
 		console.error("[boot] closed cascade wiring failed", e);
 	}

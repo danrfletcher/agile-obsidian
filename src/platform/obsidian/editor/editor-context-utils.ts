@@ -89,17 +89,20 @@ export function findTargetLineFromClick(
  * Determine if a given line is a Markdown task line.
  *
  * Supported:
- * - "- [ ]", "- [x]", "* [ ]", "+ [ ]", "1. [ ]" with arbitrary indentation
+ * - "- [ ]", "- [x]/[X]", "- [-]", "- [/]", and any other single-char status like "[>]", "[!]", "[?]", etc.
+ * - Similarly supports "*", "+", "1." list markers with arbitrary indentation
  * - Treats tabs as 4 spaces
  *
- * Note:
- * - This is broader than isUncheckedTaskLine; it matches both checked and unchecked tasks.
+ * Behavior:
+ * - Matches both checked and unchecked tasks, including cancelled (-), in-progress (/), and any single status char.
+ *
  * @param line A single line of text.
  */
 export function isTaskLine(line: string): boolean {
 	const expanded = line.replace(/\t/g, "    ");
-	// optional indent, list marker (- * + or 1.), space, then [ ] or [x]/[X], then at least one space or end
-	return /^\s*(?:[-*+]|\d+\.)\s+\[(?: |x|X)\](?:\s+|$)/.test(expanded);
+	// optional indent, list marker (- * + or 1.), space, then [<any single char>], then at least one space or end
+	// This generalizes the previous whitelist ( |x|X|-|\/) to any single non-] char, keeping end/space rule
+	return /^\s*(?:[-*+]|\d+\.)\s+\[[^\]]\](?:\s+|$)/.test(expanded);
 }
 
 /**
@@ -115,9 +118,19 @@ export function isListLine(line: string): boolean {
  * Tabs are expanded to 4 spaces.
  */
 export function indentWidth(line: string): number {
-	const expanded = line.replace(/\t/g, "    ");
-	const m = expanded.match(/^\s*/);
-	return m ? m[0].length : 0;
+	// Count leading spaces; treat tabs as 4 spaces
+	let width = 0;
+	for (const ch of line) {
+		if (ch === " ") width += 1;
+		else if (ch === "\t") width += 4;
+		else break;
+	}
+	return width;
+}
+
+export function getCheckboxStatusChar(line: string): string | null {
+	const m = /^\s*(?:[-*+]|\d+[.)])\s*\[\s*([^\]]?)\s*\]/.exec(line);
+	return m ? m[1] ?? "" : null;
 }
 
 /**

@@ -4,6 +4,16 @@ import type {
 	TaskItem,
 	TaskNode,
 } from "../domain/task-types";
+import {
+	getCompletedDate,
+	getCancelledDate,
+	getStartDate,
+	getScheduledDate,
+	getDueDate,
+	getTargetDate,
+	getRecurringPattern,
+	toYyyyMmDd,
+} from "@features/task-date-manager";
 
 /**
  * FileReadResult bundles the ingredients needed to parse a file.
@@ -72,7 +82,8 @@ function parseFileToSnapshot(read: FileReadResult): FileTaskSnapshot {
 }
 
 /**
- * Convert a single list item line into a TaskItem with basic fields filled.
+ * Convert a single list item line into a TaskItem with basic fields filled,
+ * including date annotations parsed from the text.
  */
 function lineToItem(
 	file: TFile,
@@ -117,6 +128,34 @@ function lineToItem(
 		_uniqueId: null,
 		_parentId: null,
 	};
+
+	// Populate date properties from text markers
+	const completedDt = getCompletedDate(item);
+	const cancelledDt = getCancelledDate(item);
+	const startDt = getStartDate(item);
+	const scheduledDt = getScheduledDate(item);
+	const dueDt = getDueDate(item);
+	const targetDt = getTargetDate(item);
+	const recurring = getRecurringPattern(item);
+
+	if (completedDt) item.completedDate = toYyyyMmDd(completedDt);
+	if (cancelledDt) item.cancelledDate = toYyyyMmDd(cancelledDt);
+	if (startDt) item.start = toYyyyMmDd(startDt);
+	if (scheduledDt) item.scheduled = toYyyyMmDd(scheduledDt);
+	if (dueDt) item.due = toYyyyMmDd(dueDt);
+	if (targetDt) item.target = toYyyyMmDd(targetDt);
+	if (recurring) item.recurringPattern = recurring;
+
+	// Mark as annotated if any date/pattern is present
+	item.annotated = Boolean(
+		item.completedDate ||
+			item.cancelledDate ||
+			item.start ||
+			item.scheduled ||
+			item.due ||
+			item.target ||
+			item.recurringPattern
+	);
 
 	return item;
 }
@@ -191,3 +230,5 @@ function assignUniqueIds(items: TaskItem[], filePath: string) {
 	};
 	items.forEach((it) => recurse(it, null));
 }
+
+

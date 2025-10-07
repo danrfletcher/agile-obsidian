@@ -1,18 +1,15 @@
 import type { App, Plugin } from "obsidian";
 import { MarkdownView, Notice } from "obsidian";
-import { insertTemplateAtCursor } from "@features/templating";
+import { insertTemplateAtCursor } from "@features/templating-engine";
 import type {
 	OrgStructurePort,
 	MemberInfo,
 	MembersBuckets,
 } from "@features/org-structure";
 import { classifyMember } from "@features/org-structure";
-import { getCursorContext } from "@platform/obsidian";
+import { getCursorContext, isTaskLine } from "@platform/obsidian";
 import { removeWrappersOfTypeOnLine } from "./assignment-inline-utils";
-import {
-	AddMemberModal,
-	type AddMemberKind,
-} from "../ui/add-member-modal";
+import { AddMemberModal, type AddMemberKind } from "../ui/add-member-modal";
 
 /**
  * Map org-structure member kind to templating "Members.assignee" memberType.
@@ -47,9 +44,11 @@ async function isAssigneeAllowedHere(app: App): Promise<boolean> {
 		const text = ctx.lineText ?? "";
 		const trimmed = text.trim();
 
+		// allow on empty lines (we will coerce to task line as needed downstream)
 		if (trimmed.length === 0) return true;
-		const isTask = /^\s*[-*+]\s+\[(?: |x|X)\]\s+/.test(text);
-		return isTask;
+
+		// allow on any task status via canonical platform util
+		return isTaskLine(text);
 	} catch {
 		return false;
 	}
@@ -259,9 +258,8 @@ export async function registerTaskAssignmentDynamicCommands(
 								const lineNo = editor.getCursor().line ?? 0;
 								const text = editor.getLine(lineNo) ?? "";
 								if (text.trim().length === 0) return true;
-								const isTask =
-									/^\s*[-*+]\s+\[(?: |x|X)\]\s+/.test(text);
-								return isTask;
+								// Allow any status task via shared util
+								return isTaskLine(text);
 							} catch {
 								return false;
 							}
@@ -378,10 +376,7 @@ export async function registerTaskAssignmentDynamicCommands(
 							const lineNo = editor.getCursor().line ?? 0;
 							const text = editor.getLine(lineNo) ?? "";
 							if (text.trim().length === 0) return true;
-							const isTask = /^\s*[-*+]\s+\[(?: |x|X)\]\s+/.test(
-								text
-							);
-							return isTask;
+							return isTaskLine(text);
 						} catch {
 							return false;
 						}
@@ -487,10 +482,7 @@ export async function registerTaskAssignmentDynamicCommands(
 							const lineNo = editor.getCursor().line ?? 0;
 							const text = editor.getLine(lineNo) ?? "";
 							if (text.trim().length === 0) return true;
-							const isTask = /^\s*[-*+]\s+\[(?: |x|X)\]\s+/.test(
-								text
-							);
-							return isTask;
+							return isTaskLine(text);
 						} catch {
 							return false;
 						}

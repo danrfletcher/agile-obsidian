@@ -1,80 +1,27 @@
 import type { App, Plugin } from "obsidian";
 import { MarkdownView, Notice, TFile } from "obsidian";
 import type { TaskIndexService } from "@features/task-index";
-
-// Keep this feature self-contained; avoid deep dependencies.
-const COMPLETED_EMOJI = "✅";
-const CANCELLED_EMOJI = "❌";
-// Permissive ISO-like date capture used after emoji (YYYY-MM-DD or with time)
-const ISO_DATE_RE =
-	/\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?(?:Z|[+-]\d{2}:\d{2})?/;
+import {
+	getCheckboxStatusChar,
+	indentWidth,
+	isListLine,
+	isTaskLine,
+} from "@platform/obsidian";
+import { escapeRegExp } from "@utils";
+import {
+	appendEmojiWithDate,
+	CANCELLED_EMOJI,
+	COMPLETED_EMOJI,
+	hasEmoji,
+	ISO_DATE_RE,
+	removeEmoji,
+} from "@features/task-close-manager";
+import { setCheckboxStatusChar } from "@features/task-status-sequencer";
 
 // ---------- types ----------
 export type ClosedCascadePorts = { taskIndex?: TaskIndexService };
 
 // ---------- local helpers ----------
-function escapeRegExp(s: string): string {
-	return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function indentWidth(line: string): number {
-	// Count leading spaces; treat tabs as 4 spaces
-	let width = 0;
-	for (const ch of line) {
-		if (ch === " ") width += 1;
-		else if (ch === "\t") width += 4;
-		else break;
-	}
-	return width;
-}
-
-function isListLine(line: string): boolean {
-	// Supports bullets and ordered lists: -, *, +, 1., 2), etc.
-	return /^\s*(?:[-*+]|\d+[.)])\s+/.test(line);
-}
-
-function isTaskCheckboxLine(line: string): boolean {
-	return /^\s*(?:[-*+]|\d+[.)])\s*\[\s*[^\]]?\s*\]/.test(line);
-}
-
-function getCheckboxStatusChar(line: string): string | null {
-	const m = /^\s*(?:[-*+]|\d+[.)])\s*\[\s*([^\]]?)\s*\]/.exec(line);
-	return m ? m[1] ?? "" : null;
-}
-
-function setCheckboxStatusChar(line: string, newChar: "x" | "-"): string {
-	// Normalize the checkbox token to `[x]` or `[-]` (no interior spaces)
-	return line.replace(
-		/^(\s*(?:[-*+]|\d+[.)])\s*\[)\s*[^\]]?\s*(\])/,
-		(_m, p1: string, p2: string) => `${p1}${newChar}${p2}`
-	);
-}
-
-function hasEmoji(line: string, emoji: string): boolean {
-	const re = new RegExp(
-		`${escapeRegExp(emoji)}(?:\\s?${ISO_DATE_RE.source})?`
-	);
-	return re.test(line);
-}
-
-function removeEmoji(line: string, emoji: string): string {
-	const re = new RegExp(
-		`\\s*${escapeRegExp(emoji)}(?:\\s?${ISO_DATE_RE.source})?`,
-		"g"
-	);
-	return line.replace(re, "").replace(/\s+$/, "");
-}
-
-function appendEmojiWithDate(
-	line: string,
-	emoji: string,
-	dateStr?: string | null
-): string {
-	const trimmed = line.replace(/\s+$/, "");
-	const suffix = dateStr ? `${emoji} ${dateStr}` : `${emoji}`;
-	return `${trimmed} ${suffix}`;
-}
-
 function isLineCompleted(line: string): boolean {
 	const status = (getCheckboxStatusChar(line) ?? "").toLowerCase();
 	return status === "x" || hasEmoji(line, COMPLETED_EMOJI);
@@ -180,7 +127,7 @@ export async function applyClosedCascade(
 			const orig = editor.getLine(line0) ?? "";
 
 			// Only consider checkbox task lines
-			if (!isTaskCheckboxLine(orig)) continue;
+			if (!isTaskLine(orig)) continue;
 
 			// Skip if already completed or cancelled
 			if (isLineClosed(orig)) continue;
@@ -322,9 +269,22 @@ export function wireTaskClosedCascade(
 		}
 	};
 
+	// Backward compatible: still listen to the generic event (custom commands may fire this)
 	plugin.registerDomEvent(
 		document,
 		"agile:task-closed" as any,
+		onTaskClosed as any
+	);
+
+	// New: listen to manager events so cascade runs AFTER dates are added
+	plugin.registerDomEvent(
+		document,
+		"agile:task-completed-date-added" as any,
+		onTaskClosed as any
+	);
+	plugin.registerDomEvent(
+		document,
+		"agile:task-cancelled-date-added" as any,
 		onTaskClosed as any
 	);
 }
@@ -370,8 +330,8 @@ export function wireTaskClosedCascadeObserver(
 			const after = nextLines[i] ?? "";
 			if (before === after) continue;
 
-			const wasTask = isTaskCheckboxLine(before);
-			const isTask = isTaskCheckboxLine(after);
+			const wasTask = isTaskLine(before);
+			const isTask = isTaskLine(after);
 			if (!wasTask || !isTask) {
 				if (++inspected > 200) break;
 				continue;
@@ -444,7 +404,6 @@ export function wireTaskClosedCascadeObserver(
 
 	// FIX: correct signature (editor, mdView)
 	plugin.registerEvent(
-		// eslint-disable-next-line @typescript-eslint/no-unused-vars
 		app.workspace.on("editor-change", async (_editor: any, mdView: any) => {
 			try {
 				if (!(mdView instanceof MarkdownView)) return;

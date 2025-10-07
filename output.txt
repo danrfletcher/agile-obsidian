@@ -1,4 +1,629 @@
-]633;E;[ -s output.txt ];9dede505-b571-455c-9e66-0eef8ad33e40]633;C
+./src/features/agile-dashboard-view/app/controller.ts
+import { Notice, type App, type ItemView } from "obsidian";
+import type { TaskIndexService } from "@features/task-index";
+import type { SettingsService } from "@settings";
+import type { OrgStructurePort } from "@features/org-structure";
+import { renderControlsBar } from "../ui/components/controls-bar";
+import { attachDashboardAssignmentHandler } from "../ui/handlers/assignment-handler";
+import { attachDashboardTemplatingHandler } from "../ui/handlers/templating-handler";
+import { wireDashboardEvents } from "../ui/handlers/event-wiring";
+import { TeamSelection } from "../domain/team-selection";
+import type { DashboardState } from "../domain/view-state";
+import { captureScroll, restoreScroll } from "../ui/utils/scroll";
+import {
+	renderTeamsPopupContent,
+	TeamsPopupContext,
+} from "../ui/views/teams-popup";
+import { renderProjectView } from "../ui/views/project-view";
+import { refreshForFile } from "./refresh-service";
+
+type RegisterFn = (fn: () => void) => void;
+type RegisterEventFn = (evt: any) => void;
+type RegisterDomEvent = (
+	el: HTMLElement | Window | Document,
+	type: string,
+	handler: (evt: any) => void,
+	options?: AddEventListenerOptions | boolean
+) => void;
+
+export interface DashboardControllerDeps {
+	app: App;
+	view: ItemView;
+	taskIndexService: TaskIndexService;
+	settingsService: SettingsService;
+	orgStructurePort?: OrgStructurePort;
+	manifestVersion: string;
+	storageKey: string;
+
+	register: RegisterFn;
+	registerEvent: RegisterEventFn;
+	registerDomEvent: RegisterDomEvent;
+}
+
+export class DashboardController {
+	private state: DashboardState;
+	private readonly teamSelection: TeamSelection;
+	private teamsPopupEl: HTMLDivElement | null = null;
+	private outsideClickHandler: ((ev: MouseEvent) => void) | null = null;
+	private suppressedFiles = new Set<string>();
+
+	constructor(private readonly deps: DashboardControllerDeps) {
+		const initialAlias =
+			deps.settingsService.getRaw().currentUserAlias || null;
+		this.teamSelection = new TeamSelection(
+			deps.settingsService,
+			deps.orgStructurePort,
+			deps.storageKey
+		);
+		this.state = {
+			selectedView: "projects",
+			activeOnly: true,
+			selectedAlias: initialAlias,
+		};
+	}
+
+	mount() {
+		const container = this.getViewContainer();
+		container.empty();
+
+		// Controls
+		renderControlsBar({
+			container,
+			version: this.deps.manifestVersion,
+			settingsService: this.deps.settingsService,
+			initialView: this.state.selectedView,
+			initialActiveOnly: this.state.activeOnly,
+			initialAlias: this.state.selectedAlias,
+			onViewChange: (v) => {
+				this.state.selectedView = v;
+				this.updateView();
+			},
+			onActiveToggleChange: (active) => {
+				this.state.activeOnly = active;
+				this.updateView();
+			},
+			onMemberChange: (alias) => {
+				this.state.selectedAlias = alias;
+				this.teamSelection.restrictSelectedTeamsToUserMembership(
+					this.state.selectedAlias
+				);
+				this.updateView();
+				if (this.teamsPopupEl) this.renderTeamsPopup();
+			},
+			onSelectTeamsClick: (anchor) => this.toggleTeamsPopup(anchor),
+			onRebuildIndexClick: async () => {
+				// Show notice when starting rebuild, then a follow-up notice on completion or failure.
+				new Notice("Rebuilding task index…", 1500);
+				try {
+					await this.deps.taskIndexService.buildAll();
+					new Notice("Task index rebuilt.", 2000);
+				} catch (e) {
+					console.error("[agile-dashboard] Rebuild index failed", e);
+					new Notice(
+						"Failed to rebuild task index. See console for details.",
+						4000
+					);
+				}
+				await this.updateView();
+			},
+		});
+
+		// Handlers (assignment + templating)
+		attachDashboardAssignmentHandler({
+			app: this.deps.app,
+			orgStructurePort: this.deps.orgStructurePort,
+			viewContainer: container,
+			registerDomEvent: this.deps.registerDomEvent,
+		});
+
+		attachDashboardTemplatingHandler({
+			app: this.deps.app,
+			viewContainer: container,
+			registerDomEvent: this.deps.registerDomEvent,
+			refreshForFile: async (filePath?: string | null) => {
+				await refreshForFile(
+					this.deps.app,
+					this.deps.taskIndexService,
+					filePath
+				);
+				await this.updateView();
+			},
+		});
+
+		// Initial render
+		void this.updateView();
+
+		// Event wiring (event bus + vault)
+		wireDashboardEvents({
+			app: this.deps.app,
+			taskIndexService: this.deps.taskIndexService,
+			viewRoot: container,
+			getSelectedAlias: () => this.state.selectedAlias,
+			updateView: () => this.updateView(),
+			suppressedFiles: this.suppressedFiles,
+			register: this.deps.register,
+			registerEvent: this.deps.registerEvent,
+		});
+	}
+
+	unmount() {
+		this.closeTeamsPopup();
+		if (this.outsideClickHandler) {
+			try {
+				window.removeEventListener("click", this.outsideClickHandler, {
+					capture: true,
+				} as any);
+			} catch {}
+			this.outsideClickHandler = null;
+		}
+	}
+
+	// Rendering
+	private getViewContainer(): HTMLElement {
+		return (this.deps.view as any).containerEl.children[1] as HTMLElement;
+	}
+
+	private getOrCreateContentContainer(parent: HTMLElement): HTMLElement {
+		const existing = parent.querySelector(
+			".content-container"
+		) as HTMLElement | null;
+		return existing ?? parent.createEl("div", { cls: "content-container" });
+	}
+
+	async updateView() {
+		const parent = this.getViewContainer();
+		const scroll = captureScroll(parent);
+
+		const content = this.getOrCreateContentContainer(parent);
+		content.empty();
+
+		if (this.state.selectedView === "projects") {
+			await renderProjectView({
+				app: this.deps.app,
+				container: content,
+				taskIndexService: this.deps.taskIndexService,
+				settingsService: this.deps.settingsService,
+				teamSelection: this.teamSelection,
+				statusActive: this.state.activeOnly,
+				selectedAlias: this.state.selectedAlias,
+				registerDomEvent: this.deps.registerDomEvent,
+			});
+		} else {
+			content.createEl("h2", { text: "✅ Completed (Coming Soon)" });
+		}
+
+		restoreScroll(parent, scroll);
+	}
+
+	// Teams popup
+	private toggleTeamsPopup(anchor: HTMLElement) {
+		if (this.teamsPopupEl) {
+			this.closeTeamsPopup();
+			return;
+		}
+		this.openTeamsPopup(anchor);
+	}
+
+	private openTeamsPopup(anchor: HTMLElement) {
+		this.closeTeamsPopup();
+		const popup = document.createElement("div");
+		this.teamsPopupEl = popup;
+		popup.classList.add("agile-teams-popup");
+		popup.style.position = "absolute";
+		popup.style.right = "0";
+		popup.style.top = "calc(100% + 8px)";
+		popup.style.zIndex = "9999";
+		popup.style.minWidth = "320px";
+		popup.style.maxWidth = "520px";
+		popup.style.maxHeight = "60vh";
+		popup.style.overflow = "auto";
+		popup.style.padding = "10px";
+		popup.style.border = "1px solid var(--background-modifier-border)";
+		popup.style.borderRadius = "8px";
+		popup.style.background = "var(--background-primary)";
+		popup.style.boxShadow = "0 6px 24px rgba(0,0,0,0.2)";
+		anchor.parentElement?.appendChild(popup);
+		this.renderTeamsPopup();
+	}
+
+	private closeTeamsPopup() {
+		if (this.teamsPopupEl) {
+			try {
+				this.teamsPopupEl.remove();
+			} catch {}
+			this.teamsPopupEl = null;
+		}
+	}
+
+	private renderTeamsPopup() {
+		if (!this.teamsPopupEl) return;
+
+		const ctx: TeamsPopupContext = {
+			root: this.teamsPopupEl,
+			orgStructurePort: this.deps.orgStructurePort,
+			selectedTeamSlugs: this.teamSelection.getSelectedTeamSlugs(),
+			implicitAllSelected: this.teamSelection.getImplicitAllSelected(),
+			setImplicitAllSelected: (val: boolean) => {
+				this.teamSelection.setImplicitAllSelected(val);
+			},
+			addSelectedSlugs: (slugs: string[]) => {
+				this.teamSelection.addSelectedSlugs(slugs);
+			},
+			removeSelectedSlugs: (slugs: string[]) => {
+				this.teamSelection.removeSelectedSlugs(slugs);
+			},
+			onSelectionChanged: () => {
+				this.renderTeamsPopup();
+				this.updateView();
+			},
+			getAllowedTeamSlugsForSelectedUser: () =>
+				this.teamSelection.getAllowedTeamSlugsForSelectedUser(
+					this.state.selectedAlias
+				),
+		};
+
+		renderTeamsPopupContent(ctx);
+	}
+}
+
+./src/features/agile-dashboard-view/app/event-bus.ts
+/**
+ * Typed EventBus for Agile Dashboard custom events.
+ * Wraps window.dispatchEvent/addEventListener with strong payload types and simple lifecycle.
+ *
+ * Purpose:
+ * - Decouple UI modules and the view via well-defined events.
+ * - Make event usage type-safe and easy to test (by overriding the target).
+ */
+
+export type AgileEvents = {
+	"agile:prepare-optimistic-file-change": { filePath: string };
+	"agile:task-status-updated": {
+		uid?: string;
+		filePath?: string;
+		newStatus?: string;
+	};
+	"agile:task-snoozed": { uid?: string; filePath?: string; date?: string };
+	"agile:task-updated": { filePath?: string };
+
+	"agile:assignee-changed": {
+		filePath: string;
+		parentLine0: number;
+		beforeLines?: string[] | null;
+		newAssigneeSlug: string | null;
+		oldAssigneeSlug?: string | null;
+		parentUid?: string | null;
+	};
+	"agile:assignment-changed": {
+		uid: string;
+		filePath: string;
+		newAlias: string;
+	};
+	"agile:request-assign-propagate": { uid: string; newAlias: string };
+};
+
+type EventName = keyof AgileEvents;
+type Handler<N extends EventName> = (payload: AgileEvents[N]) => void;
+
+export class EventBus {
+	constructor(
+		private readonly target:
+			| Window
+			| Pick<
+					Window,
+					"addEventListener" | "removeEventListener" | "dispatchEvent"
+			  >
+			| null = typeof window !== "undefined" ? window : null
+	) {}
+
+	on<N extends EventName>(name: N, handler: Handler<N>): () => void {
+		if (!this.target) return () => {};
+		const listener = (ev: Event) => {
+			const ce = ev as CustomEvent<AgileEvents[N]>;
+			handler(ce.detail ?? ({} as AgileEvents[N]));
+		};
+		this.target.addEventListener(name as string, listener as EventListener);
+		return () =>
+			this.target?.removeEventListener?.(
+				name as string,
+				listener as EventListener
+			);
+	}
+
+	once<N extends EventName>(name: N, handler: Handler<N>): () => void {
+		if (!this.target) return () => {};
+		const listener = (ev: Event) => {
+			const ce = ev as CustomEvent<AgileEvents[N]>;
+			handler(ce.detail ?? ({} as AgileEvents[N]));
+			this.target?.removeEventListener?.(
+				name as string,
+				listener as EventListener
+			);
+		};
+		this.target.addEventListener(name as string, listener as EventListener);
+		return () =>
+			this.target?.removeEventListener?.(
+				name as string,
+				listener as EventListener
+			);
+	}
+
+	off<N extends EventName>(name: N, handler: Handler<N>): void {
+		// Note: Off only works if the same reference used in `on` is provided here.
+		if (!this.target) return;
+		this.target.removeEventListener(
+			name as string,
+			handler as unknown as EventListener
+		);
+	}
+
+	dispatch<N extends EventName>(name: N, payload: AgileEvents[N]): void;
+
+	dispatch(name: string, payload?: any): void;
+	dispatch(name: string, payload?: any): void {
+		if (!this.target) return;
+		this.target.dispatchEvent(
+			new CustomEvent(name as string, { detail: payload })
+		);
+	}
+}
+
+// Singleton for convenience (no-SSR safe)
+export const eventBus = new EventBus(
+	typeof window !== "undefined" ? window : null
+);
+
+./src/features/agile-dashboard-view/app/refresh-service.ts
+import { TFile, type App } from "obsidian";
+import type { TaskItem, TaskIndexService } from "@features/task-index";
+import { renderTaskTree } from "../ui/components/task-renderer";
+import { normalizeSection } from "../ui/components/ui-policy";
+
+export async function refreshForFile(
+	app: App,
+	taskIndexService: TaskIndexService,
+	filePath?: string | null
+) {
+	try {
+		if (filePath) {
+			const af = app.vault.getAbstractFileByPath(filePath);
+			if (af instanceof TFile) {
+				await taskIndexService.updateFile(af);
+			}
+		}
+	} catch {
+		/* ignore */
+	}
+}
+
+export async function refreshTaskTreeByUid(
+	app: App,
+	taskIndexService: TaskIndexService,
+	viewRoot: HTMLElement,
+	uid: string,
+	selectedAlias: string | null
+) {
+	const contentRoot = viewRoot.querySelector(
+		".content-container"
+	) as HTMLElement | null;
+	if (!contentRoot) return;
+
+	const allLis = Array.from(
+		contentRoot.querySelectorAll("li[data-task-uid]")
+	) as HTMLElement[];
+	const li = allLis.find(
+		(el) => (el.getAttribute("data-task-uid") || "") === uid
+	);
+	if (!li) return;
+
+	// Prefer most-local section type: LI -> nearest UL -> enclosing section root -> fallback
+	const rawSectionType =
+		li.getAttribute("data-section") ||
+		(
+			li.closest(
+				"ul.agile-dashboard.contains-task-list"
+			) as HTMLElement | null
+		)?.getAttribute("data-section") ||
+		(li.closest("[data-section-root]") as HTMLElement | null)?.getAttribute(
+			"data-section-root"
+		) ||
+		"tasks";
+
+	const sectionType = normalizeSection(rawSectionType);
+
+	const task = (taskIndexService.getById?.(uid) || null) as TaskItem | null;
+	if (!task) return;
+
+	const tmp = document.createElement("div");
+
+	renderTaskTree([task], tmp, app, 0, false, sectionType, selectedAlias);
+	const newLi = tmp.querySelector(
+		"ul.agile-dashboard.contains-task-list > li"
+	) as HTMLElement | null;
+	if (!newLi) return;
+
+	li.replaceWith(newLi);
+}
+./src/features/agile-dashboard-view/app/status-update.ts
+import { App, TFile } from "obsidian";
+import { TaskItem } from "@features/task-index";
+import { hideTaskAndCollapseAncestors } from "../ui/components/task-buttons";
+import { eventBus } from "./event-bus";
+import {
+	DEFAULT_STATUS_SEQUENCE,
+	getNextStatusChar,
+	advanceTaskStatusForTaskItem,
+} from "@features/task-status-sequencer";
+
+/**
+ * Toggle or cancel a task's status by delegating to task-status-sequence.
+ * - Short press advances via the default sequence: " " → "/" → "x" → "-" → " "
+ * - Long press steps through the sequence until it reaches "-"
+ *
+ * Returns the new status if updated, otherwise null.
+ */
+export const handleStatusChange = async (
+	task: TaskItem,
+	liEl: HTMLElement,
+	app: App,
+	isCancel = false
+): Promise<string | null> => {
+	try {
+		// Resolve file path
+		const filePath = task.link?.path || task._uniqueId?.split(":")[0];
+		if (!filePath) throw new Error("Missing task file path");
+
+		const file = app.vault.getAbstractFileByPath(filePath) as TFile;
+		if (!file) throw new Error(`File not found: ${filePath}`);
+
+		// Prepare optimistic UI suppression for vault modify refresh
+		eventBus.dispatch("agile:prepare-optimistic-file-change", { filePath });
+
+		// Read content to robustly locate the target line
+		const content = await app.vault.read(file);
+		const lines = content.split(/\r?\n/);
+
+		// Helpers (reuse robust targeting from previous implementation)
+		const parseStatusFromLine = (line: string): string | null => {
+			const m = line.match(/^\s*[-*+]\s*\[\s*(.)\s*\]/);
+			return m ? m[1] : null;
+		};
+		const normalize = (s: string) =>
+			(s || "")
+				// strip old ✅/❌ markers in comparison context only (not mutating file)
+				.replace(/\s*(✅|❌)\s+\d{4}-\d{2}-\d{2}\b/g, "")
+				.replace(/\s+/g, " ")
+				.trim();
+		const getLineRestNormalized = (line: string): string | null => {
+			const m = line.match(/^\s*[-*+]\s*\[\s*.\s*\]\s*(.*)$/);
+			return m ? normalize(m[1]) : null;
+		};
+
+		// Try to resolve the correct line index using provided task hints + text match
+		let effectiveStatus = (task.status ?? " ").trim() || " ";
+		let targetLineIndex = -1;
+
+		const targetTextNorm = normalize(
+			(task.text || task.visual || "").trim()
+		);
+
+		// Prefer parsing from known position or nearby
+		const baseIdx =
+			typeof (task as any)?.position?.start?.line === "number"
+				? (task as any).position.start.line
+				: typeof task.line === "number"
+				? task.line
+				: -1;
+		const candidates = [baseIdx, baseIdx - 1, baseIdx + 1].filter(
+			(i) => i >= 0 && i < lines.length
+		);
+
+		for (const i of candidates) {
+			const rest = getLineRestNormalized(lines[i]);
+			if (!rest) continue;
+			if (
+				rest === targetTextNorm ||
+				rest.startsWith(targetTextNorm) ||
+				targetTextNorm.startsWith(rest)
+			) {
+				targetLineIndex = i;
+				const parsed = parseStatusFromLine(lines[i]);
+				if (parsed) effectiveStatus = parsed;
+				break;
+			}
+		}
+
+		// Fallback scans
+		if (targetLineIndex === -1 && targetTextNorm) {
+			// Exact match anywhere
+			for (let i = 0; i < lines.length; i++) {
+				const rest = getLineRestNormalized(lines[i]);
+				if (rest && rest === targetTextNorm) {
+					targetLineIndex = i;
+					const parsed = parseStatusFromLine(lines[i]);
+					if (parsed) effectiveStatus = parsed;
+					break;
+				}
+			}
+			// Prefix match anywhere
+			if (targetLineIndex === -1) {
+				for (let i = 0; i < lines.length; i++) {
+					const rest = getLineRestNormalized(lines[i]);
+					if (rest && rest.startsWith(targetTextNorm)) {
+						targetLineIndex = i;
+						const parsed = parseStatusFromLine(lines[i]);
+						if (parsed) effectiveStatus = parsed;
+						break;
+					}
+				}
+			}
+		}
+
+		if (targetLineIndex === -1) {
+			// If we absolutely cannot locate the line, abort (avoid unintended edits)
+			throw new Error("Unable to locate task line for status change");
+		}
+
+		// Predict the next status for short press, or "-" for long press
+		const predictShortNext = (cur: string): string =>
+			getNextStatusChar(cur as any, DEFAULT_STATUS_SEQUENCE);
+
+		const targetStatus = isCancel ? "-" : predictShortNext(effectiveStatus);
+
+		// Run the update via task-status-sequence, preferring active editor for immediate UX
+		// Helper: perform one-step advance
+		const stepOnce = async () => {
+			await advanceTaskStatusForTaskItem({
+				app,
+				task: {
+					filePath,
+					line0: targetLineIndex,
+					status: effectiveStatus,
+				},
+			});
+			// Advance our local tracker too for multi-step logic
+			effectiveStatus = predictShortNext(effectiveStatus);
+		};
+
+		if (isCancel) {
+			// Step through the default sequence until we reach '-'
+			// Sequence is known: [" ", "/", "x", "-"]
+			const seq = DEFAULT_STATUS_SEQUENCE;
+			const curIdx = Math.max(
+				0,
+				seq.findIndex((c) => c === (effectiveStatus as any))
+			);
+			const targetIdx = seq.findIndex((c) => c === "-");
+			const len = seq.length;
+			// If current not found (-1), treat as space at 0
+			const start = curIdx < 0 ? 0 : curIdx;
+			const steps = (targetIdx - start + len) % len;
+			for (let i = 0; i < steps; i++) {
+				await stepOnce();
+			}
+		} else {
+			// Single step advance
+			await stepOnce();
+		}
+
+		// Update the TaskItem's in-memory status for immediate UI hints elsewhere
+		(task as any).status = targetStatus;
+
+		// Hide completed/cancelled items immediately in UI
+		if (targetStatus === "x" || targetStatus === "-") {
+			try {
+				hideTaskAndCollapseAncestors(liEl);
+			} catch {
+				/* ignore */
+			}
+		}
+
+		return targetStatus;
+	} catch {
+		return null;
+	}
+};
+
 ./src/features/agile-dashboard-view/app/view-orchestration.ts
 import type { Container } from "src/composition/container";
 import {
@@ -117,22 +742,348 @@ export async function registerAgileDashboardView(container: Container) {
 	}
 }
 
+./src/features/agile-dashboard-view/domain/team-selection.ts
+import type { SettingsService } from "@settings";
+import type { OrgStructurePort } from "@features/org-structure";
+import type { TaskItem } from "@features/task-index";
+
+export class TeamSelection {
+	private selectedTeamSlugs = new Set<string>();
+	private implicitAllSelected = true;
+	private readonly storageKey: string;
+
+	constructor(
+		private readonly settingsService: SettingsService,
+		private readonly orgStructurePort: OrgStructurePort | undefined,
+		storageKey: string
+	) {
+		this.storageKey = storageKey;
+		this.load();
+	}
+
+	// Persistence
+	private load() {
+		try {
+			const raw = window.localStorage.getItem(this.storageKey);
+			if (raw === null) {
+				this.implicitAllSelected = true;
+				this.selectedTeamSlugs = new Set();
+				return;
+			}
+			this.implicitAllSelected = false;
+			const arr = JSON.parse(raw);
+			if (Array.isArray(arr)) {
+				this.selectedTeamSlugs = new Set(
+					arr.map((s) => String(s).toLowerCase())
+				);
+			} else {
+				this.selectedTeamSlugs = new Set();
+			}
+		} catch {
+			this.implicitAllSelected = true;
+			this.selectedTeamSlugs = new Set();
+		}
+	}
+
+	private persist() {
+		try {
+			this.implicitAllSelected = false;
+			const arr = Array.from(this.selectedTeamSlugs.values());
+			window.localStorage.setItem(this.storageKey, JSON.stringify(arr));
+		} catch {}
+	}
+
+	// Public selection API
+	getImplicitAllSelected(): boolean {
+		return this.implicitAllSelected;
+	}
+	setImplicitAllSelected(val: boolean) {
+		this.implicitAllSelected = val;
+	}
+
+	getSelectedTeamSlugs(): Set<string> {
+		return this.selectedTeamSlugs;
+	}
+
+	addSelectedSlugs(slugs: string[]) {
+		slugs.forEach((s) =>
+			this.selectedTeamSlugs.add((s || "").toLowerCase())
+		);
+		this.persist();
+	}
+	removeSelectedSlugs(slugs: string[]) {
+		slugs.forEach((s) =>
+			this.selectedTeamSlugs.delete((s || "").toLowerCase())
+		);
+		this.persist();
+	}
+
+	// Membership derivation
+	private normalizeAlias(input: string): string {
+		if (!input) return "";
+		let s = String(input).trim();
+		if (s.startsWith("@")) s = s.slice(1);
+		return s.toLowerCase();
+	}
+
+	private aliasFromMemberLike(x: unknown): string {
+		if (typeof x === "string") return this.normalizeAlias(x);
+		if (!x || typeof x !== "object") return "";
+		const anyObj = x as Record<string, unknown>;
+		const cand =
+			(anyObj as any).alias ??
+			(anyObj as any).user ??
+			(anyObj as any).name ??
+			(anyObj as any).id ??
+			(anyObj as any).email;
+		return this.normalizeAlias(
+			typeof cand === "string" ? cand : String(cand || "")
+		);
+	}
+
+	private extractAliases(members: unknown): string[] {
+		if (!members) return [];
+		if (Array.isArray(members)) {
+			return members
+				.map((m) => this.aliasFromMemberLike(m))
+				.filter(Boolean);
+		}
+		if (typeof members === "object") {
+			return Object.values(members)
+				.map((v) => this.aliasFromMemberLike(v))
+				.filter(Boolean);
+		}
+		return [];
+	}
+
+	private teamNodeHasUser(node: any, aliasNorm: string): boolean {
+		const pools = [
+			node?.members,
+			node?.memberAliases,
+			node?.users,
+			node?.aliases,
+			node?.membersMap,
+			node?.allMembers,
+		];
+		for (const pool of pools) {
+			const aliases = this.extractAliases(pool);
+			if (aliases.includes(aliasNorm)) return true;
+		}
+		return false;
+	}
+
+	private tryPortMembershipMethods(aliasNorm: string): Set<string> | null {
+		if (!this.orgStructurePort) return null;
+		const port = this.orgStructurePort as unknown as Record<
+			string,
+			unknown
+		>;
+		const candidates = [
+			"getTeamsForUser",
+			"getTeamSlugsForUser",
+			"getUserTeams",
+			"getTeamsByUser",
+		];
+		for (const fnName of candidates) {
+			const fn = port[fnName];
+			if (typeof fn === "function") {
+				try {
+					const raw = (fn as any).call(
+						this.orgStructurePort,
+						aliasNorm
+					);
+					if (Array.isArray(raw)) {
+						const set = new Set<string>();
+						for (const item of raw) {
+							if (typeof item === "string") {
+								const slug = item.toLowerCase().trim();
+								if (slug) set.add(slug);
+							} else if (item && typeof item === "object") {
+								const cand =
+									(item as any).slug ??
+									(item as any).teamSlug ??
+									(item as any).id ??
+									(item as any).key ??
+									(item as any).code;
+								const slug =
+									typeof cand === "string"
+										? cand.toLowerCase().trim()
+										: String(cand || "")
+												.toLowerCase()
+												.trim();
+								if (slug) set.add(slug);
+							}
+						}
+						if (set.size > 0) return set;
+					}
+				} catch {
+					/* ignore */
+				}
+			}
+		}
+		return null;
+	}
+
+	private deriveMembershipFromStructure(
+		aliasNorm: string
+	): Set<string> | null {
+		if (!this.orgStructurePort) return null;
+		try {
+			const { organizations, teams } =
+				this.orgStructurePort.getOrgStructure();
+			const result = new Set<string>();
+
+			const visitTeam = (node: any) => {
+				const cand =
+					node?.slug ??
+					node?.teamSlug ??
+					node?.id ??
+					node?.key ??
+					node?.code;
+				const slug =
+					typeof cand === "string"
+						? cand.toLowerCase().trim()
+						: String(cand || "")
+								.toLowerCase()
+								.trim();
+				if (slug && this.teamNodeHasUser(node, aliasNorm))
+					result.add(slug);
+				for (const st of (node.subteams as any[] | undefined) || [])
+					visitTeam(st);
+			};
+
+			for (const org of organizations || [])
+				for (const t of org.teams || []) visitTeam(t);
+			for (const t of teams || []) visitTeam(t);
+
+			return result.size > 0 ? result : new Set<string>();
+		} catch {
+			return null;
+		}
+	}
+
+	private deriveMembershipFromSettings(
+		aliasNorm: string
+	): Set<string> | null {
+		try {
+			const settings = this.settingsService.getRaw();
+			const teams = settings.teams || [];
+			const result = new Set<string>();
+			for (const t of teams) {
+				const slug = (t as any).slug ?? (t as any).teamSlug ?? "";
+				const slugNorm = String(slug || "")
+					.toLowerCase()
+					.trim();
+				if (!slugNorm) continue;
+				const members = (t as any).members || [];
+				const aliases = this.extractAliases(members);
+				if (aliases.includes(aliasNorm)) result.add(slugNorm);
+			}
+			return result.size > 0 ? result : new Set<string>();
+		} catch {
+			return null;
+		}
+	}
+
+	getAllowedTeamSlugsForSelectedUser(
+		selectedAlias: string | null
+	): Set<string> | null {
+		const aliasNorm = this.normalizeAlias(selectedAlias || "");
+		if (!aliasNorm) return null;
+		const fromPortMethods = this.tryPortMembershipMethods(aliasNorm);
+		const fromStructure = this.deriveMembershipFromStructure(aliasNorm);
+		const fromSettings = this.deriveMembershipFromSettings(aliasNorm);
+		const union = new Set<string>();
+		for (const s of [fromPortMethods, fromStructure, fromSettings]) {
+			if (!s) continue;
+			for (const x of s) union.add(x);
+		}
+		return union.size > 0 ? union : null;
+	}
+
+	restrictSelectedTeamsToUserMembership(selectedAlias: string | null) {
+		const allowed = this.getAllowedTeamSlugsForSelectedUser(selectedAlias);
+		if (!allowed) return;
+		if (this.selectedTeamSlugs.size === 0) return;
+		const before = this.selectedTeamSlugs.size;
+		for (const s of Array.from(this.selectedTeamSlugs)) {
+			if (!allowed.has(s)) this.selectedTeamSlugs.delete(s);
+		}
+		if (this.selectedTeamSlugs.size !== before) this.persist();
+	}
+
+	getTeamSlugForFile(filePath: string): string | null {
+		try {
+			if (!this.orgStructurePort) return null;
+			const { team } =
+				this.orgStructurePort.getTeamMembersForFile(filePath);
+			const slug = (team?.slug || "").toLowerCase().trim();
+			return slug || null;
+		} catch {
+			return null;
+		}
+	}
+
+	isTaskAllowedByTeam(task: TaskItem, selectedAlias: string | null): boolean {
+		const filePath =
+			task.link?.path || (task._uniqueId?.split(":")[0] ?? "");
+		if (!filePath) return false;
+
+		const allowedByUser =
+			this.getAllowedTeamSlugsForSelectedUser(selectedAlias);
+
+		if (this.implicitAllSelected) {
+			if (!this.orgStructurePort) return true;
+			const teamSlug = this.getTeamSlugForFile(filePath);
+			if (!allowedByUser) return true;
+			if (!teamSlug) return false;
+			return allowedByUser.has(teamSlug);
+		}
+
+		if (this.selectedTeamSlugs.size === 0) return false;
+
+		const teamSlug = this.getTeamSlugForFile(filePath);
+		if (!teamSlug) return false;
+
+		const inSelected = this.selectedTeamSlugs.has(teamSlug);
+		if (!inSelected) return false;
+
+		if (allowedByUser) return allowedByUser.has(teamSlug);
+		return true;
+	}
+
+	// Expose state for Teams popup
+	buildTeamsPopupContext() {
+		return {
+			selectedTeamSlugs: this.selectedTeamSlugs,
+			implicitAllSelected: this.implicitAllSelected,
+		};
+	}
+}
+
+./src/features/agile-dashboard-view/domain/view-state.ts
+export type SelectedView = "projects" | "completed";
+
+export interface DashboardState {
+	selectedView: SelectedView;
+	activeOnly: boolean;
+	selectedAlias: string | null;
+}
+
 ./src/features/agile-dashboard-view/index.ts
 export { registerAgileDashboardView } from "./app/view-orchestration";
+
+export { type TaskUIPolicy, normalizeSection } from "./ui/components/ui-policy";
 ./src/features/agile-dashboard-view/ui/components/artifacts.ts
 import { App } from "obsidian";
 import { TaskItem, TaskParams } from "@features/task-index";
 import { renderTaskTree } from "./task-renderer";
-import {
-	activeForMember,
-	isCancelled,
-	isInProgress,
-	isCompleted,
-	isSnoozed,
-	getAgileArtifactType,
-} from "@features/task-filter";
+import { activeForMember, getAgileArtifactType } from "@features/task-filter";
 import { buildPrunedMergedTrees } from "@features/task-tree-builder";
 import type { AgileObsidianSettings } from "@settings/index";
+import { isShownByParams } from "../utils/filters";
+import { attachSectionFolding } from "@features/task-tree-fold";
+import { normalizeSection } from "./ui-policy";
 
 export type ArtifactPredicate = (
 	task: TaskItem,
@@ -141,10 +1092,23 @@ export type ArtifactPredicate = (
 
 export interface ArtifactOptions {
 	title: string;
-	renderType: string; // passed to renderTaskTree
+	renderType: string; // passed to renderTaskTree and used for folding sectionName
 	predicate: ArtifactPredicate;
 }
 
+type RegisterDomEvent = (
+	el: HTMLElement | Window | Document,
+	type: string,
+	handler: (evt: any) => void,
+	options?: AddEventListenerOptions | boolean
+) => void;
+
+/**
+Create a per-section root wrapper to isolate DOM for Tasks/Stories/Epics,
+render the section inside it, wire folding, and then "re-stamp" all task list
+nodes in this section with the normalized section name to prevent any
+post-processing code from accidentally overriding the data-section.
+*/
 export function processAndRenderArtifact(
 	container: HTMLElement,
 	currentTasks: TaskItem[],
@@ -154,18 +1118,12 @@ export function processAndRenderArtifact(
 	taskMap: Map<string, TaskItem>,
 	childrenMap: Map<string, TaskItem[]>,
 	taskParams: TaskParams,
-	options: ArtifactOptions
+	options: ArtifactOptions,
+	registerDomEvent?: RegisterDomEvent
 ) {
-	const { inProgress, completed, sleeping, cancelled } = taskParams;
-
-	const sectionTasks = currentTasks.filter((task) => {
-		return (
-			(inProgress && isInProgress(task, taskMap)) ||
-			(completed && isCompleted(task)) ||
-			(sleeping && isSnoozed(task, taskMap)) ||
-			(cancelled && isCancelled(task))
-		);
-	});
+	const sectionTasks = currentTasks.filter((task) =>
+		isShownByParams(task, taskMap, selectedAlias, taskParams)
+	);
 
 	const directlyAssigned = sectionTasks.filter(
 		(task) =>
@@ -176,19 +1134,73 @@ export function processAndRenderArtifact(
 	const prunedTasks = buildPrunedMergedTrees(directlyAssigned, taskMap);
 
 	if (prunedTasks.length > 0) {
-		container.createEl("h2", { text: options.title });
+		// Normalize once and keep it consistent
+		const normalizedType = normalizeSection(options.renderType);
+
+		// Create an isolated root wrapper for this artifact section
+		const sectionRoot = container.createEl("div", {
+			cls: "agile-artifact-section",
+			attr: {
+				"data-section-root": normalizedType,
+			},
+		});
+
+		// Heading
+		sectionRoot.createEl("h2", { text: options.title });
+
+		// Render into the section root
 		renderTaskTree(
 			prunedTasks,
-			container,
+			sectionRoot,
 			app,
 			0,
 			false,
-			options.renderType,
+			normalizedType,
 			selectedAlias
 		);
+
+		// Wire folding, scoped to this section only
+		try {
+			attachSectionFolding(sectionRoot, {
+				app,
+				taskMap,
+				childrenMap,
+				selectedAlias,
+				renderTaskTree,
+				registerDomEvent,
+				sectionName: normalizedType,
+				// No first-level gating for Tasks/Stories/Epics; bottom-only rule enforced by fold module.
+			});
+		} catch {
+			/* ignore */
+		}
+
+		// Final pass: enforce correct data-section stamping across all lists/items
+		// in this section only (protect against any accidental overrides elsewhere).
+		try {
+			const restamp = (root: HTMLElement, value: string) => {
+				const uls = Array.from(
+					root.querySelectorAll(
+						"ul.agile-dashboard.contains-task-list"
+					)
+				) as HTMLElement[];
+				uls.forEach((ul) => ul.setAttribute("data-section", value));
+
+				const lis = Array.from(
+					root.querySelectorAll("li.task-list-item")
+				) as HTMLElement[];
+				lis.forEach((li) => li.setAttribute("data-section", value));
+			};
+			restamp(sectionRoot, normalizedType);
+		} catch {
+			/* ignore */
+		}
 	}
 }
 
+/**
+Render all artifacts sections that are enabled in settings.
+*/
 export function processAndRenderArtifacts(
 	container: HTMLElement,
 	currentTasks: TaskItem[],
@@ -198,7 +1210,8 @@ export function processAndRenderArtifacts(
 	taskMap: Map<string, TaskItem>,
 	childrenMap: Map<string, TaskItem[]>,
 	taskParams: TaskParams,
-	settings: AgileObsidianSettings
+	settings: AgileObsidianSettings,
+	registerDomEvent?: RegisterDomEvent
 ) {
 	if (settings.showTasks) {
 		processAndRenderArtifact(
@@ -214,7 +1227,8 @@ export function processAndRenderArtifacts(
 				title: "🔨 Tasks",
 				renderType: "tasks",
 				predicate: (t) => getAgileArtifactType(t) === "task",
-			}
+			},
+			registerDomEvent
 		);
 	}
 	if (settings.showStories) {
@@ -229,9 +1243,10 @@ export function processAndRenderArtifacts(
 			taskParams,
 			{
 				title: "📝 Stories",
-				renderType: "tasks",
+				renderType: "stories",
 				predicate: (t) => getAgileArtifactType(t) === "story",
-			}
+			},
+			registerDomEvent
 		);
 	}
 	if (settings.showEpics) {
@@ -248,25 +1263,170 @@ export function processAndRenderArtifacts(
 				title: "🏆 Epics",
 				renderType: "epics",
 				predicate: (t) => getAgileArtifactType(t) === "epic",
-			}
+			},
+			registerDomEvent
 		);
 	}
+}
+
+./src/features/agile-dashboard-view/ui/components/controls-bar.ts
+import type { SettingsService } from "@settings";
+import { buildGroupedMemberSelect } from "./member-select";
+
+export interface ControlsBarOptions {
+	container: HTMLElement;
+	version: string;
+	settingsService: SettingsService;
+	initialView: "projects" | "completed";
+	initialActiveOnly: boolean;
+	initialAlias: string | null;
+	onViewChange: (v: "projects" | "completed") => void;
+	onActiveToggleChange: (active: boolean) => void;
+	onMemberChange: (alias: string | null) => void;
+	onSelectTeamsClick: (anchor: HTMLElement) => void;
+	/** New: trigger a full task-index rebuild */
+	onRebuildIndexClick: () => void;
+}
+
+export interface ControlsBarRefs {
+	root: HTMLElement;
+	viewSelect: HTMLSelectElement;
+	activeToggle: HTMLInputElement;
+	activeToggleLabel: HTMLSpanElement;
+	memberSelect: HTMLSelectElement;
+	selectTeamsBtn: HTMLButtonElement;
+	rebuildBtn: HTMLButtonElement;
+}
+
+export function renderControlsBar(opts: ControlsBarOptions): ControlsBarRefs {
+	const {
+		container,
+		version,
+		settingsService,
+		initialView,
+		initialActiveOnly,
+		initialAlias,
+		onViewChange,
+		onActiveToggleChange,
+		onMemberChange,
+		onSelectTeamsClick,
+		onRebuildIndexClick,
+	} = opts;
+
+	const controlsContainer = container.createEl("div", {
+		attr: {
+			style: "display:flex; align-items:center; gap:8px; position:relative; flex-wrap:wrap;",
+		},
+	});
+
+	// Version
+	const versionText = controlsContainer.createEl("p");
+	const strongText = versionText.createEl("strong");
+	strongText.textContent = `Agile Obsidian v${version}`;
+
+	// Rebuild index icon button (moved here: right after version text)
+	const rebuildBtn = controlsContainer.createEl("button", {
+		text: "↻",
+	}) as HTMLButtonElement;
+	rebuildBtn.title = "Rebuild Task Index";
+	rebuildBtn.setAttribute("aria-label", "Rebuild Task Index");
+	rebuildBtn.addEventListener("click", (ev) => {
+		ev.preventDefault();
+		ev.stopPropagation();
+		onRebuildIndexClick();
+	});
+
+	// View selector comes after the rebuild button
+	const viewSelect = controlsContainer.createEl("select");
+	viewSelect.innerHTML = `
+    <option value="projects">🚀 Projects</option>
+    <option value="completed">✅ Completed</option>
+  `;
+	viewSelect.value = initialView;
+	viewSelect.addEventListener("change", () => {
+		onViewChange(
+			(viewSelect.value as "projects" | "completed") ?? "projects"
+		);
+	});
+
+	// Member selector
+	const memberSelect = buildGroupedMemberSelect(
+		settingsService,
+		initialAlias
+	);
+	memberSelect.addEventListener("change", () => {
+		onMemberChange(memberSelect.value || null);
+	});
+	controlsContainer.appendChild(memberSelect);
+
+	// Team selection button
+	const selectTeamsBtn = controlsContainer.createEl("button", {
+		text: "Select Teams",
+	}) as HTMLButtonElement;
+	selectTeamsBtn.addEventListener("click", (ev) => {
+		ev.preventDefault();
+		ev.stopPropagation();
+		onSelectTeamsClick(selectTeamsBtn);
+	});
+
+	// Active/Inactive toggle
+	const statusToggleContainer = controlsContainer.createEl("span", {
+		attr: { style: "display:inline-flex; align-items:center; gap:6px;" },
+	});
+	const activeToggleLabel = statusToggleContainer.createEl("span", {
+		text: initialActiveOnly ? "Active" : "Inactive",
+	});
+	const activeToggle = statusToggleContainer.createEl("input", {
+		type: "checkbox",
+	}) as HTMLInputElement;
+	activeToggle.checked = initialActiveOnly;
+	statusToggleContainer.style.display =
+		initialView === "projects" ? "inline-flex" : "none";
+
+	activeToggle.addEventListener("change", () => {
+		activeToggleLabel.textContent = activeToggle.checked
+			? "Active"
+			: "Inactive";
+		onActiveToggleChange(activeToggle.checked);
+	});
+
+	viewSelect.addEventListener("change", () => {
+		statusToggleContainer.style.display =
+			viewSelect.value === "projects" ? "inline-flex" : "none";
+	});
+
+	return {
+		root: controlsContainer,
+		viewSelect,
+		activeToggle,
+		activeToggleLabel,
+		memberSelect,
+		selectTeamsBtn,
+		rebuildBtn,
+	};
 }
 
 ./src/features/agile-dashboard-view/ui/components/initiatives.ts
 import { App } from "obsidian";
 import { TaskItem, TaskParams } from "@features/task-index";
 import { renderTaskTree } from "./task-renderer";
-import {
-	activeForMember,
-	isCancelled,
-	isInProgress,
-	isCompleted,
-	isSnoozed,
-	getAgileArtifactType,
-} from "@features/task-filter";
+import { activeForMember, getAgileArtifactType } from "@features/task-filter";
 import { buildPrunedMergedTrees } from "@features/task-tree-builder";
+import { isShownByParams } from "../utils/filters";
+import { attachSectionFolding } from "@features/task-tree-fold";
 
+type RegisterDomEvent = (
+	el: HTMLElement | Window | Document,
+	type: string,
+	handler: (evt: any) => void,
+	options?: AddEventListenerOptions | boolean
+) => void;
+
+/**
+ * Process and render the Initiatives section.
+ * Displays top-level initiatives. Expanding an initiative shows only its direct epics.
+ * Each expanded level renders ONLY direct children (filtered) and adds recursive chevrons.
+ */
 export function processAndRenderInitiatives(
 	container: HTMLElement,
 	currentTasks: TaskItem[],
@@ -275,80 +1435,193 @@ export function processAndRenderInitiatives(
 	app: App,
 	taskMap: Map<string, TaskItem>,
 	childrenMap: Map<string, TaskItem[]>,
-	taskParams: TaskParams
+	taskParams: TaskParams,
+	registerDomEvent?: RegisterDomEvent
 ) {
-	const { inProgress, completed, sleeping, cancelled } = taskParams;
-	const sectionTasks = currentTasks.filter((task) => {
-		return (
-			(inProgress && isInProgress(task, taskMap)) ||
-			(completed && isCompleted(task)) ||
-			(sleeping && isSnoozed(task, taskMap)) ||
-			(cancelled && isCancelled(task))
-		);
-	});
+	// 1) Filter to tasks shown by current view toggles
+	const sectionTasks = currentTasks.filter((task) =>
+		isShownByParams(task, taskMap, selectedAlias, taskParams)
+	);
 
+	// 2) Only initiatives assigned/active for member
 	const directlyAssigned = sectionTasks.filter(
 		(task) =>
 			activeForMember(task, status, selectedAlias) &&
 			getAgileArtifactType(task) === "initiative"
 	);
 
-	const statusFilterCallback = (task: TaskItem) =>
-		(task.status !== "I" && inProgress && isInProgress(task, taskMap)) ||
-		(completed && isCompleted(task)) ||
-		(sleeping && isSnoozed(task, taskMap)) ||
-		(cancelled && isCancelled(task));
-
-	let prunedTasks = buildPrunedMergedTrees(
+	// Build ONLY the initiatives (no children) so epics are hidden by default
+	const initiativesOnly = buildPrunedMergedTrees(
 		directlyAssigned,
 		taskMap,
 		undefined,
 		childrenMap,
-		{ depth: 1, filterCallback: statusFilterCallback }
+		{ depth: 0 }
 	);
 
-	const lineOf = (t: TaskItem) =>
-		t.position?.start?.line ?? Number.MAX_SAFE_INTEGER;
-
-	prunedTasks = prunedTasks.map((initiative) => {
-		const filteredChildren: TaskItem[] = initiative.children;
-		const slashEpics = filteredChildren.filter(
-			(child) => child.status === "/"
-		);
-		const spaceEpics = filteredChildren.filter(
-			(child) => child.status === " "
-		);
-
-		slashEpics.sort((a, b) => lineOf(a) - lineOf(b));
-		spaceEpics.sort((a, b) => lineOf(a) - lineOf(b));
-
-		let limitedChildren = slashEpics;
-		if (limitedChildren.length === 0 && spaceEpics.length > 0) {
-			limitedChildren = spaceEpics.slice(0, 1);
-		}
-		return { ...initiative, children: limitedChildren };
-	});
-
-	if (prunedTasks.length > 0) {
+	if (initiativesOnly.length > 0) {
 		container.createEl("h2", { text: "🎖️ Initiatives" });
-		renderTaskTree(prunedTasks, container, app, 0, false, "initiatives", selectedAlias);
+
+		// Render initiatives with no children
+		renderTaskTree(
+			initiativesOnly,
+			container,
+			app,
+			0,
+			false,
+			"initiatives",
+			selectedAlias
+		);
+
+		// Attach folding toggles via reusable fold module (section-agnostic API)
+		try {
+			attachSectionFolding(container, {
+				app,
+				taskMap,
+				childrenMap,
+				selectedAlias,
+				renderTaskTree,
+				registerDomEvent,
+				sectionName: "initiatives",
+				firstLevelChildType: "epic",
+			});
+		} catch {
+			/* ignore */
+		}
 	}
+}
+
+./src/features/agile-dashboard-view/ui/components/member-select.ts
+import type { SettingsService } from "@settings";
+
+export function buildGroupedMemberSelect(
+	settingsService: SettingsService,
+	initialAlias: string | null
+): HTMLSelectElement {
+	const select = document.createElement("select");
+
+	type Entry = {
+		alias: string;
+		name: string;
+		role: "member" | "internal-team-member" | "team" | "external";
+		label: string;
+	};
+
+	const entries: Entry[] = [];
+	const seen = new Set<string>();
+
+	const normalizeAlias = (input: string): string => {
+		if (!input) return "";
+		let s = String(input).trim();
+		if (s.startsWith("@")) s = s.slice(1);
+		return s.toLowerCase();
+	};
+
+	const settings = settingsService.getRaw();
+	const teams = settings.teams || [];
+
+	for (const t of teams) {
+		for (const m of t.members || []) {
+			const aliasRaw =
+				typeof m === "string"
+					? m
+					: (m as any)?.alias || (m as any)?.name || "";
+			const alias = normalizeAlias(aliasRaw);
+			if (!alias) continue;
+			if (seen.has(alias)) continue;
+			seen.add(alias);
+
+			const dispName =
+				(typeof m === "string" ? "" : (m as any)?.name) || alias;
+
+			const lower = alias.toLowerCase();
+			let role: Entry["role"] = "member";
+			if (lower.endsWith("-ext")) role = "external";
+			else if (lower.endsWith("-team")) role = "team";
+			else if (lower.endsWith("-int")) role = "internal-team-member";
+
+			const roleLabel =
+				role === "member"
+					? "Team Member"
+					: role === "internal-team-member"
+					? "Internal Team Member"
+					: role === "team"
+					? "Internal Team"
+					: "External Delegate";
+
+			const label = `${dispName} (${roleLabel} - ${alias})`;
+			entries.push({ alias, name: dispName, role, label });
+		}
+	}
+
+	const groupTeamMembers = entries
+		.filter((e) => e.role === "member" || e.role === "internal-team-member")
+		.sort((a, b) => a.name.localeCompare(b.name));
+	const groupDelegatesInternalTeams = entries
+		.filter((e) => e.role === "team")
+		.sort((a, b) => a.name.localeCompare(b.name));
+	const groupDelegatesExternal = entries
+		.filter((e) => e.role === "external")
+		.sort((a, b) => a.name.localeCompare(b.name));
+
+	const addGroup = (label: string, group: Entry[]) => {
+		if (group.length === 0) return;
+		const og = document.createElement("optgroup");
+		og.label = label;
+		group.forEach((e) => {
+			const opt = document.createElement("option");
+			opt.value = e.alias;
+			opt.text = e.label;
+			og.appendChild(opt);
+		});
+		select.appendChild(og);
+	};
+
+	addGroup("Team Members", groupTeamMembers);
+	addGroup("Delegates – Internal Teams", groupDelegatesInternalTeams);
+	addGroup("Delegates – External", groupDelegatesExternal);
+
+	const defRaw = settings.currentUserAlias || "";
+	const def = normalizeAlias(defRaw);
+	const all = [
+		...groupTeamMembers,
+		...groupDelegatesInternalTeams,
+		...groupDelegatesExternal,
+	];
+
+	const preferred =
+		initialAlias && all.some((e) => e.alias === initialAlias)
+			? initialAlias
+			: def && all.some((e) => e.alias === def)
+			? def
+			: all[0]?.alias ?? "";
+	if (preferred) select.value = preferred;
+
+	return select;
 }
 
 ./src/features/agile-dashboard-view/ui/components/objectives.ts
 import { App } from "obsidian";
 import { TaskItem, TaskParams } from "@features/task-index";
 import { renderTaskTree } from "./task-renderer";
-import {
-	activeForMember,
-	isCancelled,
-	isInProgress,
-	isCompleted,
-	isSnoozed,
-	getAgileArtifactType,
-} from "@features/task-filter";
+import { activeForMember, getAgileArtifactType } from "@features/task-filter";
 import { buildPrunedMergedTrees } from "@features/task-tree-builder";
+import { isShownByParams } from "../utils/filters";
+import { attachSectionFolding } from "@features/task-tree-fold";
 
+type RegisterDomEvent = (
+	el: HTMLElement | Window | Document,
+	type: string,
+	handler: (evt: any) => void,
+	options?: AddEventListenerOptions | boolean
+) => void;
+
+/**
+Process and render Objectives (OKRs) and their linked item trees.
+Folding behavior:
+- Render objectives (OKRs) without their native children, and enable fold/unfold on the OKR itself.
+- In the "Linked Items" section, only add fold toggles on bottom-level items currently displayed.
+*/
 export function processAndRenderObjectives(
 	container: HTMLElement,
 	currentTasks: TaskItem[],
@@ -357,17 +1630,12 @@ export function processAndRenderObjectives(
 	app: App,
 	taskMap: Map<string, TaskItem>,
 	childrenMap: Map<string, TaskItem[]>,
-	taskParams: TaskParams
+	taskParams: TaskParams,
+	registerDomEvent?: RegisterDomEvent
 ) {
-	const { inProgress, completed, sleeping, cancelled } = taskParams;
-	const sectionTasks = currentTasks.filter((task) => {
-		return (
-			(inProgress && isInProgress(task, taskMap)) ||
-			(completed && isCompleted(task)) ||
-			(sleeping && isSnoozed(task, taskMap)) ||
-			(cancelled && isCancelled(task))
-		);
-	});
+	const sectionTasks = currentTasks.filter((task) =>
+		isShownByParams(task, taskMap, selectedAlias, taskParams)
+	);
 
 	const assignedOKRs = sectionTasks.filter(
 		(task) =>
@@ -386,12 +1654,11 @@ export function processAndRenderObjectives(
 
 			const sixDigitCode = okrTask.blockId;
 			if (!sixDigitCode || !/^[A-Za-z0-9]{6}$/.test(sixDigitCode)) {
-				// No linked items for OKR - no block ID
 				return;
 			}
 
 			const linkedPattern = new RegExp(`${sixDigitCode}">🔗🎯`);
-			const rawLinked = currentTasks.filter((t) =>
+			const rawLinked = sectionTasks.filter((t) =>
 				linkedPattern.test(t.text)
 			);
 			if (!rawLinked.length) return;
@@ -405,10 +1672,8 @@ export function processAndRenderObjectives(
 	const prunedOKRs = linkedOKRs
 		.map((entry) => {
 			const okr = taskMap.get(entry._uniqueId);
-			if (!okr) {
-				// No linked items for OKR - no items linked to block ID
-				return null;
-			}
+			if (!okr) return null;
+
 			const linkedTrees = buildPrunedMergedTrees(
 				entry.linkedTasks,
 				taskMap
@@ -472,7 +1737,35 @@ export function processAndRenderObjectives(
 		container.createEl("h2", { text: "🎯 Objectives" });
 
 		prunedOKRs.forEach(({ okr, linkedTrees }) => {
-			renderTaskTree([okr], container, app, 0, false, "objectives", selectedAlias);
+			// Render the OKR itself without its native children;
+			// folding will be enabled on the objective to unfold its task tree.
+			const okrShallow: TaskItem = { ...okr, children: [] };
+			renderTaskTree(
+				[okrShallow],
+				container,
+				app,
+				0,
+				false,
+				"objectives",
+				selectedAlias
+			);
+
+			// Folding on the OKR itself
+			try {
+				attachSectionFolding(container, {
+					app,
+					taskMap,
+					childrenMap,
+					selectedAlias,
+					renderTaskTree,
+					registerDomEvent,
+					sectionName: "objectives",
+				});
+			} catch {
+				/* ignore */
+			}
+
+			// Linked trees (as-is), with folding only on bottom-level nodes currently displayed.
 			container.createEl("h5", {
 				text: "🔗 Linked Items",
 				attr: { style: "margin-left: 20px;" },
@@ -487,9 +1780,23 @@ export function processAndRenderObjectives(
 				app,
 				0,
 				false,
-				"objectives",
+				"objectives-linked",
 				selectedAlias
 			);
+
+			try {
+				attachSectionFolding(indentedWrapper, {
+					app,
+					taskMap,
+					childrenMap,
+					selectedAlias,
+					renderTaskTree,
+					registerDomEvent,
+					sectionName: "objectives-linked",
+				});
+			} catch {
+				/* ignore */
+			}
 		});
 	}
 }
@@ -508,7 +1815,19 @@ import {
 } from "@features/task-filter";
 import { isRelevantToday } from "@features/task-date-manager";
 import { stripListItems } from "@features/task-tree-builder";
+import { attachSectionFolding } from "@features/task-tree-fold";
 
+type RegisterDomEvent = (
+	el: HTMLElement | Window | Document,
+	type: string,
+	handler: (evt: any) => void,
+	options?: AddEventListenerOptions | boolean
+) => void;
+
+/**
+Process and render the Priorities section (time-relevant task trees).
+New: Enable folding on bottom-level items to allow further subtasks expansion.
+*/
 export function processAndRenderPriorities(
 	container: HTMLElement,
 	currentTasks: TaskItem[],
@@ -517,7 +1836,8 @@ export function processAndRenderPriorities(
 	app: App,
 	taskMap: Map<string, TaskItem>,
 	childrenMap: Map<string, TaskItem[]>,
-	taskParams: TaskParams
+	taskParams: TaskParams,
+	registerDomEvent?: RegisterDomEvent
 ) {
 	const { inProgress, completed, sleeping, cancelled } = taskParams;
 
@@ -525,7 +1845,7 @@ export function processAndRenderPriorities(
 		task: TaskItem,
 		isRoot = false
 	): TaskItem | null => {
-		if (isSnoozed(task, taskMap)) return null;
+		if (isSnoozed(task, taskMap, selectedAlias)) return null;
 
 		const allowedMarkers = ["🚀", "📦", "⚡", "⭐", "💝", "⬇️", "🪣"];
 		const disallowedMarkers = ["❌", "🛠️", "📂", "🏆", "📝", "🎖️"];
@@ -570,7 +1890,7 @@ export function processAndRenderPriorities(
 			!task.text.includes("🎖️") &&
 			!task.text.includes("🏆") &&
 			!task.text.includes("📝") &&
-			!isSnoozed(task, taskMap) &&
+			!isSnoozed(task, taskMap, selectedAlias) &&
 			getAgileArtifactType(task) !== "recurring-responsibility"
 	);
 
@@ -606,9 +1926,9 @@ export function processAndRenderPriorities(
 
 	const filteredPriorityTasks = strippedPriorityTasks.filter((task) => {
 		return (
-			(inProgress && isInProgress(task, taskMap)) ||
+			(inProgress && isInProgress(task, taskMap, selectedAlias)) ||
 			(completed && isCompleted(task)) ||
-			(sleeping && isSnoozed(task, taskMap)) ||
+			(sleeping && isSnoozed(task, taskMap, selectedAlias)) ||
 			(cancelled && isCancelled(task))
 		);
 	});
@@ -624,6 +1944,21 @@ export function processAndRenderPriorities(
 			"priorities",
 			selectedAlias
 		);
+
+		// Add folding for bottom-level items
+		try {
+			attachSectionFolding(container, {
+				app,
+				taskMap,
+				childrenMap,
+				selectedAlias,
+				renderTaskTree,
+				registerDomEvent,
+				sectionName: "priorities",
+			});
+		} catch {
+			/* ignore */
+		}
 	}
 }
 
@@ -640,18 +1975,26 @@ import {
 	getAgileArtifactType,
 	isAssignedToMemberOrTeam,
 	isAssignedToAnyUser,
-	isScheduledForToday, // NEW: use DOW schedule helper (🗓️ Sundays, etc.)
 } from "@features/task-filter";
-import {
-	isRelevantToday, // keep: used for priorityRoots
-} from "@features/task-date-manager";
-import {
-	buildHierarchyFromPath,
-	getPathToAncestor,
-	buildFullSubtree,
-	findAncestor,
-} from "@features/task-tree-builder";
+import { isRelevantToday, recurringPatternMatchesToday } from "@features/task-date-manager";
+import { buildFullSubtree } from "@features/task-tree-builder";
+import { attachSectionFolding } from "@features/task-tree-fold";
 
+type RegisterDomEvent = (
+	el: HTMLElement | Window | Document,
+	type: string,
+	handler: (evt: any) => void,
+	options?: AddEventListenerOptions | boolean
+) => void;
+
+/**
+Process and render recurring Responsibilities assigned to the selected member/team.
+
+New behavior:
+- Show only the responsibility itself (no pre-expanded children).
+- Add fold/unfold on the responsibility item to reveal its children.
+- We DO NOT fold away higher-level ancestors in its task tree.
+*/
 export function processAndRenderResponsibilities(
 	container: HTMLElement,
 	currentTasks: TaskItem[],
@@ -660,18 +2003,16 @@ export function processAndRenderResponsibilities(
 	app: App,
 	taskMap: Map<string, TaskItem>,
 	childrenMap: Map<string, TaskItem[]>,
-	taskParams: TaskParams
+	taskParams: TaskParams,
+	registerDomEvent?: RegisterDomEvent
 ) {
 	void childrenMap;
 
 	const { inProgress, completed, sleeping, cancelled } = taskParams;
 
-	// Direct or inferred assignment to selectedAlias (or team)
 	const isAssignedToMemberIncludingInferred = (task: TaskItem) => {
-		// FIX: pass selectedAlias so direct assignments match correctly
 		if (isAssignedToMemberOrTeam(task, selectedAlias)) return true;
 
-		// Inherit from ancestors: if any ancestor has an assignee wrapper, respect it
 		let cur: TaskItem | undefined = task;
 		while (cur?._parentId) {
 			const parentId = cur._parentId;
@@ -686,12 +2027,11 @@ export function processAndRenderResponsibilities(
 		return false;
 	};
 
-	// Collect recurring responsibilities from a subtree if assigned and not snoozed
 	const collectRecurring = (node: TaskItem, collector: TaskItem[]) => {
 		if (
 			getAgileArtifactType(node) === "recurring-responsibility" &&
 			isAssignedToMemberIncludingInferred(node) &&
-			!isSnoozed(node, taskMap)
+			!isSnoozed(node, taskMap, selectedAlias)
 		) {
 			collector.push(node);
 		}
@@ -700,87 +2040,7 @@ export function processAndRenderResponsibilities(
 		);
 	};
 
-	// Build a displayable subtree (prunes unrelated nodes)
-	const buildResponsibilitySubtree = (
-		task: TaskItem,
-		isRoot = false
-	): TaskItem | null => {
-		if (isSnoozed(task, taskMap)) return null;
-
-		const allowedMarkers = ["🚀", "📦", "⚡", "⭐", "💝", "🔁", "⬇️", "🪣"];
-		const disallowedMarkers = ["❌", "🛠️", "📂", "🏆", "📝", "🎖️"];
-
-		if (disallowedMarkers.some((m) => task.text.includes(m))) return null;
-		if (
-			getAgileArtifactType(task) === "learning-initiative" ||
-			getAgileArtifactType(task) === "learning-epic"
-		)
-			return null;
-
-		const hasAllowedMarker = allowedMarkers.some((m) =>
-			task.text.includes(m)
-		);
-		const hasAllowedStatus = task.status === "d" || task.status === "A";
-
-		if (!isRoot && !hasAllowedMarker && !hasAllowedStatus) return null;
-
-		const children = (task.children || [])
-			.map((child: TaskItem) => buildResponsibilitySubtree(child, false))
-			.filter((c): c is TaskItem => c !== null);
-
-		if (task.task === false) {
-			return children.length > 0 ? { ...task, children } : null;
-		}
-
-		const hasAllowed = hasAllowedMarker || hasAllowedStatus;
-		// FIX: pass selectedAlias so direct assignments are honored
-		const assignedToMeOrTeam = isAssignedToMemberOrTeam(
-			task,
-			selectedAlias
-		);
-		if (!hasAllowed && children.length === 0 && !assignedToMeOrTeam) {
-			return null;
-		}
-
-		return { ...task, children };
-	};
-
-	const pruneToTargets = (
-		node: TaskItem,
-		targetIds: Set<string>,
-		isUnderTarget = false
-	): TaskItem | null => {
-		if (!node) return null;
-
-		const thisIsTarget = targetIds.has(node._uniqueId ?? "");
-		const effectiveUnder = isUnderTarget || thisIsTarget;
-
-		const prunedChildren = (node.children || [])
-			.map((child: TaskItem) =>
-				pruneToTargets(child, targetIds, effectiveUnder)
-			)
-			.filter((c): c is TaskItem => c !== null);
-
-		if (effectiveUnder || prunedChildren.length > 0) {
-			return { ...node, children: prunedChildren };
-		}
-		return null;
-	};
-
-	const trimUnassignedAncestors = (tree: TaskItem): TaskItem | null => {
-		let current = tree;
-		while (
-			current &&
-			current.children &&
-			current.children.length === 1 &&
-			!isAssignedToMemberIncludingInferred(current)
-		) {
-			current = current.children[0];
-		}
-		return current;
-	};
-
-	// Roots to scan: same heuristic used elsewhere in the dashboard
+	// Identify relevant roots (top-down priorities filter, as before)
 	const priorityRoots = currentTasks.filter(
 		(task) =>
 			task.status === "O" &&
@@ -790,94 +2050,54 @@ export function processAndRenderResponsibilities(
 			!task.text.includes("🎖️") &&
 			!task.text.includes("🏆") &&
 			!task.text.includes("📝") &&
-			!isSnoozed(task, taskMap) &&
+			!isSnoozed(task, taskMap, selectedAlias) &&
 			getAgileArtifactType(task) !== "recurring-responsibility"
 	);
 
 	const priorityTrees = priorityRoots.map((t) => buildFullSubtree(t));
 
+	// Gather recurring responsibilities present in the subtree of today's relevant items
 	let allRecurring: TaskItem[] = [];
 	priorityTrees.forEach((tree: TaskItem) =>
 		collectRecurring(tree, allRecurring)
 	);
 
-	// FIX: Respect DOW schedules like "🗓️ Sundays"
-	// If a calendar marker is present, only include when scheduled for today.
+	// Respect DOW schedules like "🗓️ Sundays"
 	allRecurring = allRecurring.filter((task) => {
 		const hasCalendar = /🗓️/.test(task.text);
-		return !hasCalendar || isScheduledForToday(task);
+		return !hasCalendar || recurringPatternMatchesToday(task);
 	});
 
-	const recurringWithSubtrees = allRecurring
-		.map((rec) => {
-			const subtree = buildResponsibilitySubtree(rec);
-			return subtree ? { root: rec, subtree } : null;
-		})
-		.filter(
-			(item): item is { root: TaskItem; subtree: TaskItem } =>
-				item !== null
+	// Unique by _uniqueId
+	const seen = new Set<string>();
+	const uniqueRecurring: TaskItem[] = [];
+	for (const r of allRecurring) {
+		const id = r._uniqueId ?? "";
+		if (!id || seen.has(id)) continue;
+		seen.add(id);
+		uniqueRecurring.push(r);
+	}
+
+	// Apply status filters to the responsibility itself (no children considered here)
+	const responsibilityItemsFiltered = uniqueRecurring.filter((task) => {
+		return (
+			(inProgress && isInProgress(task, taskMap, selectedAlias)) ||
+			(completed && isCompleted(task)) ||
+			(sleeping && isSnoozed(task, taskMap, selectedAlias)) ||
+			(cancelled && isCancelled(task))
 		);
-
-	const responsibilityTreesMap = new Map<string, TaskItem>();
-	recurringWithSubtrees.forEach(({ root: rec, subtree }) => {
-		const topAncestor = findAncestor(rec, taskMap);
-		if (!topAncestor || !topAncestor._uniqueId) return;
-		const path = getPathToAncestor(rec, topAncestor._uniqueId, taskMap);
-		if (!path || !path.length) return;
-
-		const tree = buildHierarchyFromPath(path);
-		if (!tree) return;
-
-		let current: TaskItem = tree;
-		for (let i = 1; i < path.length; i++) {
-			current = current.children[0];
-		}
-		current.children = subtree.children || [];
-
-		const prunedTree = pruneToTargets(tree, new Set([rec._uniqueId ?? ""]));
-		if (!prunedTree) return;
-
-		const trimmedTree = trimUnassignedAncestors(prunedTree);
-		if (!trimmedTree) return;
-
-		const rootId = trimmedTree._uniqueId ?? "";
-		if (!responsibilityTreesMap.has(rootId)) {
-			responsibilityTreesMap.set(rootId, trimmedTree);
-		} else {
-			const existing = responsibilityTreesMap.get(rootId);
-			if (!existing) return;
-			trimmedTree.children.forEach((newChild: TaskItem) => {
-				const match = existing.children.find(
-					(c: TaskItem) => c._uniqueId === newChild._uniqueId
-				);
-				if (match) {
-					match.children = [
-						...new Set([...match.children, ...newChild.children]),
-					];
-				} else {
-					existing.children.push(newChild);
-				}
-			});
-		}
 	});
 
-	const responsibilityTasks = Array.from(responsibilityTreesMap.values());
-
-	const responsibilityTasksParamFilter = responsibilityTasks.filter(
-		(task) => {
-			return (
-				(inProgress && isInProgress(task, taskMap)) ||
-				(completed && isCompleted(task)) ||
-				(sleeping && isSnoozed(task, taskMap)) ||
-				(cancelled && isCancelled(task))
-			);
-		}
-	);
-
-	if (responsibilityTasksParamFilter.length > 0 && status) {
+	if (responsibilityItemsFiltered.length > 0 && status) {
 		container.createEl("h2", { text: "🧹 Responsibilities" });
+
+		// Render just the responsibility items themselves (no pre-rendered children)
+		const shallowOnly = responsibilityItemsFiltered.map((t) => ({
+			...t,
+			children: [],
+		}));
 		renderTaskTree(
-			responsibilityTasksParamFilter,
+			shallowOnly,
 			container,
 			app,
 			0,
@@ -885,329 +2105,87 @@ export function processAndRenderResponsibilities(
 			"responsibilities",
 			selectedAlias
 		);
+
+		// Enable folding on these bottom-level responsibility items
+		try {
+			attachSectionFolding(container, {
+				app,
+				taskMap,
+				childrenMap,
+				selectedAlias,
+				renderTaskTree,
+				registerDomEvent,
+				sectionName: "responsibilities",
+			});
+		} catch {
+			/* ignore */
+		}
 	}
 }
 
 ./src/features/agile-dashboard-view/ui/components/task-buttons.ts
-import { App } from "obsidian";
-import { TaskItem } from "@features/task-index";
-import { snoozeTask } from "@features/task-snooze"
-import { TaskUIPolicy } from "./ui-policy";
-
 /**
- * Hide a task's LI and collapse empty ancestors/sections afterward.
- * Kept as-is but slightly annotated; exported for reuse.
+ * Adapter: delegates task button logic to the task-buttons feature,
+ * injecting the Agile Dashboard event bus for optimistic updates.
+ *
+ * Updated to use the new task-buttons orchestration factory and API.
  */
+
+import type { App } from "obsidian";
+import type { TaskItem } from "@features/task-index";
+import { eventBus } from "../../app/event-bus";
+import { createObsidianTaskButtonsAPI } from "@features/task-buttons";
+import { hideTaskAndCollapseAncestors as hideGeneric } from "@features/task-buttons";
+
+// Cache a per-App API instance to avoid repeated construction.
+const apiCache = new WeakMap<
+	App,
+	ReturnType<typeof createObsidianTaskButtonsAPI>
+>();
+
+function getAPI(app: App) {
+	let api = apiCache.get(app);
+	if (!api) {
+		api = createObsidianTaskButtonsAPI(app, eventBus);
+		apiCache.set(app, api);
+	}
+	return api;
+}
+
 export function hideTaskAndCollapseAncestors(liEl: HTMLElement): void {
-	if (!liEl) return;
-
-	const hide = (el: HTMLElement) => {
-		el.style.display = "none";
-		el.setAttribute("aria-hidden", "true");
-	};
-
-	const isVisible = (el: HTMLElement) => {
-		if (!el) return false;
-		if (el.style.display === "none") return false;
-		const cs = getComputedStyle(el);
-		if (cs.visibility === "hidden" || cs.display === "none") return false;
-		return el.offsetParent !== null;
-	};
-
-	// Hide the affected task
-	hide(liEl);
-
-	// Walk up and collapse single-child ancestors
-	let current: HTMLElement | null = liEl;
-	while (current) {
-		const ul = current.parentElement as HTMLElement | null;
-		if (!ul || ul.tagName !== "UL") break;
-
-		const parentLi = ul.parentElement as HTMLElement | null;
-		if (!parentLi || parentLi.tagName !== "LI") break;
-
-		const childLis = Array.from(ul.children).filter(
-			(n) => n instanceof HTMLElement && n.tagName === "LI"
-		) as HTMLElement[];
-		const visibleChildren = childLis.filter((li) => isVisible(li));
-
-		if (childLis.length === 1 || visibleChildren.length === 0) {
-			hide(parentLi);
-			current = parentLi;
-			continue;
-		}
-		break;
-	}
-
-	// If no visible tasks remain in the section, hide the section (including its header)
-	const findSectionRoot = (el: HTMLElement): HTMLElement | null => {
-		let cur: HTMLElement | null = el;
-		while (cur && cur.parentElement) {
-			const parent = cur.parentElement as HTMLElement;
-			if (
-				parent.classList &&
-				parent.classList.contains("content-container")
-			) {
-				return cur;
-			}
-			cur = parent;
-		}
-		return null;
-	};
-
-	const maybeHideAdjacentHeader = (el: HTMLElement) => {
-		const prev = el.previousElementSibling as HTMLElement | null;
-		if (prev && /^H[1-6]$/.test(prev.tagName)) {
-			hide(prev);
-		}
-	};
-
-	const sectionRoot = findSectionRoot(liEl);
-	if (sectionRoot) {
-		const visibleLis = Array.from(
-			sectionRoot.querySelectorAll("li")
-		).filter((node) => isVisible(node as HTMLElement));
-		if (visibleLis.length === 0) {
-			hide(sectionRoot);
-			maybeHideAdjacentHeader(sectionRoot);
-		}
-	}
+	hideGeneric(liEl);
 }
 
-// Internal: determine if task has direct assignment to provided userSlug
-function isAssignedToUser(text: string, userSlug: string) {
-	if (!text || !userSlug) return false;
-	const activeRe = new RegExp(`\\bactive-${userSlug}\\b`, "i");
-	const inactiveRe = new RegExp(`\\binactive-${userSlug}\\b`, "i");
-	return activeRe.test(text) && !inactiveRe.test(text);
-}
-
-// Convert sectionType to normalized key for policy checks
-function normalizeSection(sectionType: string): TaskUIPolicy["section"] {
-	const s = (sectionType || "").toLowerCase();
-	if (s.includes("objective")) return "objectives";
-	if (s.includes("responsibil")) return "responsibilities";
-	if (s.includes("priorit")) return "priorities";
-	if (s.includes("epic")) return "epics";
-	if (s.includes("story")) return "stories";
-	if (s.includes("initiative")) return "initiatives";
-	return "tasks";
-}
-
-// Decide if a snooze button should be shown for a task in a given section
-function shouldShowSnoozeButton(
-	task: TaskItem,
-	sectionType: string,
-	userSlug: string
-): boolean {
-	const section = normalizeSection(sectionType);
-
-	// 1) No snooze buttons in Objectives or Responsibilities
-	if (section === "objectives" || section === "responsibilities")
-		return false;
-
-	// 2) Tasks, Stories, Epics: only on items directly assigned to the user
-	if (section === "tasks" || section === "stories" || section === "epics") {
-		return isAssignedToUser(task.text || "", userSlug);
-	}
-
-	// 3) Initiatives: allow everything
-	if (section === "initiatives") return true;
-
-	// 4) Priorities: only leaf tasks
-	if (section === "priorities") {
-		const isLeaf = !task.children || task.children.length === 0;
-		return isLeaf;
-	}
-
-	return false;
-}
-
-// Build a YYYY-MM-DD string for tomorrow (local)
-function getTomorrowISO(): string {
-	const d = new Date();
-	d.setDate(d.getDate() + 1);
-	const yyyy = d.getFullYear();
-	const mm = String(d.getMonth() + 1).padStart(2, "0");
-	const dd = String(d.getDate()).padStart(2, "0");
-	return `${yyyy}-${mm}-${dd}`;
-}
-
-// Create and wire the snooze button with click (tomorrow) and long-press (custom date) behavior
-function createSnoozeButton(
-	task: TaskItem,
-	liEl: HTMLElement,
-	sectionType: string,
-	app: App,
-	userSlug: string
-): HTMLButtonElement {
-	const btn = document.createElement("button");
-	btn.type = "button";
-	btn.textContent = "💤";
-	btn.classList.add("agile-snooze-btn");
-	btn.title = "Click: snooze until tomorrow • Long-press: enter custom date";
-	btn.style.marginLeft = "8px";
-	btn.style.cursor = "pointer";
-	btn.style.background = "none";
-	btn.style.border = "none";
-	btn.style.fontSize = "1em";
-
-	const uid = task._uniqueId || "";
-	const filePath = uid.split(":")[0] || "";
-
-	let longPressTimer: number | null = null;
-	let longPressed = false;
-	const LONG_PRESS_MS = 500;
-
-	const clearTimer = () => {
-		if (longPressTimer !== null) {
-			window.clearTimeout(longPressTimer);
-			longPressTimer = null;
-		}
-	};
-
-	const showCustomDateInput = () => {
-		longPressed = true;
-		const input = document.createElement("input");
-		input.type = "text";
-		input.placeholder = "YYYY-MM-DD";
-		input.style.width = "110px";
-		input.style.marginLeft = "6px";
-		input.style.fontSize = "0.95em";
-
-		const submit = async () => {
-			const val = input.value.trim();
-			const isValid = /^\d{4}-\d{2}-\d{2}$/.test(val);
-			input.remove();
-			btn.style.display = "";
-			if (!isValid) return;
-			btn.textContent = "⏳";
-			if (filePath) {
-				window.dispatchEvent(
-					new CustomEvent("agile:prepare-optimistic-file-change", {
-						detail: { filePath },
-					})
-				);
-			}
-			try {
-				await snoozeTask(task, app, userSlug, val);
-				if (uid && filePath) {
-					window.dispatchEvent(
-						new CustomEvent("agile:task-snoozed", {
-							detail: { uid, filePath, date: val },
-						})
-					);
-				}
-				hideTaskAndCollapseAncestors(liEl);
-			} catch (err) {
-				btn.textContent = "💤";
-				throw err;
-			}
-		};
-
-		input.addEventListener("keydown", (e: KeyboardEvent) => {
-			if (e.key === "Enter") submit();
-			if (e.key === "Escape") {
-				input.remove();
-				btn.style.display = "";
-			}
-		});
-		input.addEventListener("blur", submit);
-
-		btn.style.display = "none";
-		liEl.appendChild(input);
-		input.focus();
-	};
-
-	const startLongPress = (ev: Event) => {
-		ev.stopPropagation();
-		clearTimer();
-		longPressed = false;
-		longPressTimer = window.setTimeout(showCustomDateInput, LONG_PRESS_MS);
-	};
-
-	const cancelLongPress = () => {
-		clearTimer();
-	};
-
-	// Click to snooze until tomorrow (ignore if this click concluded a long-press)
-	btn.addEventListener("click", async (e) => {
-		e.preventDefault();
-		e.stopPropagation();
-		if (longPressed) return;
-		btn.textContent = "⏳";
-		if (filePath) {
-			window.dispatchEvent(
-				new CustomEvent("agile:prepare-optimistic-file-change", {
-					detail: { filePath },
-				})
-			);
-		}
-		try {
-			const date = getTomorrowISO();
-			await snoozeTask(task, app, userSlug, date);
-			if (uid && filePath) {
-				window.dispatchEvent(
-					new CustomEvent("agile:task-snoozed", {
-						detail: { uid, filePath, date },
-					})
-				);
-			}
-			hideTaskAndCollapseAncestors(liEl);
-		} catch (err) {
-			btn.textContent = "💤";
-			throw err;
-		}
-	});
-
-	// Mouse long-press
-	btn.addEventListener("mousedown", startLongPress);
-	btn.addEventListener("mouseup", cancelLongPress);
-	btn.addEventListener("mouseleave", cancelLongPress);
-
-	// Touch long-press (mobile)
-	btn.addEventListener("touchstart", startLongPress, { passive: true });
-	btn.addEventListener("touchend", cancelLongPress);
-
-	return btn;
-}
-
-function findInlineAnchor(liEl: HTMLElement): HTMLElement {
-	const innerLi = liEl.querySelector("ul > li") as HTMLElement | null;
-	const base = innerLi ?? liEl;
-	const inlineContainer =
-		(base.querySelector("p") as HTMLElement | null) ||
-		(base.querySelector("span") as HTMLElement | null) ||
-		(base.querySelector("label") as HTMLElement | null);
-	return inlineContainer ?? base;
-}
-
-export function appendSnoozeButtonIfEligible(
+export async function appendSnoozeButtonIfEligible(
 	task: TaskItem,
 	liEl: HTMLElement,
 	sectionType: string,
 	app: App,
 	selectedAlias: string | null
-) {
-	const uid = task._uniqueId || "";
-	const filePath = uid.split(":")[0] || "";
+): Promise<void> {
+	const api = getAPI(app);
+	await api.appendSnoozeButtonIfEligible(
+		task,
+		liEl,
+		sectionType,
+		selectedAlias ?? ""
+	);
+}
 
-	const userSlug = selectedAlias;
-	if (!userSlug) {
-		return; // No user configured; skip
-	}
-
-	const eligible = shouldShowSnoozeButton(task, sectionType, userSlug);
-	if (!eligible) {
-		return;
-	}
-
-	if (uid) liEl.setAttribute("data-task-uid", uid);
-	if (filePath) liEl.setAttribute("data-file-path", filePath);
-
-	const btn = createSnoozeButton(task, liEl, sectionType, app, userSlug);
-	const anchor = findInlineAnchor(liEl);
-	anchor.appendChild(btn);
+export async function appendSnoozeAllSubtasksButtonIfEligible(
+	task: TaskItem,
+	liEl: HTMLElement,
+	sectionType: string,
+	app: App,
+	selectedAlias: string | null
+): Promise<void> {
+	const api = getAPI(app);
+	await api.appendSnoozeAllSubtasksButtonIfEligible(
+		task,
+		liEl,
+		sectionType,
+		selectedAlias ?? ""
+	);
 }
 
 ./src/features/agile-dashboard-view/ui/components/task-renderer.ts
@@ -1215,23 +2193,24 @@ import { App, Component, MarkdownRenderer, TFile } from "obsidian";
 import { TaskItem } from "@features/task-index";
 import {
 	appendSnoozeButtonIfEligible,
-	hideTaskAndCollapseAncestors,
+	appendSnoozeAllSubtasksButtonIfEligible,
 } from "./task-buttons";
+import { normalizeSection as normalizeSectionPolicy } from "./ui-policy";
+import { eventBus } from "../../app/event-bus";
+import {
+	attachCustomCheckboxStatusHandlers,
+	StatusChar,
+} from "@features/task-status-sequencer";
+import { hideTaskAndCollapseAncestors } from "./task-buttons";
 
 function isLeaf(task: TaskItem): boolean {
 	return !task.children || task.children.length === 0;
 }
+
 function normalizeSection(sectionType: string) {
-	const s = (sectionType || "").toLowerCase();
-	if (s.includes("initiative")) return "initiatives";
-	if (s.includes("objective")) return "objectives";
-	if (s.includes("task")) return "tasks";
-	if (s.includes("story")) return "stories";
-	if (s.includes("epic")) return "epics";
-	if (s.includes("priorit")) return "priorities";
-	if (s.includes("responsibil")) return "responsibilities";
-	return "tasks";
+	return normalizeSectionPolicy(sectionType);
 }
+
 function shouldEnableCheckbox(
 	sectionType: string,
 	depth: number,
@@ -1242,7 +2221,8 @@ function shouldEnableCheckbox(
 	const leaf = isLeaf(task);
 
 	if (section === "initiatives") return true;
-	if (section === "objectives") return (isRoot && depth === 0) || leaf;
+	if (section === "objectives" || section === "objectives-linked")
+		return (isRoot && depth === 0) || leaf;
 	if (
 		section === "tasks" ||
 		section === "stories" ||
@@ -1260,48 +2240,31 @@ function ensureAssignmentEventListener(app: App) {
 	if (assignmentEventListenerAttached) return;
 	assignmentEventListenerAttached = true;
 
-	window.addEventListener(
-		"agile:request-assign-propagate" as any,
-		async (ev: Event) => {
-			try {
-				const ce = ev as CustomEvent<any>;
-				const detail =
-					ce && typeof ce.detail === "object" ? ce.detail : {};
-				const uid = detail?.uid;
-				const newAlias = detail?.newAlias;
-				if (
-					typeof uid === "string" &&
-					typeof newAlias === "string" &&
-					uid
-				) {
-					const filePath = uid.split(":")[0] || "";
-					if (filePath) {
-						window.dispatchEvent(
-							new CustomEvent(
-								"agile:prepare-optimistic-file-change",
-								{
-									detail: { filePath },
-								}
-							)
-						);
-					}
-					// await updateAssigneeAndPropagate(app, uid, newAlias); TO DO: add new reassignment/assignment cascade
-					if (filePath) {
-						window.dispatchEvent(
-							new CustomEvent("agile:assignment-changed", {
-								detail: { uid, filePath, newAlias },
-							})
-						);
-					}
+	eventBus.on("agile:request-assign-propagate", async (detail) => {
+		try {
+			const uid = detail?.uid;
+			const newAlias = detail?.newAlias;
+			if (
+				typeof uid === "string" &&
+				typeof newAlias === "string" &&
+				uid
+			) {
+				const filePath = uid.split(":")[0] || "";
+				if (filePath) {
+					eventBus.dispatch("agile:prepare-optimistic-file-change", {
+						filePath,
+					});
+					eventBus.dispatch("agile:assignment-changed", {
+						uid,
+						filePath,
+						newAlias,
+					});
 				}
-			} catch (err) {
-				console.error(
-					"[agile] Failed handling 'agile:request-assign-propagate' event",
-					err
-				);
 			}
+		} catch {
+			/* ignore */
 		}
-	);
+	});
 }
 
 function annotateAssigneeMarks(
@@ -1324,6 +2287,132 @@ function annotateAssigneeMarks(
 	});
 }
 
+/**
+ * Utilities for opening a task's source file at its line in a new tab (leaf)
+ */
+function getTaskFilePath(task: TaskItem): string {
+	return task.link?.path || (task._uniqueId?.split(":")[0] ?? "");
+}
+
+function getTaskLine(task: TaskItem): number | null {
+	const posLine = (task as any)?.position?.start?.line ?? (task as any)?.line;
+	if (typeof posLine === "number" && posLine >= 0) return posLine;
+	if (typeof task.line === "number" && task.line >= 0) return task.line;
+	return null;
+}
+
+async function openTaskInNewTab(app: App, task: TaskItem): Promise<void> {
+	try {
+		const filePath = getTaskFilePath(task);
+		if (!filePath) return;
+
+		const abs = app.vault.getAbstractFileByPath(filePath);
+		if (!(abs instanceof TFile)) return;
+
+		const line = getTaskLine(task);
+		const leaf = app.workspace.getLeaf(true);
+
+		await (leaf as any).openFile(abs, {
+			eState: line != null ? { line } : {},
+		});
+
+		try {
+			const view = (leaf as any).view;
+			if (
+				view?.editor &&
+				typeof view.editor.setCursor === "function" &&
+				line != null
+			) {
+				view.editor.setCursor({ line, ch: 0 });
+				if (typeof view.editor.scrollIntoView === "function") {
+					view.editor.scrollIntoView(
+						{ from: { line, ch: 0 }, to: { line, ch: 0 } },
+						true
+					);
+				}
+			} else if (
+				typeof view?.setEphemeralState === "function" &&
+				line != null
+			) {
+				view.setEphemeralState({ line });
+			}
+		} catch {
+			/* ignore */
+		}
+
+		if (line == null && (task as any).blockId) {
+			const blockId = (task as any).blockId;
+			try {
+				(app.workspace as any).openLinkText(
+					`${filePath}#^${blockId}`,
+					"",
+					true
+				);
+			} catch {
+				/* ignore */
+			}
+		}
+	} catch {
+		/* ignore */
+	}
+}
+
+/**
+ * Attach a long-press handler to the task's LI to open source in new tab.
+ * Ignores interactive targets (checkboxes, buttons, links).
+ */
+function attachOpenOnLongPress(
+	liEl: HTMLElement,
+	task: TaskItem,
+	app: App
+): void {
+	if ((liEl as any).__agileOpenAttached) return;
+
+	const LONG_PRESS_MS = 500;
+	let pressTimer: number | null = null;
+
+	const clearTimer = () => {
+		if (pressTimer !== null) {
+			window.clearTimeout(pressTimer);
+			pressTimer = null;
+		}
+	};
+
+	const isInteractiveTarget = (el: HTMLElement | null): boolean => {
+		if (!el) return false;
+		if (el.closest("input, button, a, .agile-snooze-btn")) return true;
+		if (el.closest("label")) return true;
+		return false;
+	};
+
+	const onPressStart = (ev: Event) => {
+		const target = ev.target as HTMLElement | null;
+		if (isInteractiveTarget(target)) return;
+		clearTimer();
+		pressTimer = window.setTimeout(async () => {
+			await openTaskInNewTab(app, task);
+			clearTimer();
+		}, LONG_PRESS_MS);
+	};
+
+	const onPressEnd = () => {
+		clearTimer();
+	};
+
+	liEl.addEventListener("mousedown", onPressStart);
+	liEl.addEventListener("mouseup", onPressEnd);
+	liEl.addEventListener("mouseleave", onPressEnd);
+
+	liEl.addEventListener("touchstart", onPressStart, { passive: true } as any);
+	liEl.addEventListener("touchend", onPressEnd);
+	liEl.addEventListener("touchcancel", onPressEnd);
+
+	(liEl as any).__agileOpenAttached = true;
+}
+
+/**
+ * Render a tree of tasks into the given container.
+ */
 export function renderTaskTree(
 	tasks: TaskItem[],
 	container: HTMLElement,
@@ -1336,9 +2425,11 @@ export function renderTaskTree(
 	ensureAssignmentEventListener(app);
 	if (tasks.length === 0) return;
 
+	const normalizedSection = normalizeSection(sectionType);
 	const taskList = container.createEl("ul", {
 		cls: "agile-dashboard contains-task-list",
 	});
+	taskList.setAttribute("data-section", normalizedSection);
 
 	tasks.forEach((task) => {
 		if (
@@ -1383,6 +2474,9 @@ export function renderTaskTree(
 			}
 		}
 
+		// Stamp the section on each LI so localized refreshes can reliably read it
+		taskItemEl.setAttribute("data-section", normalizedSection);
+
 		if (task.annotated) {
 			taskItemEl.addClass("annotated-task");
 		}
@@ -1394,36 +2488,46 @@ export function renderTaskTree(
 		if (filePath) {
 			taskItemEl.setAttribute("data-file-path", filePath);
 		}
+		const line = getTaskLine(task);
+		if (line != null) {
+			taskItemEl.setAttribute("data-line", String(line));
+		}
+
 		try {
 			annotateAssigneeMarks(taskItemEl, task._uniqueId || "", filePath);
-		} catch (e) {
-			console.error("[agile] annotateAssigneeMarks failed", {
-				error: e,
-				taskUid: task._uniqueId,
-				filePath,
-			});
+		} catch {
+			/* ignore */
 		}
 
 		try {
 			appendSnoozeButtonIfEligible(
 				task,
 				taskItemEl,
-				sectionType,
+				normalizedSection,
 				app,
 				selectedAlias
 			);
-		} catch (e) {
-			console.error("[agile] appendSnoozeButtonIfEligible failed", {
-				error: e,
-				taskUid: task._uniqueId,
-				sectionType,
-				selectedAlias,
-			});
+			appendSnoozeAllSubtasksButtonIfEligible(
+				task,
+				taskItemEl,
+				normalizedSection,
+				app,
+				selectedAlias
+			);
+		} catch {
+			/* ignore */
+		}
+
+		try {
+			attachOpenOnLongPress(taskItemEl, task, app);
+		} catch {
+			/* ignore */
 		}
 
 		const checkbox = taskItemEl.querySelector(
 			'input[type="checkbox"]'
 		) as HTMLInputElement | null;
+
 		if (checkbox) {
 			const interactive = shouldEnableCheckbox(
 				sectionType,
@@ -1437,101 +2541,48 @@ export function renderTaskTree(
 				checkbox.setAttribute("aria-disabled", "true");
 				(checkbox as HTMLElement).style.pointerEvents = "none";
 			} else {
-				let pressTimer: number | null = null;
-				let longPressed = false;
-				const LONG_PRESS_MS = 500;
+				// Wire dashboard checkbox using the sequencer-provided adapter (short vs long-press)
+				const resolvedFilePath =
+					task.link?.path || (task._uniqueId?.split(":")[0] ?? "");
+				const line0 =
+					line != null
+						? line
+						: (() => {
+								const s =
+									taskItemEl.getAttribute("data-line") || "";
+								return /^\d+$/.test(s) ? parseInt(s, 10) : 0;
+						  })();
 
-				let initialChecked = checkbox.checked;
-				let isUpdating = false;
-
-				const performUpdate = async (cancel: boolean) => {
-					if (isUpdating) return;
-					isUpdating = true;
-					try {
-						const result = await handleStatusChange(
-							task,
-							taskItemEl,
-							app,
-							cancel
-						);
-						if (result === "/") {
+				attachCustomCheckboxStatusHandlers({
+					checkboxEl: checkbox,
+					app,
+					task: {
+						filePath: resolvedFilePath,
+						line0,
+						status: (task as any)?.status ?? " ",
+					},
+					onStatusApplied: (to: StatusChar) => {
+						// Update in-memory for downstream code relying on task.status
+						(task as any).status = to;
+						if (to === "/") {
 							rerenderTaskInline(
 								task,
 								taskItemEl,
 								app,
 								sectionType,
-								result,
+								to,
 								isRoot,
 								depth,
 								selectedAlias
 							);
-						} else if (result === "x") {
-							checkbox.checked = true;
-							initialChecked = true;
+						} else if (to === "x" || to === "-") {
+							try {
+								hideTaskAndCollapseAncestors(taskItemEl);
+							} catch {
+								/* ignore */
+							}
 						}
-					} catch (e) {
-						console.error("[agile] performUpdate failed", {
-							error: e,
-							cancel,
-							taskUid: task._uniqueId,
-						});
-					} finally {
-						isUpdating = false;
-					}
-				};
-
-				checkbox.addEventListener("change", (ev) => {
-					ev.preventDefault();
-					// @ts-ignore
-					ev.stopImmediatePropagation?.();
-					checkbox.checked = initialChecked;
-				});
-
-				checkbox.addEventListener("keydown", async (ev) => {
-					const key = (ev as KeyboardEvent).key;
-					if (key === " " || key === "Enter") {
-						ev.preventDefault();
-						await performUpdate(false);
-					}
-				});
-
-				const clearTimer = () => {
-					if (pressTimer !== null) {
-						window.clearTimeout(pressTimer);
-						pressTimer = null;
-					}
-				};
-
-				const onPressStart = () => {
-					longPressed = false;
-					clearTimer();
-					pressTimer = window.setTimeout(async () => {
-						longPressed = true;
-						await performUpdate(true);
-					}, LONG_PRESS_MS);
-				};
-
-				const onPressEnd = () => {
-					clearTimer();
-				};
-
-				checkbox.addEventListener("mousedown", onPressStart);
-				checkbox.addEventListener("touchstart", onPressStart, {
-					passive: true,
-				});
-				checkbox.addEventListener("mouseup", onPressEnd);
-				checkbox.addEventListener("mouseleave", onPressEnd);
-				checkbox.addEventListener("touchend", onPressEnd);
-				checkbox.addEventListener("touchcancel", onPressEnd);
-
-				checkbox.addEventListener("click", async (ev) => {
-					ev.preventDefault();
-					ev.stopPropagation();
-					if (longPressed) {
-						longPressed = false;
-						return;
-					}
-					await performUpdate(false);
+					},
 				});
 			}
 		}
@@ -1543,7 +2594,7 @@ export function renderTaskTree(
 				app,
 				depth + 1,
 				false,
-				sectionType,
+				normalizedSection,
 				selectedAlias
 			);
 		}
@@ -1561,6 +2612,10 @@ function rerenderTaskInline(
 	selectedAlias: string | null
 ): void {
 	try {
+		const normalizedSection = normalizeSection(sectionType);
+
+		liEl.setAttribute("data-section", normalizedSection);
+
 		const childLists = Array.from(
 			liEl.querySelectorAll(":scope > ul")
 		) as HTMLElement[];
@@ -1647,20 +2702,25 @@ function rerenderTaskInline(
 			appendSnoozeButtonIfEligible(
 				task,
 				liEl,
-				sectionType,
+				normalizedSection,
 				app,
 				selectedAlias
 			);
-		} catch (e) {
-			console.error(
-				"[agile] appendSnoozeButtonIfEligible (rerender) failed",
-				{
-					error: e,
-					taskUid: task._uniqueId,
-					sectionType,
-					selectedAlias,
-				}
+			appendSnoozeAllSubtasksButtonIfEligible(
+				task,
+				liEl,
+				normalizedSection,
+				app,
+				selectedAlias
 			);
+		} catch {
+			/* ignore */
+		}
+
+		try {
+			attachOpenOnLongPress(liEl, task, app);
+		} catch {
+			/* ignore */
 		}
 
 		const checkbox = liEl.querySelector(
@@ -1680,328 +2740,59 @@ function rerenderTaskInline(
 				checkbox.setAttribute("aria-disabled", "true");
 				(checkbox as HTMLElement).style.pointerEvents = "none";
 			} else {
-				let pressTimer: number | null = null;
-				const LONG_PRESS_MS = 500;
+				const resolvedFilePath =
+					task.link?.path || (task._uniqueId?.split(":")[0] ?? "");
+				const lineAttr = liEl.getAttribute("data-line") || "";
+				const line0 = /^\d+$/.test(lineAttr)
+					? parseInt(lineAttr, 10)
+					: getTaskLine(task) ?? 0;
 
-				let initialChecked = checkbox.checked;
-				let isUpdating = false;
-
-				const performUpdate = async (cancel: boolean) => {
-					if (isUpdating) return;
-					isUpdating = true;
-					try {
-						const result = await handleStatusChange(
-							task,
-							liEl,
-							app,
-							cancel
-						);
-						if (result === "/") {
+				attachCustomCheckboxStatusHandlers({
+					checkboxEl: checkbox,
+					app,
+					task: {
+						filePath: resolvedFilePath,
+						line0,
+						status: (task as any)?.status ?? newStatus,
+					},
+					onStatusApplied: (to: StatusChar) => {
+						(task as any).status = to;
+						if (to === "/") {
 							rerenderTaskInline(
 								task,
 								liEl,
 								app,
 								sectionType,
-								result,
+								to,
 								isRoot,
 								depth,
 								selectedAlias
 							);
-						} else if (result === "x") {
-							checkbox.checked = true;
-							initialChecked = true;
-						}
-					} catch (e) {
-						console.error(
-							"[agile] performUpdate (rerender) failed",
-							{
-								error: e,
-								cancel,
-								taskUid: task._uniqueId,
+						} else if (to === "x" || to === "-") {
+							try {
+								hideTaskAndCollapseAncestors(liEl);
+							} catch {
+								/* ignore */
 							}
-						);
-					} finally {
-						isUpdating = false;
-					}
-				};
-
-				checkbox.addEventListener("change", (ev) => {
-					ev.preventDefault();
-					// @ts-ignore
-					ev.stopImmediatePropagation?.();
-					checkbox.checked = initialChecked;
-				});
-
-				checkbox.addEventListener("keydown", async (ev) => {
-					const key = (ev as KeyboardEvent).key;
-					if (key === " " || key === "Enter") {
-						ev.preventDefault();
-						await performUpdate(false);
-					}
-				});
-
-				const clearTimer = () => {
-					if (pressTimer !== null) {
-						window.clearTimeout(pressTimer);
-						pressTimer = null;
-					}
-				};
-
-				const onPressStart = () => {
-					clearTimer();
-					pressTimer = window.setTimeout(async () => {
-						await performUpdate(true);
-					}, LONG_PRESS_MS);
-				};
-
-				const onPressEnd = () => {
-					clearTimer();
-				};
-
-				checkbox.addEventListener("mousedown", onPressStart);
-				checkbox.addEventListener("touchstart", onPressStart, {
-					passive: true,
-				});
-				checkbox.addEventListener("mouseup", onPressEnd);
-				checkbox.addEventListener("mouseleave", onPressEnd);
-				checkbox.addEventListener("touchend", onPressEnd);
-				checkbox.addEventListener("touchcancel", onPressEnd);
-
-				checkbox.addEventListener("click", async (ev) => {
-					ev.preventDefault();
-					ev.stopPropagation();
-					await performUpdate(false);
+						}
+					},
 				});
 			}
 		}
-	} catch (e) {
-		console.error("[agile] rerenderTaskInline failed", {
-			error: e,
-			taskUid: task._uniqueId,
-			newStatus,
-			sectionType,
-			isRoot,
-			depth,
-			selectedAlias,
-		});
+	} catch {
+		// no-op
 	}
 }
 
-export const handleStatusChange = async (
-	task: TaskItem,
-	liEl: HTMLElement,
-	app: App,
-	isCancel = false
-): Promise<string | null> => {
-	try {
-		const filePath = task.link?.path;
-		if (!filePath) throw new Error("Missing task.link.path");
-
-		const file = app.vault.getAbstractFileByPath(filePath) as TFile;
-		if (!file) throw new Error(`File not found: ${filePath}`);
-
-		window.dispatchEvent(
-			new CustomEvent("agile:prepare-optimistic-file-change", {
-				detail: { filePath },
-			})
-		);
-
-		const content = await app.vault.read(file);
-		const lines = content.split(/\r?\n/);
-
-		let effectiveStatus = (task.status ?? " ").trim() || " ";
-		let targetLineIndex = -1;
-
-		const parseStatusFromLine = (line: string): string | null => {
-			const m = line.match(/^\s*[-*]\s*\[\s*(.)\s*\]/);
-			return m ? m[1] : null;
-		};
-
-		const normalize = (s: string) =>
-			(s || "")
-				.replace(/\s*(✅|❌)\s+\d{4}-\d{2}-\d{2}\b/g, "")
-				.replace(/\s+/g, " ")
-				.trim();
-
-		const getLineRestNormalized = (line: string): string | null => {
-			const m = line.match(/^\s*[-*]\s*\[\s*.\s*\]\s*(.*)$/);
-			return m ? normalize(m[1]) : null;
-		};
-
-		const targetTextNorm = normalize(
-			(task.text || task.visual || "").trim()
-		);
-
-		const baseIdx = typeof task.line === "number" ? task.line : -1;
-		const candidates = [baseIdx, baseIdx - 1, baseIdx + 1].filter(
-			(i) => i >= 0 && i < lines.length
-		);
-
-		for (const i of candidates) {
-			const rest = getLineRestNormalized(lines[i]);
-			if (!rest) continue;
-			if (
-				rest === targetTextNorm ||
-				rest.startsWith(targetTextNorm) ||
-				targetTextNorm.startsWith(rest)
-			) {
-				targetLineIndex = i;
-				const parsed = parseStatusFromLine(lines[i]);
-				if (parsed) effectiveStatus = parsed;
-				break;
-			}
-		}
-
-		if (targetLineIndex === -1 && targetTextNorm) {
-			for (let i = 0; i < lines.length; i++) {
-				const rest = getLineRestNormalized(lines[i]);
-				if (rest && rest === targetTextNorm) {
-					targetLineIndex = i;
-					const parsed = parseStatusFromLine(lines[i]);
-					if (parsed) effectiveStatus = parsed;
-					break;
-				}
-			}
-			if (targetLineIndex === -1) {
-				for (let i = 0; i < lines.length; i++) {
-					const rest = getLineRestNormalized(lines[i]);
-					if (rest && rest.startsWith(targetTextNorm)) {
-						targetLineIndex = i;
-						const parsed = parseStatusFromLine(lines[i]);
-						if (parsed) effectiveStatus = parsed;
-						break;
-					}
-				}
-			}
-		}
-
-		const newStatus = isCancel ? "-" : effectiveStatus === "/" ? "x" : "/";
-
-		const today = new Date();
-		const yyyy = String(today.getFullYear());
-		const mm = String(today.getMonth() + 1).padStart(2, "0");
-		const dd = String(today.getDate()).padStart(2, "0");
-		const dateStr = `${yyyy}-${mm}-${dd}`;
-
-		const updateLine = (line: string): string => {
-			const m = line.match(/^(\s*[-*]\s*\[\s*)(.)(\s*\]\s*)(.*)$/);
-			if (!m) return line;
-
-			const prefix = m[1];
-			const bracketSuffix = m[3];
-			let rest = m[4] ?? "";
-
-			rest = rest
-				.replace(/\s*(✅|❌)\s+\d{4}-\d{2}-\d{2}\b/g, "")
-				.trimEnd();
-
-			let updated = `${prefix}${newStatus}${bracketSuffix}${
-				rest ? " " + rest : ""
-			}`;
-
-			if (newStatus === "x") {
-				updated += ` ✅ ${dateStr}`;
-			} else if (newStatus === "-") {
-				updated += ` ❌ ${dateStr}`;
-			}
-
-			return updated;
-		};
-
-		let newContent: string | null = null;
-
-		const tryReplaceAtIndex = (idx: number) => {
-			if (idx < 0 || idx >= lines.length) return false;
-			const originalLine = lines[idx];
-			const replaced = updateLine(originalLine);
-			if (replaced !== originalLine) {
-				lines[idx] = replaced;
-				newContent = lines.join("\n");
-				return true;
-			}
-			return false;
-		};
-
-		if (targetLineIndex !== -1) {
-			tryReplaceAtIndex(targetLineIndex);
-		}
-
-		if (newContent == null) {
-			const targetText = normalize(
-				(task.text || task.visual || "").trim()
-			);
-			if (targetText) {
-				for (let i = 0; i < lines.length; i++) {
-					const m = lines[i].match(/^\s*[-*]\s*\[\s*.\s*\]\s*(.*)$/);
-					if (!m) continue;
-					const rest = normalize(m[1]);
-					if (rest === targetText) {
-						if (tryReplaceAtIndex(i)) break;
-					}
-				}
-				if (newContent == null) {
-					for (let i = 0; i < lines.length; i++) {
-						const m = lines[i].match(
-							/^\s*[-*]\s*\[\s*.\s*\]\s*(.*)$/
-						);
-						if (!m) continue;
-						const rest = normalize(m[1]);
-						if (rest.startsWith(targetText)) {
-							if (tryReplaceAtIndex(i)) break;
-						}
-					}
-				}
-			}
-		}
-
-		if (newContent == null) {
-			const escaped = (task.text || "")
-				.trim()
-				.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-			if (escaped) {
-				const re = new RegExp(
-					`^(\\s*[-*]\\s*\\[\\s*).(\\s*\\]\\s*)${escaped}(.*)$`,
-					"m"
-				);
-				newContent = content.replace(re, (match) => updateLine(match));
-				if (newContent === content) {
-					newContent = null;
-				}
-			}
-		}
-
-		if (!newContent || newContent === content) {
-			throw new Error("Unable to update task line");
-		}
-
-		await app.vault.modify(file, newContent);
-		(task as any).status = newStatus;
-
-		if (newStatus === "x" || newStatus === "-") {
-			try {
-				hideTaskAndCollapseAncestors(liEl);
-			} catch (e) {
-				console.error("[agile] hideTaskAndCollapseAncestors failed", {
-					error: e,
-					taskUid: task._uniqueId,
-				});
-			}
-		}
-
-		return newStatus;
-	} catch (err) {
-		console.error("[agile] handleStatusChange failed", {
-			error: err,
-			taskUid: task?._uniqueId,
-			isCancel,
-		});
-		return null;
-	}
-};
-
 ./src/features/agile-dashboard-view/ui/components/ui-policy.ts
+/**
+ * UI policy primitives for Agile Dashboard sections.
+ * Centralizes shared section normalization logic and section typing.
+ */
+
 export type TaskSection =
 	| "objectives"
+	| "objectives-linked"
 	| "responsibilities"
 	| "priorities"
 	| "initiatives"
@@ -2013,355 +2804,603 @@ export interface TaskUIPolicy {
 	section: TaskSection;
 }
 
-./src/features/agile-dashboard-view/ui/presenters/task-buttons.ts
-import { App } from "obsidian";
-import { TaskItem } from "@features/task-index";
-import { snoozeTask } from "@features/task-snooze";
-
-// Check if task text indicates it's assigned to the current user
-function isAssignedToUser(text: string, userSlug: string) {
-	if (!text || !userSlug) return false;
-	const activeRe = new RegExp(`\\bactive-${userSlug}\\b`, "i");
-	const inactiveRe = new RegExp(`\\binactive-${userSlug}\\b`, "i");
-	return activeRe.test(text) && !inactiveRe.test(text);
+/**
+ * Normalize a free-form section type string into a TaskSection value.
+ * Unknown values default to "tasks".
+ */
+export function normalizeSection(sectionType: string): TaskSection {
+	const s = (sectionType || "").toLowerCase();
+	// Make sure to detect the linked-objects variant before the general case
+	if (s.includes("objectives-linked")) return "objectives-linked";
+	if (s.includes("objective")) return "objectives";
+	if (s.includes("responsibil")) return "responsibilities";
+	if (s.includes("priorit")) return "priorities";
+	if (s.includes("initiative")) return "initiatives";
+	if (s.includes("epic")) return "epics";
+	if (s.includes("story")) return "stories";
+	return "tasks";
 }
 
-// Decide if a snooze button should be shown for a task in a given section
-function shouldShowSnoozeButton(
-	task: TaskItem,
-	sectionType: string,
-	userSlug: string,
-	liEl?: HTMLElement
-): boolean {
-	const text = task.text || "";
+./src/features/agile-dashboard-view/ui/handlers/assignment-handler.ts
+/**
+ * Dashboard-level click delegation for assignment template wrappers.
+ * Opens the headless reassignment menu where users click the assignee chip in the dashboard.
+ *
+ * Feature served: Reassignment UX inside the rendered dashboard without navigating to source.
+ */
 
-	// 1) No buttons in Objectives or Responsibilities
-	if (sectionType === "objectives" || sectionType === "responsibilities")
-		return false;
+import type { App } from "obsidian";
+import type { OrgStructurePort } from "@features/org-structure";
+import { openAssignmentMenuAt } from "@features/task-assignment/ui/reassignment-menu";
 
-	// 2) Tasks, Stories, Epics: only on items directly assigned to the user
-	if (
-		sectionType === "tasks" ||
-		sectionType === "stories" ||
-		sectionType === "epics"
-	) {
-		return isAssignedToUser(text, userSlug);
-	}
+type RegisterDomEvent = (
+	el: HTMLElement | Window | Document,
+	type: string,
+	handler: (evt: any) => void,
+	options?: AddEventListenerOptions | boolean
+) => void;
 
-	// 3) Initiatives: buttons on tasks all the way down the tree (allow everything)
-	if (sectionType === "initiatives") return true;
-
-	// 4) Priorities: show snooze only on leaf tasks (lowest-level children)
-	if (sectionType === "priorities") {
-		const isLeaf = !task.children || task.children.length === 0;
-		return isLeaf;
-	}
-
-	// Default: hide
-	return false;
+export interface AssignmentHandlerOptions {
+	app: App;
+	orgStructurePort?: OrgStructurePort;
+	viewContainer: HTMLElement; // the content area (this.containerEl.children[1])
+	registerDomEvent: RegisterDomEvent; // ItemView.registerDomEvent binder for cleanup
 }
 
-// Build a YYYY-MM-DD string for tomorrow (local)
-function getTomorrowISO(): string {
-	const d = new Date();
-	d.setDate(d.getDate() + 1);
-	const yyyy = d.getFullYear();
-	const mm = String(d.getMonth() + 1).padStart(2, "0");
-	const dd = String(d.getDate()).padStart(2, "0");
-	return `${yyyy}-${mm}-${dd}`;
-}
+export function attachDashboardAssignmentHandler(
+	opts: AssignmentHandlerOptions
+): void {
+	const { app, orgStructurePort, viewContainer, registerDomEvent } = opts;
+	if (!orgStructurePort) return;
 
-export function hideTaskAndCollapseAncestors(liEl: HTMLElement): void {
-	if (!liEl) return;
-
-	const hide = (el: HTMLElement) => {
-		el.style.display = "none";
-		el.setAttribute("aria-hidden", "true");
-	};
-
-	const isVisible = (el: HTMLElement) => {
-		if (!el) return false;
-		if (el.style.display === "none") return false;
-		const cs = getComputedStyle(el);
-		if (cs.visibility === "hidden" || cs.display === "none") return false;
-		return el.offsetParent !== null;
-	};
-
-	// Hide the affected task
-	hide(liEl);
-
-	// Walk up: if a parent LI's UL had only this one child (now hidden), hide the parent too
-	let current: HTMLElement | null = liEl;
-	while (current) {
-		const ul = current.parentElement as HTMLElement | null;
-		if (!ul || ul.tagName !== "UL") break;
-
-		const parentLi = ul.parentElement as HTMLElement | null;
-		if (!parentLi || parentLi.tagName !== "LI") break;
-
-		// Count direct LI children under this UL
-		const childLis = Array.from(ul.children).filter(
-			(n) => n instanceof HTMLElement && n.tagName === "LI"
-		) as HTMLElement[];
-
-		// Visible children after hiding current
-		const visibleChildren = childLis.filter((li) => isVisible(li));
-
-		// If parent effectively had only this one child, hide it and continue upward
-		if (childLis.length === 1 || visibleChildren.length === 0) {
-			hide(parentLi);
-			current = parentLi;
-			continue;
-		}
-
-		break;
-	}
-
-	// After collapsing, if no visible tasks remain in the section, hide the section (including its header)
-	const findSectionRoot = (el: HTMLElement): HTMLElement | null => {
-		let cur: HTMLElement | null = el;
-		while (cur && cur.parentElement) {
-			const parent = cur.parentElement as HTMLElement;
-			if (
-				parent.classList &&
-				parent.classList.contains("content-container")
-			) {
-				return cur;
-			}
-			cur = parent;
-		}
-		return null;
-	};
-
-	const maybeHideAdjacentHeader = (el: HTMLElement) => {
-		const prev = el.previousElementSibling as HTMLElement | null;
-		if (prev && /^H[1-6]$/.test(prev.tagName)) {
-			hide(prev);
-		}
-	};
-
-	const sectionRoot = findSectionRoot(liEl);
-	if (sectionRoot) {
-		const visibleLis = Array.from(
-			sectionRoot.querySelectorAll("li")
-		).filter((node) => isVisible(node as HTMLElement));
-		if (visibleLis.length === 0) {
-			hide(sectionRoot);
-			// If the section root is a list directly under the content container and the header is a sibling,
-			// also hide that header so the section disappears completely.
-			maybeHideAdjacentHeader(sectionRoot);
-		}
-	}
-}
-
-// Create and wire the snooze button with click (tomorrow) and long-press (custom date) behavior
-function createSnoozeButton(
-	task: TaskItem,
-	liEl: HTMLElement,
-	sectionType: string,
-	app: App,
-	userSlug: string
-): HTMLButtonElement {
-	const btn = document.createElement("button");
-	btn.type = "button";
-	btn.textContent = "💤";
-	btn.classList.add("agile-snooze-btn");
-	btn.title = "Click: snooze until tomorrow • Long-press: enter custom date";
-	btn.style.marginLeft = "8px";
-	btn.style.cursor = "pointer";
-	btn.style.background = "none";
-	btn.style.border = "none";
-	btn.style.fontSize = "1em";
-
-	const uid = task._uniqueId || "";
-	const filePath = uid.split(":")[0] || "";
-
-	let longPressTimer: number | null = null;
-	let longPressed = false;
-	const LONG_PRESS_MS = 500;
-
-	const clearTimer = () => {
-		if (longPressTimer !== null) {
-			window.clearTimeout(longPressTimer);
-			longPressTimer = null;
-		}
-	};
-
-	const showCustomDateInput = () => {
-		longPressed = true;
-		const input = document.createElement("input");
-		input.type = "text";
-		input.placeholder = "YYYY-MM-DD";
-		input.style.width = "110px";
-		input.style.marginLeft = "6px";
-		input.style.fontSize = "0.95em";
-
-		const submit = async () => {
-			const val = input.value.trim();
-			const isValid = /^\d{4}-\d{2}-\d{2}$/.test(val);
-			input.remove();
-			btn.style.display = "";
-			if (!isValid) return;
-			btn.textContent = "⏳";
-			if (filePath) {
-				window.dispatchEvent(
-					new CustomEvent("agile:prepare-optimistic-file-change", {
-						detail: { filePath },
-					})
-				);
-			}
-			try {
-				await snoozeTask(task, app, userSlug, val);
-				if (uid && filePath) {
-					window.dispatchEvent(
-						new CustomEvent("agile:task-snoozed", {
-							detail: { uid, filePath, date: val },
-						})
-					);
-				}
-				hideTaskAndCollapseAncestors(liEl);
-			} catch (err) {
-				btn.textContent = "💤";
-				throw err;
-			}
-		};
-
-		input.addEventListener("keydown", (e: KeyboardEvent) => {
-			if (e.key === "Enter") submit();
-			if (e.key === "Escape") {
-				input.remove();
-				btn.style.display = "";
-			}
-		});
-		input.addEventListener("blur", submit);
-
-		btn.style.display = "none";
-		liEl.appendChild(input);
-		input.focus();
-	};
-
-	const startLongPress = (ev: Event) => {
-		ev.stopPropagation();
-		clearTimer();
-		longPressed = false;
-		longPressTimer = window.setTimeout(showCustomDateInput, LONG_PRESS_MS);
-	};
-
-	const cancelLongPress = () => {
-		clearTimer();
-	};
-
-	// Click to snooze until tomorrow (ignore if this click concluded a long-press)
-	btn.addEventListener("click", async (e) => {
-		e.preventDefault();
-		e.stopPropagation();
-		if (longPressed) return;
-		btn.textContent = "⏳";
-		if (filePath) {
-			window.dispatchEvent(
-				new CustomEvent("agile:prepare-optimistic-file-change", {
-					detail: { filePath },
-				})
-			);
-		}
+	const handleOpenMenu = (evt: MouseEvent) => {
 		try {
-			const date = getTomorrowISO();
-			await snoozeTask(task, app, userSlug, date);
-			if (uid && filePath) {
-				window.dispatchEvent(
-					new CustomEvent("agile:task-snoozed", {
-						detail: { uid, filePath, date },
-					})
-				);
-			}
-			hideTaskAndCollapseAncestors(liEl);
-		} catch (err) {
-			btn.textContent = "💤";
-			throw err;
+			const tgt = evt.target as HTMLElement | null;
+			if (!tgt) return;
+
+			// Intercept clicks on the rendered assignee wrapper
+			const span = tgt.closest(
+				'span[data-template-key="members.assignee"]'
+			) as HTMLElement | null;
+			if (!span) return;
+
+			// Prevent default navigation/handlers early
+			evt.preventDefault();
+			evt.stopPropagation();
+			// @ts-ignore
+			(evt as any).stopImmediatePropagation?.();
+
+			const templateKey = span.getAttribute("data-template-key") ?? "";
+			if (templateKey !== "members.assignee") return;
+
+			const instanceId = span.getAttribute("data-template-wrapper") ?? "";
+			// AssignType defaults to "assignee" if missing or unknown
+			const assignTypeAttr = (
+				span.getAttribute("data-assign-type") || ""
+			).toLowerCase();
+			const assignType: "assignee" | "delegate" =
+				assignTypeAttr === "delegate" ? "delegate" : "assignee";
+
+			const currentState = (
+				(
+					span.getAttribute("data-assignment-state") || ""
+				).toLowerCase() === "inactive"
+					? "inactive"
+					: "active"
+			) as "active" | "inactive";
+
+			const currentSlug = (
+				span.getAttribute("data-member-slug") || ""
+			).trim();
+
+			// Map to task LI and resolve file path + optional hints
+			const li =
+				span.closest("li[data-file-path]") ||
+				span.closest("[data-file-path]"); // fallback if structure changes
+			const liEl = li as HTMLElement | null;
+			const filePath = liEl?.getAttribute("data-file-path") || "";
+			if (!filePath) return;
+
+			const parentUid = liEl?.getAttribute("data-task-uid") || null;
+			const lineHintStr = liEl?.getAttribute("data-line") || "";
+			const lineHint0 =
+				lineHintStr && /^\d+$/.test(lineHintStr)
+					? parseInt(lineHintStr, 10)
+					: null;
+
+			openAssignmentMenuAt({
+				mode: "headless",
+				app,
+				plugin: null,
+				ports: { orgStructure: orgStructurePort },
+				at: { x: evt.clientX, y: evt.clientY },
+				filePath,
+				instanceId, // empty string is ok; underlying code will fall back via type/slug/line
+				assignType,
+				currentState,
+				currentSlug,
+				parentUid,
+				lineHint0,
+			});
+		} catch {
+			/* ignore */
 		}
+	};
+
+	// Use capture to intercept before Obsidian's default link behaviors (matches templating handler)
+	registerDomEvent(viewContainer, "click", handleOpenMenu, { capture: true });
+
+	// Optional: allow right-click to open the reassignment menu as well
+	registerDomEvent(
+		viewContainer,
+		"contextmenu",
+		(evt: MouseEvent) => {
+			const tgt = evt.target as HTMLElement | null;
+			const span = tgt?.closest(
+				'span[data-template-key="members.assignee"]'
+			) as HTMLElement | null;
+			if (!span) return;
+			handleOpenMenu(evt);
+		},
+		{ capture: true }
+	);
+}
+
+./src/features/agile-dashboard-view/ui/handlers/event-wiring.ts
+import { TFile, type App, type TAbstractFile } from "obsidian";
+import type { TaskIndexService } from "@features/task-index";
+import { eventBus } from "../../app/event-bus";
+import {
+	refreshForFile,
+	refreshTaskTreeByUid,
+} from "../../app/refresh-service";
+
+type RegisterFn = (fn: () => void) => void;
+type RegisterEventFn = (evt: any) => void;
+
+export interface WiringOptions {
+	app: App;
+	taskIndexService: TaskIndexService;
+	viewRoot: HTMLElement; // containerEl.children[1]
+	getSelectedAlias: () => string | null;
+	updateView: () => Promise<void>;
+	suppressedFiles: Set<string>;
+	register: RegisterFn;
+	registerEvent: RegisterEventFn;
+}
+
+export function wireDashboardEvents(opts: WiringOptions) {
+	const {
+		app,
+		taskIndexService,
+		viewRoot,
+		getSelectedAlias,
+		updateView,
+		suppressedFiles,
+		register,
+		registerEvent,
+	} = opts;
+
+	// Prepare optimistic update suppression
+	register(() =>
+		eventBus.on("agile:prepare-optimistic-file-change", ({ filePath }) => {
+			if (filePath) suppressedFiles.add(filePath);
+		})
+	);
+
+	const handleAssignmentRefresh = async (filePath?: string) => {
+		try {
+			if (filePath) {
+				suppressedFiles.add(filePath);
+				const af = app.vault.getAbstractFileByPath(filePath);
+				if (af instanceof TFile) {
+					await taskIndexService.updateFile(af);
+				}
+			}
+		} catch {
+			/* ignore */
+		}
+		await updateView();
+	};
+
+	register(() =>
+		eventBus.on("agile:assignee-changed", async ({ filePath }) => {
+			await handleAssignmentRefresh(filePath);
+		})
+	);
+
+	register(() =>
+		eventBus.on("agile:assignment-changed", async ({ filePath }) => {
+			await handleAssignmentRefresh(filePath);
+		})
+	);
+
+	// Snooze → localized subtree refresh (if visible)
+	register(() =>
+		eventBus.on("agile:task-snoozed", async ({ uid, filePath }) => {
+			try {
+				if (!uid) return;
+
+				const contentRoot = viewRoot.querySelector(
+					".content-container"
+				) as HTMLElement | null;
+
+				let targetLi: HTMLElement | null = null;
+				if (contentRoot) {
+					const allLis = Array.from(
+						contentRoot.querySelectorAll("li[data-task-uid]")
+					) as HTMLElement[];
+					targetLi =
+						allLis.find(
+							(el) =>
+								(el.getAttribute("data-task-uid") || "") === uid
+						) || null;
+				}
+
+				const isHidden =
+					!targetLi ||
+					targetLi.style.display === "none" ||
+					targetLi.getAttribute("aria-hidden") === "true" ||
+					(() => {
+						try {
+							const cs = getComputedStyle(targetLi!);
+							return (
+								cs.display === "none" ||
+								cs.visibility === "hidden"
+							);
+						} catch {
+							return false;
+						}
+					})();
+
+				if (isHidden) return;
+
+				try {
+					if (filePath) {
+						suppressedFiles.add(filePath);
+						await refreshForFile(app, taskIndexService, filePath);
+					}
+				} catch {
+					/* ignore */
+				}
+
+				await refreshTaskTreeByUid(
+					app,
+					taskIndexService,
+					viewRoot,
+					uid,
+					getSelectedAlias()
+				);
+			} catch {
+				/* ignore */
+			}
+		})
+	);
+
+	// Vault events
+	registerEvent(
+		app.vault.on("modify", async (file: TFile) => {
+			if (file.extension !== "md") return;
+			await taskIndexService.updateFile(file);
+			if (suppressedFiles.has(file.path)) {
+				suppressedFiles.delete(file.path);
+				return;
+			}
+			void updateView();
+		})
+	);
+
+	registerEvent(
+		app.vault.on("create", async (file: TAbstractFile) => {
+			if (file instanceof TFile && file.extension === "md") {
+				await taskIndexService.updateFile(file);
+				void updateView();
+			}
+		})
+	);
+
+	registerEvent(
+		app.vault.on("delete", (file: TAbstractFile) => {
+			if (file instanceof TFile && file.extension === "md") {
+				taskIndexService.removeFile(file.path);
+				void updateView();
+			}
+		})
+	);
+
+	registerEvent(
+		app.vault.on("rename", async (file: TAbstractFile, oldPath: string) => {
+			if (file instanceof TFile && file.extension === "md") {
+				taskIndexService.renameFile(oldPath, file.path);
+				void updateView();
+			}
+		})
+	);
+}
+
+./src/features/agile-dashboard-view/ui/handlers/templating-handler.ts
+/**
+ * Adapter: delegates templating param editing handler to the refactored, wiring-agnostic
+ * templating-params-editor module. Wires in the Agile Dashboard event bus and
+ * the required ports (templating, vault, refresh, notices), with type adapters.
+ *
+ */
+
+import type { App } from "obsidian";
+import {
+	attachDashboardTemplatingHandler as attachGenericTemplatingHandler,
+	type TemplatingPorts,
+	type NoticePort,
+	type TemplateParams, // Editor params type
+	type TemplateDef as EditorTemplateDef, // Editor template def type
+} from "@features/templating-params-editor";
+import type {
+	ParamsSchema as EditorParamsSchema, // Editor schema type
+} from "@features/templating-params-editor/domain/types";
+
+import { createPathFileRepository } from "@platform/obsidian";
+import {
+	prefillTemplateParams as realPrefillTemplateParams,
+	renderTemplateOnly as realRenderTemplateOnly,
+	findTemplateById as realFindTemplateById,
+} from "@features/templating-engine/app/templating-service";
+import { showSchemaModal as realShowSchemaModal } from "@features/templating-params-editor";
+import { showJsonModal as realShowJsonModal } from "@features/templating-params-editor";
+
+// Templating module types (to adapt from/to)
+import type {
+	TemplateDefinition as TmplTemplateDef,
+	ParamsSchema as TmplParamsSchema,
+	ParamsSchemaField as TmplSchemaField,
+	ParamInputType as TmplParamInputType,
+} from "@features/templating-engine/domain/types";
+
+import { eventBus } from "../../app/event-bus";
+
+type RegisterDomEvent = (
+	el: HTMLElement | Window | Document,
+	type: string,
+	handler: (evt: any) => void,
+	options?: AddEventListenerOptions | boolean
+) => void;
+
+export interface TemplatingHandlerOptions {
+	app: App;
+	viewContainer: HTMLElement;
+	registerDomEvent: RegisterDomEvent;
+
+	// Dashboard refresh hook
+	refreshForFile: (filePath?: string | null) => Promise<void>;
+
+	// Optional notices adapter; if omitted, the generic handler will default to Obsidian Notice
+	notices?: NoticePort;
+
+	// If true (default), allow the generic handler to use Obsidian Notice as fallback
+	useObsidianNotice?: boolean;
+}
+
+/**
+ * Map templating module's ParamInputType to the editor's simplified type.
+ * Unknowns map to "any".
+ */
+function mapParamInputTypeToEditor(
+	t?: TmplParamInputType
+): "string" | "number" | "boolean" | "any" | undefined {
+	if (!t) return undefined;
+	const v = String(t).toLowerCase();
+	if (v.includes("number")) return "number";
+	if (v.includes("bool") || v.includes("toggle") || v.includes("check"))
+		return "boolean";
+	if (
+		v.includes("text") ||
+		v.includes("string") ||
+		v === "input" ||
+		v.includes("area")
+	)
+		return "string";
+	return "any";
+}
+
+/**
+ * Adapt a templating module schema to the editor schema type.
+ */
+function adaptSchemaToEditor(
+	schema: TmplParamsSchema | undefined
+): EditorParamsSchema | undefined {
+	if (!schema || !Array.isArray(schema.fields)) return undefined;
+	const fields: EditorParamsSchema["fields"] = [];
+	for (const f of schema.fields) {
+		fields.push({
+			name: f.name,
+			required: f.required,
+			defaultValue:
+				typeof f.defaultValue === "string"
+					? f.defaultValue
+					: (f.defaultValue as unknown as string | undefined),
+			type: mapParamInputTypeToEditor(f.type),
+		});
+	}
+	return { fields };
+}
+
+/**
+ * Adapt the editor schema to the templating module schema type.
+ * We intentionally omit "type" to avoid enum coupling; the templating UI can infer/default.
+ */
+function adaptSchemaToTemplating(schema: EditorParamsSchema): TmplParamsSchema {
+	const fields: TmplSchemaField[] = [];
+	for (const f of schema.fields) {
+		const out: TmplSchemaField = {
+			name: f.name,
+			required: f.required,
+			defaultValue: f.defaultValue,
+			// Note: omit "type" to avoid enum mismatches
+		} as TmplSchemaField;
+		fields.push(out);
+	}
+	return { fields };
+}
+
+/**
+ * Adapt templating module's TemplateDefinition to the editor's TemplateDef.
+ */
+function adaptTemplateDefToEditor(
+	def: TmplTemplateDef | undefined
+): EditorTemplateDef | undefined {
+	if (!def) return undefined;
+	return {
+		id: def.id,
+		hasParams: !!def.hasParams, // ensure boolean
+		hiddenFromDynamicCommands: def.hiddenFromDynamicCommands,
+		paramsSchema: adaptSchemaToEditor(def.paramsSchema),
+	};
+}
+
+/**
+ * Attach the dashboard templating handler using the refactored feature.
+ * This implementation:
+ * - Uses platform/obsidian's createPathFileRepository for VaultPort compatibility
+ * - Drops legacy infra adapters
+ * - Lets the feature's UI handler default to Obsidian Notice when no notices are provided
+ */
+export function attachDashboardTemplatingHandler(
+	opts: TemplatingHandlerOptions
+): void {
+	const {
+		app,
+		viewContainer,
+		registerDomEvent,
+		refreshForFile,
+		notices,
+		useObsidianNotice = true,
+	} = opts;
+
+	// Wire templating ports by wrapping the existing templating service and modal UIs.
+	const templating: TemplatingPorts = {
+		findTemplateById: (id) =>
+			adaptTemplateDefToEditor(realFindTemplateById(id)),
+		prefillTemplateParams: (templateId, wrapperEl) =>
+			realPrefillTemplateParams(templateId, wrapperEl) as TemplateParams,
+		renderTemplateOnly: (templateId, params) =>
+			realRenderTemplateOnly(templateId, params),
+		showSchemaModal: async (templateId, schema, isEdit) => {
+			const schemaForTemplating: TmplParamsSchema =
+				adaptSchemaToTemplating(schema);
+			const result = await realShowSchemaModal(
+				app,
+				templateId,
+				schemaForTemplating,
+				isEdit
+			);
+			return result as TemplateParams | undefined;
+		},
+		showJsonModal: (templateId, initialJson) =>
+			realShowJsonModal(app, templateId, initialJson) as Promise<
+				TemplateParams | undefined
+			>,
+	};
+
+	// Use platform/obsidian file repository as VaultPort.
+	// Note: VaultPort.fileExists is optional; feature code will fall back to read-try/catch if absent.
+	const repo = createPathFileRepository(app);
+	const vault = {
+		readFile: repo.readFile,
+		writeFile: repo.writeFile,
+		// no fileExists; optional by design
+	};
+
+	attachGenericTemplatingHandler({
+		app,
+		viewContainer,
+		registerDomEvent,
+		deps: {
+			templating,
+			vault,
+			refresh: { refreshForFile },
+			notices, // allow undefined; handler will default to Obsidian Notice if allowed
+			eventBus,
+		},
+		useObsidianNotice,
 	});
-
-	// Mouse long-press
-	btn.addEventListener("mousedown", startLongPress);
-	btn.addEventListener("mouseup", cancelLongPress);
-	btn.addEventListener("mouseleave", cancelLongPress);
-
-	// Touch long-press (mobile)
-	btn.addEventListener("touchstart", startLongPress, { passive: true });
-	btn.addEventListener("touchend", cancelLongPress);
-
-	return btn;
 }
 
-function findInlineAnchor(liEl: HTMLElement): HTMLElement {
-	// Prefer inner UL>LI if present (result of rendering a single "- [ ]" task line)
-	const innerLi = liEl.querySelector("ul > li") as HTMLElement | null;
-	const base = innerLi ?? liEl;
+./src/features/agile-dashboard-view/ui/utils/filters.ts
+/**
+ * Shared filtering utilities for Agile Dashboard sections.
+ */
 
-	// Prefer inline containers inside base for appending the button at end of text
-	const inlineContainer =
-		(base.querySelector("p") as HTMLElement | null) ||
-		(base.querySelector("span") as HTMLElement | null) ||
-		(base.querySelector("label") as HTMLElement | null);
+import type { TaskItem, TaskParams } from "@features/task-index";
+import {
+	isCancelled,
+	isCompleted,
+	isInProgress,
+	isSnoozed,
+} from "@features/task-filter";
 
-	return inlineContainer ?? base;
-}
-
-export function appendSnoozeButtonIfEligible(
+/**
+ * Return true when a task should be visible based on current status toggles and snooze.
+ *
+ * - inProgress => include active/in-progress tasks (but not snoozed)
+ * - completed  => include completed items
+ * - sleeping   => include snoozed items (for the selected alias context)
+ * - cancelled  => include cancelled items
+ */
+export function isShownByParams(
 	task: TaskItem,
-	liEl: HTMLElement,
-	sectionType: string,
-	app: App,
-	selectedAlias: string | null
+	taskMap: Map<string, TaskItem>,
+	selectedAlias: string | null,
+	params: TaskParams
+): boolean {
+	const { inProgress, completed, sleeping, cancelled } = params;
+	const snoozedForAlias = isSnoozed(task, taskMap, selectedAlias);
+
+	const includeInProgress =
+		inProgress &&
+		isInProgress(task, taskMap, selectedAlias) &&
+		!snoozedForAlias;
+	const includeCompleted = completed && isCompleted(task);
+	const includeSleeping = sleeping && snoozedForAlias;
+	const includeCancelled = cancelled && isCancelled(task);
+
+	return (
+		includeInProgress ||
+		includeCompleted ||
+		includeSleeping ||
+		includeCancelled
+	);
+}
+
+./src/features/agile-dashboard-view/ui/utils/scroll.ts
+export function captureScroll(container: HTMLElement): {
+	outer: number;
+	inner: number;
+} {
+	const content = container.querySelector(
+		".content-container"
+	) as HTMLElement | null;
+	return { outer: container.scrollTop, inner: content?.scrollTop ?? 0 };
+}
+
+export function restoreScroll(
+	container: HTMLElement,
+	state: { outer: number; inner: number }
 ) {
-	const uid = task._uniqueId || "";
-	const filePath = uid.split(":")[0] || "";
-
-	const userSlug = selectedAlias;
-	if (!userSlug) {
-		return; // No user configured; skip
-	}
-
-	const eligible = shouldShowSnoozeButton(task, sectionType, userSlug, liEl);
-	if (!eligible) {
-		return;
-	}
-
-	if (uid) liEl.setAttribute("data-task-uid", uid);
-	if (filePath) liEl.setAttribute("data-file-path", filePath);
-
-	const btn = createSnoozeButton(task, liEl, sectionType, app, userSlug);
-	const anchor = findInlineAnchor(liEl);
-	anchor.appendChild(btn);
+	const content = container.querySelector(
+		".content-container"
+	) as HTMLElement | null;
+	container.scrollTop = state.outer ?? 0;
+	if (content) content.scrollTop = state.inner ?? 0;
 }
 
 ./src/features/agile-dashboard-view/ui/views/agile-dashboard-view.ts
-import { ItemView, WorkspaceLeaf, TFile, TAbstractFile } from "obsidian";
+import { ItemView, WorkspaceLeaf } from "obsidian";
 import manifest from "manifest.json";
-import { cleanupExpiredSnoozes } from "@features/task-snooze";
-import { getCurrentUserDisplayName } from "@settings/index";
 
-// Section processors
-import { processAndRenderObjectives } from "../components/objectives";
-import { processAndRenderArtifacts } from "../components/artifacts";
-import { processAndRenderInitiatives } from "../components/initiatives";
-import { processAndRenderResponsibilities } from "../components/responsibilities";
-import { processAndRenderPriorities } from "../components/priorities";
-
-// Task Index types
-import type {
-	TaskItem,
-	TaskNode,
-} from "@features/task-index/domain/task-types";
 import type { TaskIndexService } from "@features/task-index";
 import type { SettingsService } from "@settings";
+import type { OrgStructurePort } from "@features/org-structure";
 
-// Org structure API
-import type {
-	OrgStructurePort,
-	OrganizationNode,
-	TeamNode,
-} from "@features/org-structure";
+import { DashboardController } from "../../app/controller";
 
 export const VIEW_TYPE_AGILE_DASHBOARD = "agile-dashboard-view";
 
@@ -2375,27 +3414,14 @@ export type AgileDashboardViewPorts = {
 export class AgileDashboardView extends ItemView {
 	private taskIndexService: TaskIndexService;
 	private settingsService: SettingsService;
-
-	private viewSelect: HTMLSelectElement;
-	private activeToggle: HTMLInputElement;
-	private activeToggleLabel: HTMLSpanElement;
-	private memberSelect: HTMLSelectElement;
-	private suppressedFiles = new Set<string>();
-
-	// Team selection UI
 	private orgStructurePort?: OrgStructurePort;
-	private selectTeamsBtn: HTMLButtonElement | null = null;
-	private teamsPopupEl: HTMLDivElement | null = null;
-	private outsideClickHandler: ((ev: MouseEvent) => void) | null = null;
-
-	// Team selection state
-	private selectedTeamSlugs: Set<string> = new Set();
-	private implicitAllSelected: boolean = true;
+	private controller!: DashboardController;
 	private storageKey: string;
 
 	constructor(leaf: WorkspaceLeaf, ports: AgileDashboardViewPorts) {
 		super(leaf);
 		this.settingsService = ports.settings;
+		this.orgStructurePort = ports.orgStructure;
 
 		const svc = ports.taskIndex;
 		if (!svc) {
@@ -2417,10 +3443,8 @@ export class AgileDashboardView extends ItemView {
 			this.taskIndexService = svc;
 		}
 
-		this.orgStructurePort = ports.orgStructure;
 		const mid = (ports.manifestId || "").trim() || "agile-default";
 		this.storageKey = `agile:selected-team-slugs:${mid}`;
-		this.loadSelectedTeamSlugs();
 	}
 
 	getViewType() {
@@ -2436,1232 +3460,182 @@ export class AgileDashboardView extends ItemView {
 	}
 
 	async onOpen() {
-		const container = this.containerEl.children[1];
-		container.empty();
-
-		// Controls row (consistent gaps; active/inactive sits right next to Select Teams)
-		const controlsContainer = container.createEl("div", {
-			attr: {
-				style: "display:flex; align-items:center; gap:8px; position:relative; flex-wrap:wrap;",
-			},
+		this.controller = new DashboardController({
+			app: this.app,
+			view: this,
+			taskIndexService: this.taskIndexService,
+			settingsService: this.settingsService,
+			orgStructurePort: this.orgStructurePort,
+			manifestVersion: manifest.version,
+			storageKey: this.storageKey,
+			register: this.register.bind(this),
+			registerEvent: this.registerEvent.bind(this),
+			registerDomEvent: this.registerDomEvent.bind(this),
 		});
 
-		const versionText = controlsContainer.createEl("p");
-		const strongText = versionText.createEl("strong");
-		strongText.textContent = `Agile Obsidian v${manifest.version}`;
-
-		this.viewSelect = controlsContainer.createEl("select");
-		this.viewSelect.innerHTML = `
-      <option value="projects">🚀 Projects</option>
-      <option value="completed">✅ Completed</option>
-    `;
-
-		// Member dropdown (grouped and sorted)
-		this.memberSelect = controlsContainer.createEl("select");
-		this.populateMemberSelectGrouped();
-
-		this.memberSelect.addEventListener("change", () => {
-			// Keep selection consistent with known membership if we have it
-			this.restrictSelectedTeamsToUserMembership();
-			// Refresh view and, if open, re-render the teams popup
-			this.updateView();
-			if (this.teamsPopupEl) {
-				this.renderTeamsPopupContent(this.teamsPopupEl);
-			}
-		});
-
-		// Select Teams button + popup
-		this.selectTeamsBtn = controlsContainer.createEl("button", {
-			text: "Select Teams",
-		}) as HTMLButtonElement;
-		this.selectTeamsBtn.addEventListener("click", (ev) => {
-			ev.preventDefault();
-			ev.stopPropagation();
-			this.toggleTeamsPopup(this.selectTeamsBtn!);
-		});
-
-		// Active/Inactive toggle — immediately after Select Teams via flex gap
-		const statusToggleContainer = controlsContainer.createEl("span", {
-			attr: {
-				style: "display:inline-flex; align-items:center; gap:6px;",
-			},
-		});
-		this.activeToggleLabel = statusToggleContainer.createEl("span", {
-			text: "Active",
-		});
-		this.activeToggle = statusToggleContainer.createEl("input", {
-			type: "checkbox",
-		}) as HTMLInputElement;
-		this.activeToggle.checked = true;
-		statusToggleContainer.style.display =
-			this.viewSelect.value === "projects" ? "inline-flex" : "none";
-
-		this.activeToggle.addEventListener("change", () => {
-			this.activeToggleLabel.textContent = this.activeToggle.checked
-				? "Active"
-				: "Inactive";
-			this.updateView();
-		});
-
-		this.viewSelect.addEventListener("change", () => {
-			statusToggleContainer.style.display =
-				this.viewSelect.value === "projects" ? "inline-flex" : "none";
-			this.updateView();
-		});
-
-		// Listen for settings changes to auto-refresh
-		this.registerEvent(
-			// @ts-ignore
-			this.app.workspace.on("agile-settings-changed", () => {
-				if (this.memberSelect) {
-					const prev = this.getSelectedAlias();
-					this.populateMemberSelectGrouped();
-					const exists = Array.from(this.memberSelect.options).some(
-						(o) => o.value === prev
-					);
-					if (prev && exists) this.memberSelect.value = prev!;
-				}
-				this.restrictSelectedTeamsToUserMembership();
-				this.updateView();
-				if (this.teamsPopupEl)
-					this.renderTeamsPopupContent(this.teamsPopupEl);
-			})
-		);
-
-		// Local optimistic updates suppression
-		this.registerDomEvent(
-			window,
-			"agile:prepare-optimistic-file-change" as any,
-			(e: Event) => {
-				const ev = e as CustomEvent<{ filePath: string }>;
-				if (ev.detail?.filePath) {
-					this.suppressedFiles.add(ev.detail.filePath);
-				}
-			}
-		);
-		this.registerDomEvent(
-			window,
-			"agile:task-snoozed" as any,
-			async (e: Event) => {
-				const ev = e as CustomEvent<{ uid: string; filePath: string }>;
-				const filePath = ev.detail?.filePath;
-				if (filePath) {
-					this.suppressedFiles.add(filePath);
-					const file = this.app.vault.getAbstractFileByPath(filePath);
-					if (file instanceof TFile) {
-						await this.taskIndexService.updateFile(file);
-					}
-				}
-			}
-		);
-
-		// Close popup when clicking outside
-		this.outsideClickHandler = (ev: MouseEvent) => {
-			if (!this.teamsPopupEl) return;
-			const target = ev.target as Node;
-			const within =
-				this.teamsPopupEl.contains(target) ||
-				this.selectTeamsBtn?.contains(target);
-			if (!within) {
-				this.closeTeamsPopup();
-			}
-		};
-		window.addEventListener("click", this.outsideClickHandler, {
-			capture: true,
-		});
-
-		// Initial render
-		await this.updateView();
-
-		// Auto-refresh on vault changes
-		this.registerEvent(
-			this.app.vault.on("modify", async (file: TFile) => {
-				if (file.extension === "md") {
-					await this.taskIndexService.updateFile(file);
-					if (this.suppressedFiles.has(file.path)) {
-						this.suppressedFiles.delete(file.path);
-						return;
-					}
-					this.updateView();
-				}
-			})
-		);
-		this.registerEvent(
-			this.app.vault.on("create", async (file: TAbstractFile) => {
-				if (file instanceof TFile && file.extension === "md") {
-					await this.taskIndexService.updateFile(file);
-					this.updateView();
-				}
-			})
-		);
-		this.registerEvent(
-			this.app.vault.on("delete", (file: TAbstractFile) => {
-				if (file instanceof TFile && file.extension === "md") {
-					this.taskIndexService.removeFile(file.path);
-					this.updateView();
-				}
-			})
-		);
-		this.registerEvent(
-			this.app.vault.on(
-				"rename",
-				async (file: TAbstractFile, oldPath: string) => {
-					if (file instanceof TFile && file.extension === "md") {
-						this.taskIndexService.renameFile(oldPath, file.path);
-						this.updateView();
-					}
-				}
-			)
-		);
+		this.controller.mount();
 	}
 
 	async onClose() {
-		this.closeTeamsPopup();
-		if (this.outsideClickHandler) {
-			try {
-				window.removeEventListener("click", this.outsideClickHandler, {
-					capture: true,
-				} as any);
-			} catch {}
-			this.outsideClickHandler = null;
-		}
+		if (this.controller) this.controller.unmount();
 	}
+}
 
-	private getSelectedAlias(): string | null {
-		return (
-			this.memberSelect?.value ||
-			this.settingsService.getRaw().currentUserAlias ||
-			null
-		);
-	}
+./src/features/agile-dashboard-view/ui/views/project-view.ts
+import type { App } from "obsidian";
+import type {
+	TaskItem,
+	TaskIndexService,
+	TaskParams,
+} from "@features/task-index";
+import type { SettingsService } from "@settings";
+import { processAndRenderObjectives } from "../components/objectives";
+import { processAndRenderArtifacts } from "../components/artifacts";
+import { processAndRenderInitiatives } from "../components/initiatives";
+import { processAndRenderResponsibilities } from "../components/responsibilities";
+import { processAndRenderPriorities } from "../components/priorities";
+import { TeamSelection } from "../../domain/team-selection";
 
-	private async updateView() {
-		const viewContainer = this.containerEl.children[1] as HTMLElement;
-		const existingContent = viewContainer.querySelector(
-			".content-container"
-		) as HTMLElement | null;
-		const prevContainerScrollTop = viewContainer.scrollTop;
-		const prevContentScrollTop = existingContent?.scrollTop ?? 0;
+type RegisterDomEvent = (
+	el: HTMLElement | Window | Document,
+	type: string,
+	handler: (evt: any) => void,
+	options?: AddEventListenerOptions | boolean
+) => void;
 
-		const contentContainer =
-			existingContent ??
-			viewContainer.createEl("div", { cls: "content-container" });
-		contentContainer.empty();
+export interface ProjectViewOptions {
+	app: App;
+	container: HTMLElement;
+	taskIndexService: TaskIndexService;
+	settingsService: SettingsService;
+	teamSelection: TeamSelection;
+	statusActive: boolean;
+	selectedAlias: string | null;
+	registerDomEvent: RegisterDomEvent;
+}
 
-		const selectedView = this.viewSelect.value;
-		const isActive = this.activeToggle ? this.activeToggle.checked : true;
-		const selectedAlias = this.getSelectedAlias();
+export async function renderProjectView(opts: ProjectViewOptions) {
+	const {
+		app,
+		container,
+		taskIndexService,
+		settingsService,
+		teamSelection,
+		statusActive,
+		selectedAlias,
+		registerDomEvent,
+	} = opts;
 
-		if (selectedView === "projects") {
-			await this.projectView(contentContainer, isActive, selectedAlias);
-		} else if (selectedView === "completed") {
-			contentContainer.createEl("h2", {
-				text: "✅ Completed (Coming Soon)",
-			});
-		}
-
-		viewContainer.scrollTop = prevContainerScrollTop;
-		contentContainer.scrollTop = prevContentScrollTop;
-	}
-
-	private async projectView(
-		container: HTMLElement,
-		status = true,
-		selectedAlias: string | null = null
+	if (
+		!teamSelection.getImplicitAllSelected() &&
+		teamSelection.getSelectedTeamSlugs().size === 0
 	) {
-		// Show helpful empty state only when user explicitly cleared selection
-		if (!this.implicitAllSelected && this.selectedTeamSlugs.size === 0) {
-			const msg = container.createEl("div", {
-				attr: {
-					style: "display:flex; align-items:center; justify-content:center; min-height: 240px; text-align:center; opacity:0.8;",
-				},
-			});
-			msg.createEl("div", {
-				text: "No organizations/teams selected. Select a team or organization to view the dashboard",
-			});
-			return;
-		}
-
-		// Get tasks
-		let currentTasks: TaskNode[] = this.taskIndexService.getAllTasks();
-
-		// Clean up expired snoozes for current user before rendering
-		const settings = this.settingsService.getRaw();
-		const changedFiles = await cleanupExpiredSnoozes(
-			this.app,
-			currentTasks,
-			getCurrentUserDisplayName(settings) || ""
-		);
-		if (changedFiles.size > 0) {
-			for (const path of changedFiles) {
-				const file = this.app.vault.getAbstractFileByPath(path);
-				if (file instanceof TFile) {
-					await this.taskIndexService.updateFile(file);
-				}
-			}
-			currentTasks = this.taskIndexService.getAllTasks();
-		}
-
-		// Apply team selection + membership filter
-		currentTasks = currentTasks.filter((t) =>
-			this.isTaskAllowedByTeam(t as unknown as TaskItem)
-		);
-
-		// Build maps
-		const taskMap = new Map<string, TaskItem>();
-		const childrenMap = new Map<string, TaskItem[]>();
-		currentTasks.forEach((t) => {
-			if (t._uniqueId) {
-				taskMap.set(t._uniqueId, t);
-				childrenMap.set(t._uniqueId, []);
-			}
+		const msg = container.createEl("div", {
+			attr: {
+				style: "display:flex; align-items:center; justify-content:center; min-height: 240px; text-align:center; opacity:0.8;",
+			},
 		});
-		currentTasks.forEach((t) => {
-			if (t._parentId && childrenMap.has(t._parentId)) {
-				childrenMap.get(t._parentId)!.push(t);
-			}
+		msg.createEl("div", {
+			text: "No organizations/teams selected. Select a team or organization to view the dashboard",
 		});
+		return;
+	}
 
-		const taskParams = {
-			inProgress: true,
-			completed: false,
-			sleeping: false,
-			cancelled: false,
-		};
+	let currentTasks: TaskItem[] = taskIndexService.getAllTasks();
 
-		if (settings.showObjectives) {
-			processAndRenderObjectives(
-				container,
-				currentTasks,
-				status,
-				selectedAlias,
-				this.app,
-				taskMap,
-				childrenMap,
-				taskParams
-			);
+	currentTasks = currentTasks.filter((t) =>
+		teamSelection.isTaskAllowedByTeam(
+			t as unknown as TaskItem,
+			selectedAlias
+		)
+	);
+
+	const taskMap = new Map<string, TaskItem>();
+	const childrenMap = new Map<string, TaskItem[]>();
+	currentTasks.forEach((t) => {
+		if (t._uniqueId) {
+			taskMap.set(t._uniqueId, t as unknown as TaskItem);
+			childrenMap.set(t._uniqueId, []);
 		}
-		if (settings.showResponsibilities) {
-			processAndRenderResponsibilities(
-				container,
-				currentTasks,
-				status,
-				selectedAlias,
-				this.app,
-				taskMap,
-				childrenMap,
-				taskParams
-			);
+	});
+	currentTasks.forEach((t) => {
+		const tt = t as unknown as TaskItem;
+		if (tt._parentId && childrenMap.has(tt._parentId)) {
+			childrenMap.get(tt._parentId)!.push(tt);
 		}
-		processAndRenderArtifacts(
+	});
+
+	const taskParams: TaskParams = {
+		inProgress: true,
+		completed: false,
+		sleeping: false,
+		cancelled: false,
+	};
+	const settings = settingsService.getRaw();
+
+	if (settings.showObjectives) {
+		processAndRenderObjectives(
 			container,
-			currentTasks,
-			status,
+			currentTasks as unknown as TaskItem[],
+			statusActive,
 			selectedAlias,
-			this.app,
+			app,
 			taskMap,
 			childrenMap,
 			taskParams,
-			settings
-		);
-		if (settings.showInitiatives) {
-			processAndRenderInitiatives(
-				container,
-				currentTasks,
-				status,
-				selectedAlias,
-				this.app,
-				taskMap,
-				childrenMap,
-				taskParams
-			);
-		}
-		if (settings.showPriorities) {
-			processAndRenderPriorities(
-				container,
-				currentTasks,
-				status,
-				selectedAlias,
-				this.app,
-				taskMap,
-				childrenMap,
-				taskParams
-			);
-		}
-	}
-
-	// -----------------------
-	// Member select (grouped)
-	// -----------------------
-	private populateMemberSelectGrouped() {
-		this.memberSelect.innerHTML = "";
-
-		type Entry = {
-			alias: string;
-			name: string;
-			role: "member" | "internal-team-member" | "team" | "external";
-			label: string;
-		};
-		const entries: Entry[] = [];
-
-		const settings = this.settingsService.getRaw();
-		const teams = settings.teams || [];
-		const seen = new Set<string>();
-
-		for (const t of teams) {
-			for (const m of t.members || []) {
-				const aliasRaw =
-					typeof m === "string"
-						? m
-						: m?.alias || m?.handle || m?.username || m?.name || "";
-				/*
-						Note we need to fix the TS errors here before you proceed:
-
-						[{
-	"resource": "/mnt/c/Users/Ownerpc/plugin-dev-notes/.obsidian/plugins/agile-obsidian/src/features/agile-dashboard-view/ui/views/agile-dashboard-view.ts",
-	"owner": "typescript",
-	"code": "2339",
-	"severity": 8,
-	"message": "Property 'handle' does not exist on type 'MemberInfo'.",
-	"source": "ts",
-	"startLineNumber": 478,
-	"startColumn": 24,
-	"endLineNumber": 478,
-	"endColumn": 30,
-	"origin": "extHost3"
-},{
-	"resource": "/mnt/c/Users/Ownerpc/plugin-dev-notes/.obsidian/plugins/agile-obsidian/src/features/agile-dashboard-view/ui/views/agile-dashboard-view.ts",
-	"owner": "typescript",
-	"code": "2339",
-	"severity": 8,
-	"message": "Property 'username' does not exist on type 'MemberInfo'.",
-	"source": "ts",
-	"startLineNumber": 478,
-	"startColumn": 37,
-	"endLineNumber": 478,
-	"endColumn": 45,
-	"origin": "extHost3"
-}]
-
-Once fixed you can remove this comment in the final version
-						*/
-				const alias = this.normalizeAlias(aliasRaw);
-				if (!alias) continue;
-				if (seen.has(alias)) continue;
-				seen.add(alias);
-
-				const dispName =
-					(typeof m === "string" ? "" : m?.name) || alias;
-
-				const lower = alias.toLowerCase();
-				let role: Entry["role"] = "member";
-				if (lower.endsWith("-ext")) role = "external";
-				else if (lower.endsWith("-team")) role = "team";
-				else if (lower.endsWith("-int")) role = "internal-team-member";
-
-				const roleLabel =
-					role === "member"
-						? "Team Member"
-						: role === "internal-team-member"
-						? "Internal Team Member"
-						: role === "team"
-						? "Internal Team"
-						: "External Delegate";
-				const label = `${dispName} (${roleLabel} - ${alias})`;
-
-				entries.push({ alias, name: dispName, role, label });
-			}
-		}
-
-		// Split into groups and sort A–Z within each
-		const groupTeamMembers = entries
-			.filter(
-				(e) => e.role === "member" || e.role === "internal-team-member"
-			)
-			.sort((a, b) => a.name.localeCompare(b.name));
-		const groupDelegatesInternalTeams = entries
-			.filter((e) => e.role === "team")
-			.sort((a, b) => a.name.localeCompare(b.name));
-		const groupDelegatesExternal = entries
-			.filter((e) => e.role === "external")
-			.sort((a, b) => a.name.localeCompare(b.name));
-
-		const addGroup = (label: string, group: Entry[]) => {
-			if (group.length === 0) return;
-			const og = document.createElement("optgroup");
-			og.label = label;
-			group.forEach((e) => {
-				const opt = document.createElement("option");
-				opt.value = e.alias;
-				opt.text = e.label;
-				og.appendChild(opt);
-			});
-			this.memberSelect.appendChild(og);
-		};
-
-		addGroup("Team Members", groupTeamMembers);
-		addGroup("Delegates – Internal Teams", groupDelegatesInternalTeams);
-		addGroup("Delegates – External", groupDelegatesExternal);
-
-		const defRaw = this.settingsService.getRaw().currentUserAlias || "";
-		const def = this.normalizeAlias(defRaw);
-		const all = [
-			...groupTeamMembers,
-			...groupDelegatesInternalTeams,
-			...groupDelegatesExternal,
-		];
-		if (def && all.some((e) => e.alias === def)) {
-			this.memberSelect.value = def;
-		} else if (all.length > 0) {
-			this.memberSelect.value = all[0].alias;
-		}
-	}
-
-	// -----------------------
-	// Team selection: storage
-	// -----------------------
-	private loadSelectedTeamSlugs() {
-		try {
-			const raw = window.localStorage.getItem(this.storageKey);
-			if (raw === null) {
-				this.implicitAllSelected = true;
-				this.selectedTeamSlugs = new Set();
-				return;
-			}
-			this.implicitAllSelected = false;
-			const arr = JSON.parse(raw);
-			if (Array.isArray(arr)) {
-				this.selectedTeamSlugs = new Set(
-					arr.map((s) => String(s).toLowerCase())
-				);
-			} else {
-				this.selectedTeamSlugs = new Set();
-			}
-		} catch {
-			this.implicitAllSelected = true;
-			this.selectedTeamSlugs = new Set();
-		}
-	}
-
-	private persistSelectedTeamSlugs() {
-		try {
-			this.implicitAllSelected = false;
-			const arr = Array.from(this.selectedTeamSlugs.values());
-			window.localStorage.setItem(this.storageKey, JSON.stringify(arr));
-		} catch {}
-	}
-
-	// -----------------------------
-	// Team selection: task filtering
-	// -----------------------------
-	private isTaskAllowedByTeam(task: TaskItem): boolean {
-		const filePath =
-			task.link?.path || (task._uniqueId?.split(":")[0] ?? "");
-		if (!filePath) return false;
-
-		// Membership set for selected user (if available)
-		const allowedByUser = this.getAllowedTeamSlugsForSelectedUser();
-
-		// If implicit "all": show everything; clamp to membership only if we know it
-		if (this.implicitAllSelected) {
-			if (!this.orgStructurePort) return true;
-			const teamSlug = this.getTeamSlugForFile(filePath);
-			if (!allowedByUser) return true; // unknown => show all
-			if (!teamSlug) return false;
-			return allowedByUser.has(teamSlug);
-		}
-
-		// Custom mode: require selected team + (if known) user membership
-		if (this.selectedTeamSlugs.size === 0) return false;
-		const teamSlug = this.getTeamSlugForFile(filePath);
-		if (!teamSlug) return false;
-
-		const inSelected = this.selectedTeamSlugs.has(teamSlug);
-		if (!inSelected) return false;
-
-		// If we know membership, require membership too
-		if (allowedByUser) {
-			return allowedByUser.has(teamSlug);
-		}
-		return true;
-	}
-
-	private getTeamSlugForFile(filePath: string): string | null {
-		try {
-			if (!this.orgStructurePort) return null;
-			const { team } =
-				this.orgStructurePort.getTeamMembersForFile(filePath);
-			// TeamInfo exposes 'slug' (not 'teamSlug')
-			const slug = (team?.slug || "").toLowerCase().trim();
-			return slug || null;
-		} catch {
-			return null;
-		}
-	}
-
-	// Selected user membership for tasks/menu.
-	// Returns:
-	// - Set<string> of slugs if we confidently know memberships
-	// - null if unknown/undeterminable (menu will show all; tasks "implicit all" remains unfiltered)
-	private getAllowedTeamSlugsForSelectedUser(): Set<string> | null {
-		const aliasNorm = this.normalizeAlias(this.getSelectedAlias() || "");
-		if (!aliasNorm) return null;
-
-		// 1) Try direct org-structure helper methods (various naming conventions)
-		const fromPortMethods = this.tryPortMembershipMethods(aliasNorm);
-		// 2) Derive from org structure walking trees
-		const fromStructure = this.deriveMembershipFromStructure(aliasNorm);
-		// 3) Fallback: derive from settings.teams
-		const fromSettings = this.deriveMembershipFromSettings(aliasNorm);
-
-		// Union of all sources
-		const union = new Set<string>();
-		for (const s of [fromPortMethods, fromStructure, fromSettings]) {
-			if (!s) continue;
-			for (const x of s) union.add(x);
-		}
-
-		// If we found any, return them; otherwise return null (unknown),
-		// so we don't hide everything in the UI.
-		return union.size > 0 ? union : null;
-	}
-
-	private normalizeAlias(input: string): string {
-		if (!input) return "";
-		let s = String(input).trim();
-		if (s.startsWith("@")) s = s.slice(1);
-		return s.toLowerCase();
-	}
-
-	private extractPossibleSlug(obj: unknown): string {
-		if (!obj || typeof obj !== "object") return "";
-		const anyObj = obj as Record<string, unknown>;
-		const cand =
-			anyObj.slug ??
-			anyObj.teamSlug ??
-			anyObj.id ??
-			anyObj.key ??
-			anyObj.code;
-		return typeof cand === "string"
-			? cand.toLowerCase().trim()
-			: String(cand || "")
-					.toLowerCase()
-					.trim();
-	}
-
-	private extractPossibleName(obj: unknown): string {
-		if (!obj || typeof obj !== "object") return "";
-		const anyObj = obj as Record<string, unknown>;
-		const cand =
-			anyObj.name ??
-			anyObj.teamName ??
-			anyObj.displayName ??
-			anyObj.title;
-		return typeof cand === "string" ? cand : "";
-	}
-
-	private aliasFromMemberLike(x: unknown): string {
-		if (typeof x === "string") return this.normalizeAlias(x);
-		if (!x || typeof x !== "object") return "";
-		const anyObj = x as Record<string, unknown>;
-		const cand =
-			anyObj.alias ??
-			anyObj.handle ??
-			anyObj.username ??
-			anyObj.user ??
-			anyObj.name ??
-			anyObj.id ??
-			anyObj.email;
-		return this.normalizeAlias(
-			typeof cand === "string" ? cand : String(cand || "")
+			registerDomEvent
 		);
 	}
-
-	private extractAliases(members: unknown): string[] {
-		if (!members) return [];
-		if (Array.isArray(members)) {
-			return members
-				.map((m) => this.aliasFromMemberLike(m))
-				.filter(Boolean);
-		}
-		if (typeof members === "object") {
-			return Object.values(members)
-				.map((v) => this.aliasFromMemberLike(v))
-				.filter(Boolean);
-		}
-		return [];
-	}
-
-	private teamNodeHasUser(node: TeamNode, aliasNorm: string): boolean {
-		const obj = node as unknown as Record<string, unknown>;
-		const pools = [
-			obj.members,
-			obj.memberAliases,
-			obj.users,
-			obj.aliases,
-			obj.membersMap,
-			obj.allMembers,
-		];
-		for (const pool of pools) {
-			const aliases = this.extractAliases(pool);
-			if (aliases.includes(aliasNorm)) return true;
-		}
-		return false;
-	}
-
-	private tryPortMembershipMethods(aliasNorm: string): Set<string> | null {
-		if (!this.orgStructurePort) return null;
-		const port = this.orgStructurePort as unknown as Record<
-			string,
-			unknown
-		>;
-
-		const candidates = [
-			"getTeamsForUser",
-			"getTeamSlugsForUser",
-			"getUserTeams",
-			"getTeamsByUser",
-		];
-
-		for (const fnName of candidates) {
-			const fn = port[fnName];
-			if (typeof fn === "function") {
-				try {
-					const raw = (fn as any).call(
-						this.orgStructurePort,
-						aliasNorm
-					);
-					if (Array.isArray(raw)) {
-						const set = new Set<string>();
-						for (const item of raw) {
-							if (typeof item === "string") {
-								const slug = item.toLowerCase().trim();
-								if (slug) set.add(slug);
-							} else if (item && typeof item === "object") {
-								const slug = this.extractPossibleSlug(item);
-								if (slug) set.add(slug);
-							}
-						}
-						if (set.size > 0) return set;
-					}
-				} catch {
-					/* ignore and try next */
-				}
-			}
-		}
-		return null;
-	}
-
-	private deriveMembershipFromStructure(
-		aliasNorm: string
-	): Set<string> | null {
-		if (!this.orgStructurePort) return null;
-		try {
-			const { organizations, teams } =
-				this.orgStructurePort.getOrgStructure();
-			const result = new Set<string>();
-
-			const visitTeam = (node: TeamNode) => {
-				const slug = this.extractPossibleSlug(node);
-				if (slug && this.teamNodeHasUser(node, aliasNorm)) {
-					result.add(slug);
-				}
-				for (const st of (node.subteams as TeamNode[] | undefined) ||
-					[]) {
-					visitTeam(st);
-				}
-			};
-
-			for (const org of organizations || []) {
-				for (const t of org.teams || []) visitTeam(t);
-			}
-			for (const t of teams || []) visitTeam(t);
-
-			return result.size > 0 ? result : new Set<string>();
-		} catch {
-			return null;
-		}
-	}
-
-	private deriveMembershipFromSettings(
-		aliasNorm: string
-	): Set<string> | null {
-		try {
-			const settings = this.settingsService.getRaw();
-			const teams = settings.teams || [];
-			const result = new Set<string>();
-
-			for (const t of teams) {
-				const slug =
-					(typeof (t as any).slug === "string"
-						? (t as any).slug
-						: (t as any).teamSlug) || "";
-				const slugNorm = String(slug || "")
-					.toLowerCase()
-					.trim();
-				if (!slugNorm) continue;
-
-				const members = (t as any).members || [];
-				const aliases = this.extractAliases(members);
-				if (aliases.includes(aliasNorm)) result.add(slugNorm);
-			}
-			return result.size > 0 ? result : new Set<string>();
-		} catch {
-			return null;
-		}
-	}
-
-	private isSlugSelected(slug: string): boolean {
-		if (this.implicitAllSelected) return true;
-		return this.selectedTeamSlugs.has((slug || "").toLowerCase());
-	}
-
-	// Keep selectedTeamSlugs consistent with the selected user's memberships
-	// only when memberships are confidently known.
-	private restrictSelectedTeamsToUserMembership() {
-		const allowed = this.getAllowedTeamSlugsForSelectedUser();
-		if (!allowed) return; // unknown — do not mutate user’s selection
-
-		if (this.selectedTeamSlugs.size === 0) return;
-
-		const before = this.selectedTeamSlugs.size;
-		for (const s of Array.from(this.selectedTeamSlugs)) {
-			if (!allowed.has(s)) {
-				this.selectedTeamSlugs.delete(s);
-			}
-		}
-		if (this.selectedTeamSlugs.size !== before) {
-			this.persistSelectedTeamSlugs();
-		}
-	}
-
-	// -----------------------------------------
-	// Teams popup build/render (filtered by selected user; falls back to all when unknown)
-	// -----------------------------------------
-	private toggleTeamsPopup(anchor: HTMLElement) {
-		if (this.teamsPopupEl) {
-			this.closeTeamsPopup();
-			return;
-		}
-		this.openTeamsPopup(anchor);
-	}
-
-	private openTeamsPopup(anchor: HTMLElement) {
-		this.closeTeamsPopup();
-
-		const popup = document.createElement("div");
-		this.teamsPopupEl = popup;
-		popup.classList.add("agile-teams-popup");
-		popup.style.position = "absolute";
-		popup.style.right = "0";
-		popup.style.top = "calc(100% + 8px)";
-		popup.style.zIndex = "9999";
-		popup.style.minWidth = "320px";
-		popup.style.maxWidth = "520px";
-		popup.style.maxHeight = "60vh";
-		popup.style.overflow = "auto";
-		popup.style.padding = "10px";
-		popup.style.border = "1px solid var(--background-modifier-border)";
-		popup.style.borderRadius = "8px";
-		popup.style.background = "var(--background-primary)";
-		popup.style.boxShadow = "0 6px 24px rgba(0,0,0,0.2)";
-
-		anchor.parentElement?.appendChild(popup);
-
-		this.renderTeamsPopupContent(popup);
-	}
-
-	private closeTeamsPopup() {
-		if (this.teamsPopupEl) {
-			try {
-				this.teamsPopupEl.remove();
-			} catch {}
-			this.teamsPopupEl = null;
-		}
-	}
-
-	private renderTeamsPopupContent(root: HTMLDivElement) {
-		root.innerHTML = "";
-
-		const header = root.createEl("div", {
-			attr: {
-				style: "display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px;",
-			},
-		});
-		header.createEl("strong", { text: "Select Teams" });
-		const help = header.createEl("span", {
-			text: "Choose organizations/teams to show in the dashboard",
-		});
-		help.style.opacity = "0.7";
-		help.style.fontSize = "12px";
-
-		if (!this.orgStructurePort) {
-			root.createEl("em", { text: "Organization data unavailable." });
-			return;
-		}
-
-		const { organizations, teams } =
-			this.orgStructurePort.getOrgStructure();
-
-		// Determine membership allowance
-		const allowed = this.getAllowedTeamSlugsForSelectedUser(); // null => unknown; do not filter
-		const predicate = allowed
-			? (slug: string) => allowed.has((slug || "").toLowerCase())
-			: (_slug: string) => true;
-
-		// Organizations filtered only when allowed != null
-		const filteredOrgs: OrganizationNode[] = (organizations || []).filter(
-			(org) => {
-				const slugs = this.collectOrgTeamSlugs(org);
-				return slugs.some((s) => predicate(s));
-			}
+	if (settings.showResponsibilities) {
+		processAndRenderResponsibilities(
+			container,
+			currentTasks as unknown as TaskItem[],
+			statusActive,
+			selectedAlias,
+			app,
+			taskMap,
+			childrenMap,
+			taskParams,
+			registerDomEvent
 		);
-
-		// Independent teams (teams with no subteams), filtered by allowed if present
-		const independentsRaw = (teams || []).filter(
-			(t) => (t.subteams?.length ?? 0) === 0
+	}
+	processAndRenderArtifacts(
+		container,
+		currentTasks as unknown as TaskItem[],
+		statusActive,
+		selectedAlias,
+		app,
+		taskMap,
+		childrenMap,
+		taskParams,
+		settings,
+		registerDomEvent
+	);
+	if (settings.showInitiatives) {
+		processAndRenderInitiatives(
+			container,
+			currentTasks as unknown as TaskItem[],
+			statusActive,
+			selectedAlias,
+			app,
+			taskMap,
+			childrenMap,
+			taskParams,
+			registerDomEvent
 		);
-		const independents = independentsRaw.filter((t) => {
-			const slug = this.extractPossibleSlug(t);
-			return slug && predicate(slug);
-		});
-
-		const hasOrgs = filteredOrgs.length > 0;
-		const hasIndependents = independents.length > 0;
-
-		// If neither section has entries, show friendly message.
-		if (!hasOrgs && !hasIndependents) {
-			const alias = this.getSelectedAlias() || "(none)";
-			const msg =
-				allowed !== null
-					? `No organizations or teams found for selected user: ${alias}`
-					: `No organizations or teams available.`;
-			root.createEl("em", { text: msg });
-			return;
-		}
-
-		// Organizations accordion (if any)
-		if (hasOrgs) {
-			this.renderAccordion(
-				root,
-				"Organizations",
-				() => {
-					const wrapper = document.createElement("div");
-					wrapper.style.display = "flex";
-					wrapper.style.flexDirection = "column";
-					wrapper.style.gap = "6px";
-
-					for (const org of filteredOrgs) {
-						wrapper.appendChild(
-							this.renderOrganizationEntryFiltered(org, predicate)
-						);
-					}
-					return wrapper;
-				},
-				true
-			);
-		}
-
-		// Independent Teams accordion (if any)
-		if (hasIndependents) {
-			this.renderAccordion(
-				root,
-				"Teams",
-				() => {
-					const wrapper = document.createElement("div");
-					wrapper.style.display = "flex";
-					wrapper.style.flexDirection = "column";
-					wrapper.style.gap = "6px";
-
-					for (const t of independents) {
-						const row = document.createElement("div");
-						row.style.display = "flex";
-						row.style.alignItems = "center";
-						row.style.gap = "6px";
-
-						const cb = document.createElement("input");
-						cb.type = "checkbox";
-						const slug = this.extractPossibleSlug(t);
-						cb.checked = this.isSlugSelected(slug);
-
-						cb.addEventListener("change", () => {
-							if (!slug) return;
-							this.implicitAllSelected = false;
-							if (cb.checked) this.selectedTeamSlugs.add(slug);
-							else this.selectedTeamSlugs.delete(slug);
-							this.persistSelectedTeamSlugs();
-							this.updateView();
-						});
-
-						const label = document.createElement("label");
-						const name = this.extractPossibleName(t);
-						label.textContent = `${name} (${
-							(this as any).extractPossibleSlug
-								? (t as any).teamSlug || (t as any).slug || ""
-								: slug
-						})`;
-						label.style.cursor = "pointer";
-						label.addEventListener("click", () => cb.click());
-
-						row.appendChild(cb);
-						row.appendChild(label);
-						wrapper.appendChild(row);
-					}
-
-					return wrapper;
-				},
-				true
-			);
-		}
 	}
-
-	private renderAccordion(
-		parent: HTMLElement,
-		title: string,
-		contentBuilder: () => HTMLElement,
-		defaultOpen = false
-	) {
-		const section = parent.createEl("div", {
-			attr: {
-				style: "border-top:1px solid var(--background-modifier-border); padding-top:8px; margin-top:8px;",
-			},
-		});
-
-		const hdr = section.createEl("div", {
-			attr: {
-				style: "display:flex; align-items:center; gap:8px; cursor:pointer; user-select:none;",
-			},
-		});
-		const chev = hdr.createEl("span", { text: defaultOpen ? "▾" : "▸" });
-		hdr.createEl("span", {
-			text: title,
-			attr: { style: "font-weight:600;" },
-		});
-
-		const content = contentBuilder();
-		content.style.display = defaultOpen ? "block" : "none";
-		section.appendChild(content);
-
-		hdr.addEventListener("click", () => {
-			const open = content.style.display !== "none";
-			content.style.display = open ? "none" : "block";
-			chev.textContent = open ? "▸" : "▾";
-		});
-	}
-
-	// ---- Org/Team rendering with predicate filter ----
-
-	private renderOrganizationEntryFiltered(
-		org: OrganizationNode,
-		isAllowed: (slug: string) => boolean
-	): HTMLElement {
-		const container = document.createElement("div");
-		container.style.display = "flex";
-		container.style.flexDirection = "column";
-		container.style.gap = "4px";
-
-		// Collect only allowed team slugs in this org (so group-level checkbox matches visible subset)
-		const allOrgTeamSlugs = this.collectOrgTeamSlugs(org).filter(isAllowed);
-		if (allOrgTeamSlugs.length === 0) {
-			// Nothing to show for this org
-			return container;
-		}
-
-		// Org row
-		const row = document.createElement("div");
-		row.style.display = "flex";
-		row.style.alignItems = "center";
-		row.style.gap = "6px";
-
-		const cb = document.createElement("input");
-		cb.type = "checkbox";
-
-		const state = this.computeSelectionState(allOrgTeamSlugs);
-		cb.checked = state === "all";
-		cb.indeterminate = state === "partial";
-
-		cb.addEventListener("change", () => {
-			this.implicitAllSelected = false;
-			if (cb.checked) {
-				for (const slug of allOrgTeamSlugs)
-					this.selectedTeamSlugs.add(slug);
-			} else {
-				for (const slug of allOrgTeamSlugs)
-					this.selectedTeamSlugs.delete(slug);
-			}
-			this.persistSelectedTeamSlugs();
-			if (this.teamsPopupEl)
-				this.renderTeamsPopupContent(this.teamsPopupEl);
-			this.updateView();
-		});
-
-		const label = document.createElement("label");
-		label.textContent = `${
-			(org as any).orgName || (org as any).name || ""
-		} (${(org as any).orgSlug || (org as any).slug || ""})`;
-		label.style.cursor = "pointer";
-		label.addEventListener("click", () => cb.click());
-
-		const expandBtn = document.createElement("button");
-		expandBtn.type = "button";
-		expandBtn.textContent = "▸";
-		expandBtn.style.border = "none";
-		expandBtn.style.background = "none";
-		expandBtn.style.cursor = "pointer";
-		expandBtn.style.fontSize = "12px";
-		expandBtn.title = "Show teams";
-
-		row.appendChild(cb);
-		row.appendChild(label);
-		row.appendChild(expandBtn);
-
-		const nested = document.createElement("div");
-		nested.style.display = "none";
-		nested.style.marginLeft = "18px";
-		nested.style.marginTop = "4px";
-
-		expandBtn.addEventListener("click", () => {
-			const open = nested.style.display !== "none";
-			nested.style.display = open ? "none" : "block";
-			expandBtn.textContent = open ? "▸" : "▾";
-		});
-
-		// Render org teams recursively (only allowed ones)
-		const renderTeamNodeEntryFiltered = (
-			node: TeamNode,
-			level: number
-		): HTMLElement | null => {
-			const hasChildren = (node.subteams?.length ?? 0) > 0;
-
-			// If this node (and all descendants) are disallowed, skip
-			const allSlugsHere = this.collectTeamNodeSlugs(node);
-			if (!allSlugsHere.some(isAllowed)) return null;
-
-			const wrapper = document.createElement("div");
-			wrapper.style.display = "flex";
-			wrapper.style.flexDirection = "column";
-			wrapper.style.gap = "4px";
-
-			const row = document.createElement("div");
-			row.style.display = "flex";
-			row.style.alignItems = "center";
-			row.style.gap = "6px";
-			row.style.paddingLeft = `${Math.min(24, level * 12)}px`;
-
-			const cb = document.createElement("input");
-			cb.type = "checkbox";
-
-			const visibleSlugsHere = allSlugsHere.filter(isAllowed);
-			const state = this.computeSelectionState(visibleSlugsHere);
-
-			cb.checked = state === "all";
-			cb.indeterminate = state === "partial";
-
-			cb.addEventListener("change", () => {
-				this.implicitAllSelected = false;
-				if (cb.checked) {
-					for (const s of visibleSlugsHere)
-						this.selectedTeamSlugs.add(s);
-				} else {
-					for (const s of visibleSlugsHere)
-						this.selectedTeamSlugs.delete(s);
-				}
-				this.persistSelectedTeamSlugs();
-				if (this.teamsPopupEl)
-					this.renderTeamsPopupContent(this.teamsPopupEl);
-				this.updateView();
-			});
-
-			const label = document.createElement("label");
-			label.textContent = `${
-				(node as any).teamName || (node as any).name || ""
-			} (${(node as any).teamSlug || (node as any).slug || ""})`;
-			label.style.cursor = "pointer";
-			label.addEventListener("click", () => cb.click());
-
-			row.appendChild(cb);
-			row.appendChild(label);
-
-			let nestedChildren: HTMLDivElement | null = null;
-			if (hasChildren) {
-				const expandBtn = document.createElement("button");
-				expandBtn.type = "button";
-				expandBtn.textContent = "▸";
-				expandBtn.style.border = "none";
-				expandBtn.style.background = "none";
-				expandBtn.style.cursor = "pointer";
-				expandBtn.style.fontSize = "12px";
-				expandBtn.title = "Show subteams";
-				row.appendChild(expandBtn);
-
-				nestedChildren = document.createElement("div");
-				nestedChildren.style.display = "none";
-				nestedChildren.style.marginLeft = "18px";
-				nestedChildren.style.marginTop = "4px";
-
-				expandBtn.addEventListener("click", () => {
-					const open = nestedChildren!.style.display !== "none";
-					nestedChildren!.style.display = open ? "none" : "block";
-					expandBtn.textContent = open ? "▸" : "▾";
-				});
-			}
-
-			wrapper.appendChild(row);
-
-			if (hasChildren && nestedChildren) {
-				for (const child of node.subteams || []) {
-					const childEl = renderTeamNodeEntryFiltered(
-						child,
-						level + 1
-					);
-					if (childEl) nestedChildren.appendChild(childEl);
-				}
-				wrapper.appendChild(nestedChildren);
-			}
-
-			return wrapper;
-		};
-
-		for (const team of org.teams || []) {
-			const el = renderTeamNodeEntryFiltered(team, 0);
-			if (el) nested.appendChild(el);
-		}
-
-		container.appendChild(row);
-		container.appendChild(nested);
-		return container;
-	}
-
-	// --------------- helpers: slugs & selection ---------------
-
-	private collectTeamNodeSlugs(node: TeamNode): string[] {
-		const slugs: string[] = [];
-		const visit = (n: TeamNode) => {
-			const s = this.extractPossibleSlug(n);
-			if (s) slugs.push(s);
-			for (const c of n.subteams || []) visit(c);
-		};
-		visit(node);
-		return slugs;
-	}
-
-	private collectOrgTeamSlugs(org: OrganizationNode): string[] {
-		const slugs: string[] = [];
-		for (const t of org.teams || []) {
-			slugs.push(...this.collectTeamNodeSlugs(t));
-		}
-		return Array.from(new Set(slugs));
-	}
-
-	private computeSelectionState(slugs: string[]): "all" | "none" | "partial" {
-		if (this.implicitAllSelected) return "all";
-		let selected = 0;
-		for (const s of slugs) {
-			if (this.selectedTeamSlugs.has(s.toLowerCase())) selected++;
-		}
-		if (selected === 0) return "none";
-		if (selected === slugs.length) return "all";
-		return "partial";
+	if (settings.showPriorities) {
+		processAndRenderPriorities(
+			container,
+			currentTasks as unknown as TaskItem[],
+			statusActive,
+			selectedAlias,
+			app,
+			taskMap,
+			childrenMap,
+			taskParams,
+			registerDomEvent
+		);
 	}
 }
 
@@ -3675,4 +3649,965 @@ export function getTaskIndexServiceFromContainer(
 	const container: any = plugin.container;
 	return container?.taskIndexService as TaskIndexService | undefined;
 }
+
+./src/features/agile-dashboard-view/ui/views/teams-popup.ts
+import type {
+	OrgStructurePort,
+	OrganizationNode,
+	TeamNode,
+} from "@features/org-structure";
+
+/**
+ * Context/state/accessors needed to render the Teams popup.
+ */
+export interface TeamsPopupContext {
+	root: HTMLDivElement;
+	orgStructurePort?: OrgStructurePort;
+
+	// Selection state owned by the view
+	selectedTeamSlugs: Set<string>;
+	implicitAllSelected: boolean;
+
+	// State mutators
+	setImplicitAllSelected(val: boolean): void;
+	addSelectedSlugs(slugs: string[]): void;
+	removeSelectedSlugs(slugs: string[]): void;
+
+	// Called after any selection changes
+	onSelectionChanged(): void;
+
+	// Return allowed slugs for current user, or null when unknown (no filtering)
+	getAllowedTeamSlugsForSelectedUser(): Set<string> | null;
+}
+
+/**
+ * Render the entire content of the Teams popup into root.
+ */
+export function renderTeamsPopupContent(ctx: TeamsPopupContext) {
+	const root = ctx.root;
+	root.innerHTML = "";
+
+	const header = root.createEl("div", {
+		attr: {
+			style: "display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px;",
+		},
+	});
+	header.createEl("strong", { text: "Select Teams" });
+	const help = header.createEl("span", {
+		text: "Choose organizations/teams to show in the dashboard",
+	});
+	help.style.opacity = "0.7";
+	help.style.fontSize = "12px";
+
+	if (!ctx.orgStructurePort) {
+		root.createEl("em", { text: "Organization data unavailable." });
+		return;
+	}
+
+	const { organizations, teams } = ctx.orgStructurePort.getOrgStructure();
+
+	const allowed = ctx.getAllowedTeamSlugsForSelectedUser(); // null => unknown; do not filter
+	const predicate = allowed
+		? (slug: string) => allowed.has((slug || "").toLowerCase())
+		: (_slug: string) => true;
+
+	const filteredOrgs: OrganizationNode[] = (organizations || []).filter(
+		(org) => {
+			const slugs = collectOrgTeamSlugs(org);
+			return slugs.some((s) => predicate(s));
+		}
+	);
+
+	const independentsRaw = (teams || []).filter(
+		(t) => (t.subteams?.length ?? 0) === 0
+	);
+	const independents = independentsRaw.filter((t) => {
+		const slug = extractPossibleSlug(t);
+		return slug && predicate(slug);
+	});
+
+	const hasOrgs = filteredOrgs.length > 0;
+	const hasIndependents = independents.length > 0;
+
+	if (!hasOrgs && !hasIndependents) {
+		root.createEl("em", { text: "No organizations or teams available." });
+		return;
+	}
+
+	if (hasOrgs) {
+		renderAccordion(
+			root,
+			"Organizations",
+			() => {
+				const wrapper = document.createElement("div");
+				wrapper.style.display = "flex";
+				wrapper.style.flexDirection = "column";
+				wrapper.style.gap = "6px";
+
+				for (const org of filteredOrgs) {
+					const orgEl = renderOrganizationEntryFiltered(
+						ctx,
+						org,
+						predicate
+					);
+					if (orgEl) wrapper.appendChild(orgEl);
+				}
+				return wrapper;
+			},
+			true
+		);
+	}
+
+	if (hasIndependents) {
+		renderAccordion(
+			root,
+			"Teams",
+			() => {
+				const wrapper = document.createElement("div");
+				wrapper.style.display = "flex";
+				wrapper.style.flexDirection = "column";
+				wrapper.style.gap = "6px";
+
+				for (const t of independents) {
+					const row = document.createElement("div");
+					row.style.display = "flex";
+					row.style.alignItems = "center";
+					row.style.gap = "6px";
+
+					const cb = document.createElement("input");
+					cb.type = "checkbox";
+					const slug = extractPossibleSlug(t);
+					cb.checked = isSlugSelected(ctx, slug);
+
+					cb.addEventListener("change", () => {
+						if (!slug) return;
+						ctx.setImplicitAllSelected(false);
+						if (cb.checked) ctx.addSelectedSlugs([slug]);
+						else ctx.removeSelectedSlugs([slug]);
+						ctx.onSelectionChanged();
+					});
+
+					const label = document.createElement("label");
+					const name = extractPossibleName(t);
+					label.textContent = `${name} (${
+						(t as any).teamSlug || (t as any).slug || ""
+					})`;
+					label.style.cursor = "pointer";
+					label.addEventListener("click", () => cb.click());
+
+					row.appendChild(cb);
+					row.appendChild(label);
+					wrapper.appendChild(row);
+				}
+
+				return wrapper;
+			},
+			true
+		);
+	}
+}
+
+function renderAccordion(
+	parent: HTMLElement,
+	title: string,
+	contentBuilder: () => HTMLElement,
+	defaultOpen = false
+) {
+	const section = parent.createEl("div", {
+		attr: {
+			style: "border-top:1px solid var(--background-modifier-border); padding-top:8px; margin-top:8px;",
+		},
+	});
+
+	const hdr = section.createEl("div", {
+		attr: {
+			style: "display:flex; align-items:center; gap:8px; cursor:pointer; user-select:none;",
+		},
+	});
+	const chev = hdr.createEl("span", { text: defaultOpen ? "▾" : "▸" });
+	hdr.createEl("span", {
+		text: title,
+		attr: { style: "font-weight:600;" },
+	});
+
+	const content = contentBuilder();
+	content.style.display = defaultOpen ? "block" : "none";
+	section.appendChild(content);
+
+	hdr.addEventListener("click", () => {
+		const open = content.style.display !== "none";
+		content.style.display = open ? "none" : "block";
+		chev.textContent = open ? "▸" : "▾";
+	});
+}
+
+function renderOrganizationEntryFiltered(
+	ctx: TeamsPopupContext,
+	org: OrganizationNode,
+	isAllowed: (slug: string) => boolean
+): HTMLElement | null {
+	// Collect only allowed team slugs in this org (so group-level checkbox matches visible subset)
+	const allOrgTeamSlugs = collectOrgTeamSlugs(org).filter(isAllowed);
+	if (allOrgTeamSlugs.length === 0) {
+		return null;
+	}
+
+	const container = document.createElement("div");
+	container.style.display = "flex";
+	container.style.flexDirection = "column";
+	container.style.gap = "4px";
+
+	const row = document.createElement("div");
+	row.style.display = "flex";
+	row.style.alignItems = "center";
+	row.style.gap = "6px";
+
+	const cb = document.createElement("input");
+	cb.type = "checkbox";
+
+	const state = computeSelectionState(ctx, allOrgTeamSlugs);
+	cb.checked = state === "all";
+	(cb as any).indeterminate = state === "partial";
+
+	cb.addEventListener("change", () => {
+		ctx.setImplicitAllSelected(false);
+		if (cb.checked) ctx.addSelectedSlugs(allOrgTeamSlugs);
+		else ctx.removeSelectedSlugs(allOrgTeamSlugs);
+		ctx.onSelectionChanged();
+	});
+
+	const label = document.createElement("label");
+	label.textContent = `${(org as any).orgName || (org as any).name || ""} (${
+		(org as any).orgSlug || (org as any).slug || ""
+	})`;
+	label.style.cursor = "pointer";
+	label.addEventListener("click", () => cb.click());
+
+	const expandBtn = document.createElement("button");
+	expandBtn.type = "button";
+	expandBtn.textContent = "▸";
+	expandBtn.style.border = "none";
+	expandBtn.style.background = "none";
+	expandBtn.style.cursor = "pointer";
+	expandBtn.style.fontSize = "12px";
+	expandBtn.title = "Show teams";
+
+	row.appendChild(cb);
+	row.appendChild(label);
+	row.appendChild(expandBtn);
+
+	const nested = document.createElement("div");
+	nested.style.display = "none";
+	nested.style.marginLeft = "18px";
+	nested.style.marginTop = "4px";
+
+	expandBtn.addEventListener("click", () => {
+		const open = nested.style.display !== "none";
+		nested.style.display = open ? "none" : "block";
+		expandBtn.textContent = open ? "▸" : "▾";
+	});
+
+	for (const team of org.teams || []) {
+		const tEl = renderTeamNodeEntryFiltered(ctx, team, 0, isAllowed);
+		if (tEl) nested.appendChild(tEl);
+	}
+
+	container.appendChild(row);
+	container.appendChild(nested);
+	return container;
+}
+
+function renderTeamNodeEntryFiltered(
+	ctx: TeamsPopupContext,
+	node: TeamNode,
+	level: number,
+	isAllowed: (slug: string) => boolean
+): HTMLElement | null {
+	const hasChildren = (node.subteams?.length ?? 0) > 0;
+
+	const allSlugsHere = collectTeamNodeSlugs(node);
+	if (!allSlugsHere.some(isAllowed)) return null;
+
+	const visibleSlugsHere = allSlugsHere.filter(isAllowed);
+
+	const wrapper = document.createElement("div");
+	wrapper.style.display = "flex";
+	wrapper.style.flexDirection = "column";
+	wrapper.style.gap = "4px";
+
+	const row = document.createElement("div");
+	row.style.display = "flex";
+	row.style.alignItems = "center";
+	row.style.gap = "6px";
+	row.style.paddingLeft = `${Math.min(24, level * 12)}px`;
+
+	const cb = document.createElement("input");
+	cb.type = "checkbox";
+
+	const state = computeSelectionState(ctx, visibleSlugsHere);
+	cb.checked = state === "all";
+	(cb as any).indeterminate = state === "partial";
+
+	cb.addEventListener("change", () => {
+		ctx.setImplicitAllSelected(false);
+		if (cb.checked) ctx.addSelectedSlugs(visibleSlugsHere);
+		else ctx.removeSelectedSlugs(visibleSlugsHere);
+		ctx.onSelectionChanged();
+	});
+
+	const label = document.createElement("label");
+	label.textContent = `${
+		(node as any).teamName || (node as any).name || ""
+	} (${(node as any).teamSlug || (node as any).slug || ""})`;
+	label.style.cursor = "pointer";
+	label.addEventListener("click", () => cb.click());
+
+	row.appendChild(cb);
+	row.appendChild(label);
+
+	let nestedChildren: HTMLDivElement | null = null;
+	if (hasChildren) {
+		const expandBtn = document.createElement("button");
+		expandBtn.type = "button";
+		expandBtn.textContent = "▸";
+		expandBtn.style.border = "none";
+		expandBtn.style.background = "none";
+		expandBtn.style.cursor = "pointer";
+		expandBtn.style.fontSize = "12px";
+		expandBtn.title = "Show subteams";
+		row.appendChild(expandBtn);
+
+		nestedChildren = document.createElement("div");
+		nestedChildren.style.display = "none";
+		nestedChildren.style.marginLeft = "18px";
+		nestedChildren.style.marginTop = "4px";
+
+		expandBtn.addEventListener("click", () => {
+			const open = nestedChildren!.style.display !== "none";
+			nestedChildren!.style.display = open ? "none" : "block";
+			expandBtn.textContent = open ? "▸" : "▾";
+		});
+	}
+
+	wrapper.appendChild(row);
+
+	if (hasChildren && nestedChildren) {
+		for (const child of node.subteams || []) {
+			const childEl = renderTeamNodeEntryFiltered(
+				ctx,
+				child,
+				level + 1,
+				isAllowed
+			);
+			if (childEl) nestedChildren.appendChild(childEl);
+		}
+		wrapper.appendChild(nestedChildren);
+	}
+
+	return wrapper;
+}
+
+function isSlugSelected(ctx: TeamsPopupContext, slug: string): boolean {
+	if (ctx.implicitAllSelected) return true;
+	return ctx.selectedTeamSlugs.has((slug || "").toLowerCase());
+}
+
+function computeSelectionState(
+	ctx: TeamsPopupContext,
+	slugs: string[]
+): "all" | "none" | "partial" {
+	if (ctx.implicitAllSelected) return "all";
+	let selected = 0;
+	for (const s of slugs) {
+		if (ctx.selectedTeamSlugs.has(s.toLowerCase())) selected++;
+	}
+	if (selected === 0) return "none";
+	if (selected === slugs.length) return "all";
+	return "partial";
+}
+
+function collectTeamNodeSlugs(node: TeamNode): string[] {
+	const slugs: string[] = [];
+	const visit = (n: TeamNode) => {
+		const s = extractPossibleSlug(n);
+		if (s) slugs.push(s);
+		for (const c of n.subteams || []) visit(c);
+	};
+	visit(node);
+	return slugs;
+}
+
+function collectOrgTeamSlugs(org: OrganizationNode): string[] {
+	const slugs: string[] = [];
+	for (const t of org.teams || []) {
+		slugs.push(...collectTeamNodeSlugs(t));
+	}
+	return Array.from(new Set(slugs));
+}
+
+function extractPossibleSlug(obj: unknown): string {
+	if (!obj || typeof obj !== "object") return "";
+	const anyObj = obj as Record<string, unknown>;
+	const cand =
+		anyObj.slug ??
+		anyObj.teamSlug ??
+		anyObj.id ??
+		anyObj.key ??
+		anyObj.code;
+	return typeof cand === "string"
+		? cand.toLowerCase().trim()
+		: String(cand || "")
+				.toLowerCase()
+				.trim();
+}
+
+function extractPossibleName(obj: unknown): string {
+	if (!obj || typeof obj !== "object") return "";
+	const anyObj = obj as Record<string, unknown>;
+	const cand =
+		anyObj.name ?? anyObj.teamName ?? anyObj.displayName ?? anyObj.title;
+	return typeof cand === "string" ? cand : "";
+}
+
+./src/features/task-filter/domain/agile-artifact-types.ts
+import { TaskItem } from "@features/tasks";
+import { getTemplateKeysFromTask } from "@features/templating-engine";
+import type { AgileArtifactType } from "./types";
+
+/**
+ * Fallback: extract template keys directly from HTML wrappers if present.
+ * Looks for data-template-key="...".
+ */
+function extractTemplateKeysFromText(
+	text: string | undefined | null
+): string[] {
+	if (!text || typeof text !== "string") return [];
+	const re = /data-template-key\s*=\s*["']([^"']+)["']/gi;
+	const keys: string[] = [];
+	for (const m of text.matchAll(re)) {
+		if (m[1]) keys.push(m[1]);
+	}
+	return keys;
+}
+
+/**
+ * Normalize a template key to a canonical AgileArtifactType by pattern matching.
+ * This is resilient to different naming styles (kebab/camel/dotted, v2 suffixes, etc.).
+ */
+function inferTypeFromKey(key: string): AgileArtifactType | undefined {
+	if (!key) return undefined;
+
+	// Lowercase and variants for robust matching
+	const k = key.toLowerCase();
+	// Flatten out separators to catch things like "agile.user_story" / "agile-userStory" / "agile.userstory"
+	const flat = k.replace(/[._-\s]+/g, "");
+
+	// Handle version suffixes like ".v2", "-v3", etc. (non-destructive for other patterns)
+	const kNoVer = k.replace(/([._-])v(?:er(?:sion)?)?\d+\b/g, "");
+	const flatNoVer = kNoVer.replace(/[._-\s]+/g, "");
+
+	const has = (s: string) =>
+		k.includes(s) ||
+		flat.includes(s) ||
+		kNoVer.includes(s) ||
+		flatNoVer.includes(s);
+
+	// Most specific first
+
+	// Learning Initiative
+	if (
+		has("learninginitiative") ||
+		(has("learning") && has("initiative")) ||
+		has("personallearninginitiative")
+	) {
+		return "learning-initiative";
+	}
+
+	// Learning Epic
+	if (
+		has("learningepic") ||
+		(has("learning") && has("epic")) ||
+		has("personallearningepic")
+	) {
+		return "learning-epic";
+	}
+
+	// Initiative
+	if (has("agile.initiative") || has("initiative")) {
+		return "initiative";
+	}
+
+	// Epic
+	if (has("agile.epic") || has("epic")) {
+		return "epic";
+	}
+
+	// Story / User Story
+	if (has("agile.userstory") || has("userstory") || has("user_story")) {
+		return "story";
+	}
+	// Guarded fallback: "story" as a standalone token (avoid matching "history")
+	if (/(^|[^a-z])story([^a-z]|$)/.test(k)) {
+		return "story";
+	}
+
+	// OKR
+	if (has("agile.okr") || has("okr")) {
+		return "okr";
+	}
+
+	// Recurring Responsibility
+	if (
+		has("agile.recurringres") ||
+		has("recurringres") ||
+		has("recurring-responsibility") ||
+		has("recurringresponsibility")
+	) {
+		return "recurring-responsibility";
+	}
+
+	return undefined;
+}
+
+/**
+ * Heuristic fallback when templating is missing:
+ * If a line has "🔁" plus an assignee wrapper, treat as a recurring responsibility.
+ * Conservatively avoid colliding with initiatives/epics/stories.
+ */
+function heuristicRecurringResponsibility(
+	text: string
+): AgileArtifactType | undefined {
+	if (typeof text !== "string" || text.length === 0) return undefined;
+	const hasLoop = text.includes("🔁");
+	// New-format assignee wrapper
+	const hasAssigneeWrapper =
+		/<span\b[^>]*data-template-key\s*=\s*["']members\.assignee["'][^>]*>/i.test(
+			text
+		);
+	if (!hasLoop || !hasAssigneeWrapper) return undefined;
+
+	// Avoid misclassifying common artifact words if present elsewhere
+	const lc = text.toLowerCase();
+	if (
+		/\binitiative\b/.test(lc) ||
+		/\bepic\b/.test(lc) ||
+		/\buser\s*story\b|\bstory\b/.test(lc)
+	) {
+		return undefined;
+	}
+	return "recurring-responsibility";
+}
+
+/**
+ * Resolve the first matching canonical type from present template keys, if any.
+ * If no recognized template is present:
+ * - returns "task" for non-open/done/archived items (legacy rule)
+ * - returns null for open/done/archived items (preserve prior behavior)
+ */
+export const getAgileArtifactType = (
+	task: TaskItem
+): AgileArtifactType | null => {
+	const txt = typeof task?.text === "string" ? task.text : "";
+
+	try {
+		// Prefer templating helper
+		const keysFromHelper =
+			(getTemplateKeysFromTask(task) as string[]) ?? [];
+
+		// 1) Try helper-provided keys first
+		for (const k of keysFromHelper) {
+			const inferred = inferTypeFromKey(k);
+			if (inferred) {
+				return inferred;
+			}
+		}
+
+		// 2) If no match yet, scan inline wrappers (helper may miss artifact key)
+		if (txt && txt.includes("data-template-key")) {
+			const scannedKeys = extractTemplateKeysFromText(txt);
+			for (const k of scannedKeys) {
+				const inferred = inferTypeFromKey(k);
+				if (inferred) {
+					return inferred;
+				}
+			}
+		}
+
+		// 2b) Heuristic fallback for recurring-responsibility (template missing)
+		const heuristic = heuristicRecurringResponsibility(txt);
+		if (heuristic) {
+			return heuristic;
+		}
+
+		// 3) No template detected -> preserve original rule
+		const status = (task as any)?.status;
+		return status !== "O" && status !== "d" && status !== "A"
+			? "task"
+			: null;
+	} catch {
+		// Safe fallback
+		const status = (task as any)?.status;
+		return status !== "O" && status !== "d" && status !== "A"
+			? "task"
+			: null;
+	}
+};
+
+./src/features/task-filter/domain/task-filters.ts
+import { TaskItem } from "@features/tasks";
+import { Tokens } from "./types";
+import { escapeRegExp } from "@utils";
+import {
+	DateRe,
+	parseYyyyMmDd,
+	todayAtMidnight,
+} from "@features/task-date-manager";
+
+/**
+ * Utility: parse new inline assignee wrappers from a task line.
+ * We only need the opening tag's attributes.
+ */
+type AssigneeSpan = {
+	assignType: "assignee" | "delegate" | null;
+	assignmentState: "active" | "inactive" | null;
+	memberSlug: string | null;
+	memberType?: string | null;
+};
+
+function getAttr(tag: string, name: string): string | null {
+	const re1 = new RegExp(`\\b${name}\\s*=\\s*"([^"]*)"`, "i");
+	const m1 = re1.exec(tag);
+	if (m1) return m1[1] ?? null;
+	const re2 = new RegExp(`\\b${name}\\s*=\\s*'([^']*)'`, "i");
+	const m2 = re2.exec(tag);
+	return m2 ? m2[1] ?? null : null;
+}
+
+function parseAssigneeSpans(text: string | undefined | null): AssigneeSpan[] {
+	if (!text || typeof text !== "string") return [];
+	const out: AssigneeSpan[] = [];
+	const openTagRe =
+		/<span\b[^>]*data-template-key\s*=\s*["']members\.assignee["'][^>]*>/gi;
+	for (const m of text.matchAll(openTagRe)) {
+		const tag = m[0] ?? "";
+		const assignTypeRaw = (
+			getAttr(tag, "data-assign-type") || ""
+		).toLowerCase();
+		const assignmentStateRaw = (
+			getAttr(tag, "data-assignment-state") || ""
+		).toLowerCase();
+		const memberSlugRaw = getAttr(tag, "data-member-slug");
+		const memberTypeRaw = getAttr(tag, "data-member-type");
+
+		const assignType: "assignee" | "delegate" | null =
+			assignTypeRaw === "assignee" || assignTypeRaw === "delegate"
+				? (assignTypeRaw as "assignee" | "delegate")
+				: null;
+
+		const assignmentState: "active" | "inactive" | null =
+			assignmentStateRaw === "active" || assignmentStateRaw === "inactive"
+				? (assignmentStateRaw as "active" | "inactive")
+				: null;
+
+		out.push({
+			assignType,
+			assignmentState,
+			memberSlug: memberSlugRaw ? memberSlugRaw.trim() : null,
+			memberType: memberTypeRaw ? memberTypeRaw.trim() : null,
+		});
+	}
+	return out;
+}
+
+/**
+ * Checks if a task is completed using the new format only:
+ * - ✅ marker, with optional space and optional date:
+ *   "✅ 2025-01-31", "✅2025-01-31", or just "✅"
+ */
+export const isCompleted = (task: TaskItem): boolean => {
+	const txt = task?.text ?? "";
+	const completedEmoji = escapeRegExp(Tokens.CompletedEmoji);
+	const completedWithOptionalDate = new RegExp(
+		`${completedEmoji}(?:\\s?${DateRe.source})?`
+	);
+	return completedWithOptionalDate.test(txt);
+};
+
+/**
+ * Checks if a task is cancelled using the new format only:
+ * - ❌ marker, with optional space and optional date:
+ *   "❌ 2025-01-31", "❌2025-01-31", or just "❌"
+ */
+export const isCancelled = (task: TaskItem): boolean => {
+	const txt = task?.text ?? "";
+	const cancelledEmoji = escapeRegExp(Tokens.CancelledEmoji);
+	const cancelledWithOptionalDate = new RegExp(
+		`${cancelledEmoji}(?:\\s?${DateRe.source})?`
+	);
+	return cancelledWithOptionalDate.test(txt);
+};
+
+/**
+ * A task is considered "in progress" if it is not completed, not cancelled, and not snoozed.
+ * Snoozed tasks are not in progress.
+ */
+export const isInProgress = (
+	task: TaskItem,
+	taskMap: Map<string, TaskItem>,
+	selectedAlias: string | null
+): boolean => {
+	return (
+		!isCompleted(task) &&
+		!isCancelled(task) &&
+		!isSnoozed(task, taskMap, selectedAlias)
+	);
+};
+
+type SnoozeMatch = {
+	alias?: string | null;
+	date?: string | null;
+};
+
+function collectSnoozeMatches(text: string, inherited: boolean): SnoozeMatch[] {
+	// Direct snooze: 💤 [hidden-alias]? [date]?
+	// Inherited snooze: 💤⬇️ [hidden-alias]? [date]?
+	// Hidden alias is inside a span with style="display:none"
+	const suffix = inherited
+		? `${escapeRegExp(Tokens.SnoozeInheritedMarker)}`
+		: `(?!${escapeRegExp(Tokens.SnoozeInheritedMarker)})`;
+	const re = new RegExp(
+		`${escapeRegExp(
+			Tokens.SnoozeEmoji
+		)}${suffix}\\s*(?:<span[^>]*style="\\s*display:\\s*none\\s*"[^>]*>([^<]*)<\\/span>)?\\s*(${
+			DateRe.source
+		})?`,
+		"g"
+	);
+	const matches: SnoozeMatch[] = [];
+	for (const m of text.matchAll(re)) {
+		const rawAlias = (m[1] ?? null) as string | null;
+		matches.push({
+			alias: typeof rawAlias === "string" ? rawAlias.trim() : null,
+			date: m[2] ?? null,
+		});
+	}
+	return matches;
+}
+
+/**
+ * Returns true if the task is snoozed either directly or by inheritance from ancestors.
+ * New-format only:
+ * - Global snooze (no alias) applies to everyone until date (if provided). Without date, indefinite.
+ * - Alias-specific snooze applies only to selectedAlias (hidden within a display:none span).
+ * - Inheritance is indicated with 💤⬇️ on ancestors; direct snooze uses 💤 without ⬇️.
+ * - A snooze with a valid future date snoozes until that date (exclusive). Past or invalid dates do not snooze.
+ */
+export const isSnoozed = (
+	task: TaskItem,
+	taskMap: Map<string, TaskItem>,
+	selectedAlias: string | null
+): boolean => {
+	if (!task || typeof task.text !== "string") {
+		return false;
+	}
+	const today = todayAtMidnight();
+
+	const applies = (matches: SnoozeMatch[], allowGlobal: boolean): boolean => {
+		// Global snooze (no alias)
+		const global = matches.find((m) => !m.alias);
+		if (global && allowGlobal) {
+			const until = parseYyyyMmDd(global.date ?? undefined);
+			if (!global.date) return true;
+			if (until && until > today) return true;
+		}
+		if (selectedAlias) {
+			const aliasMatch = matches.find(
+				(m) =>
+					(m.alias ?? "").trim().toLowerCase() ===
+					selectedAlias.toLowerCase()
+			);
+			if (aliasMatch) {
+				const until = parseYyyyMmDd(aliasMatch.date ?? undefined);
+				if (!aliasMatch.date) return true;
+				if (until && until > today) return true;
+			}
+		}
+		return false;
+	};
+
+	// Direct snoozes
+	const direct = collectSnoozeMatches(task.text, /* inherited */ false);
+	if (direct.length && applies(direct, /* allowGlobal */ true)) {
+		return true;
+	}
+
+	// Inherited snoozes by walking up parents
+	let parentId = task._parentId;
+	const seen = new Set<string>();
+	while (parentId && !seen.has(parentId)) {
+		seen.add(parentId);
+		const parent = taskMap.get(parentId);
+		if (!parent) break;
+		const inh = collectSnoozeMatches(
+			parent.text ?? "",
+			/* inherited */ true
+		);
+		if (inh.length && applies(inh, /* allowGlobal */ true)) {
+			return true;
+		}
+		parentId = parent._parentId;
+	}
+
+	return false;
+};
+
+/**
+ * Returns whether a task is active for a specific member alias.
+ * New-format only via inline wrappers:
+ * <span data-template-key="members.assignee"
+ *       data-assign-type="assignee"
+ *       data-assignment-state="active|inactive"
+ *       data-member-slug="<alias>">...</span>
+ *
+ * Semantics:
+ * - active=true => must have an active marker and NOT have an inactive marker for the alias
+ * - active=false => returns true if it has an inactive marker for the alias
+ */
+export const activeForMember = (
+	task: TaskItem,
+	active = true,
+	selectedAlias?: string | null
+): boolean => {
+	const txt = task?.text ?? "";
+	if (!selectedAlias) return false;
+
+	const spans = parseAssigneeSpans(txt);
+	const aliasLower = String(selectedAlias).toLowerCase();
+
+	const hasActiveNew = spans.some(
+		(s) =>
+			s.assignType === "assignee" &&
+			s.assignmentState === "active" &&
+			(s.memberSlug ?? "").toLowerCase() === aliasLower
+	);
+	const hasInactiveNew = spans.some(
+		(s) =>
+			s.assignType === "assignee" &&
+			s.assignmentState === "inactive" &&
+			(s.memberSlug ?? "").toLowerCase() === aliasLower
+	);
+
+	if (active) {
+		return hasActiveNew && !hasInactiveNew;
+	} else {
+		return hasInactiveNew;
+	}
+};
+
+/**
+ * Returns true if the task is assigned to any user.
+ * New-format only via "assignee" wrappers.
+ */
+export const isAssignedToAnyUser = (task: TaskItem): boolean => {
+	const txt = task?.text ?? "";
+	const spans = parseAssigneeSpans(txt);
+	return spans.some(
+		(s) =>
+			s.assignType === "assignee" &&
+			s.assignmentState === "active" &&
+			!!s.memberSlug
+	);
+};
+
+/**
+ * Returns true if the task is assigned to the provided member alias OR is an active team task.
+ * New-format only:
+ * - "Everyone" assignee via wrapper
+ * - Member-specific via activeForMember
+ */
+export const isAssignedToMemberOrTeam = (
+	task: TaskItem,
+	selectedAlias?: string | null
+): boolean => {
+	const txt = task?.text ?? "";
+	const spans = parseAssigneeSpans(txt);
+
+	const hasEveryoneActiveNew = spans.some(
+		(s) =>
+			s.assignType === "assignee" &&
+			s.assignmentState === "active" &&
+			(s.memberSlug ?? "").toLowerCase() === "everyone"
+	);
+
+	return hasEveryoneActiveNew || activeForMember(task, true, selectedAlias);
+};
+
+/**
+ * Returns true if task text is empty
+ */
+export const isBlankTask = (task: TaskItem): boolean => {
+	const txt = task?.text;
+	if (typeof txt !== "string") return true;
+	return txt.trim().length === 0;
+};
+
+
+
+./src/features/task-filter/domain/types.ts
+/**
+ * Domain types and constants for task filtering and agile artifact classification.
+ *
+ * Centralizes:
+ * - Branded union types for artifact categories
+ * - Task status semantics (if not already exported by @features/tasks)
+ * - Emoji tokens and tag/class tokens used by filters
+ * - Common regex fragments
+ */
+
+export type AgileArtifactType =
+	| "initiative"
+	| "learning-initiative"
+	| "epic"
+	| "learning-epic"
+	| "story"
+	| "okr"
+	| "recurring-responsibility"
+	| "task";
+
+/**
+ * Known TaskItem status codes.
+ * If @features/tasks exports a canonical enum, prefer importing that.
+ */
+export enum TaskStatusCode {
+	Open = "O",
+	Done = "d",
+	Category = "A",
+	// Add other known codes here as needed, ensuring clear semantics.
+}
+
+/**
+ * Tokens and markers used within task text.
+ */
+export const Tokens = {
+	CompletedEmoji: "✅",
+	CancelledEmoji: "❌",
+	SnoozeEmoji: "💤",
+	SnoozeInheritedMarker: "⬇️",
+	ActivePrefix: "active-",
+	InactivePrefix: "inactive-",
+	ActiveTeamClass: "active-team",
+	// Calendar variations are handled via regex in filters for robustness.
+} as const;
+
+./src/features/task-filter/index.ts
+/**
+ * Public API surface for task-filter feature.
+ *
+ * Exposes:
+ * - getAgileArtifactType
+ * - Task filters and helpers
+ */
+export { getAgileArtifactType } from "./domain/agile-artifact-types";
+export * from "./domain/task-filters";
+export type { AgileArtifactType } from "./domain/types";
 

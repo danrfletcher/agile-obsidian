@@ -1,20 +1,39 @@
 /**
- * Dashboard-level click delegation for parameterized templates (non-assignment).
- * Opens schema/JSON modal to edit parameters, replaces the template wrapper in the source file,
- * triggers index refresh and dashboard re-render.
+ * Adapter: delegates templating param editing handler to the refactored, wiring-agnostic
+ * templating-params-editor module. Wires in the Agile Dashboard event bus and
+ * the required ports (templating, vault, refresh, notices), with type adapters.
  *
- * Feature served: Fast, in-place editing of templated metadata rendered into the dashboard.
  */
 
-import type { App, TFile } from "obsidian";
-import { Notice } from "obsidian";
+import type { App } from "obsidian";
 import {
-	prefillTemplateParams,
-	renderTemplateOnly,
-	findTemplateById,
-} from "@features/templating/app/templating-service";
-import { showSchemaModal } from "@features/templating/ui/template-schema-modal";
-import { showJsonModal } from "@features/templating/ui/template-json-modal";
+	attachDashboardTemplatingHandler as attachGenericTemplatingHandler,
+	type TemplatingPorts,
+	type NoticePort,
+	type TemplateParams, // Editor params type
+	type TemplateDef as EditorTemplateDef, // Editor template def type
+} from "@features/templating-params-editor";
+import type {
+	ParamsSchema as EditorParamsSchema, // Editor schema type
+} from "@features/templating-params-editor/domain/types";
+
+import { createPathFileRepository } from "@platform/obsidian";
+import {
+	prefillTemplateParams as realPrefillTemplateParams,
+	renderTemplateOnly as realRenderTemplateOnly,
+	findTemplateById as realFindTemplateById,
+} from "@features/templating-engine/app/templating-service";
+import { showSchemaModal as realShowSchemaModal } from "@features/templating-params-editor";
+import { showJsonModal as realShowJsonModal } from "@features/templating-params-editor";
+
+// Templating module types (to adapt from/to)
+import type {
+	TemplateDefinition as TmplTemplateDef,
+	ParamsSchema as TmplParamsSchema,
+	ParamsSchemaField as TmplSchemaField,
+	ParamInputType as TmplParamInputType,
+} from "@features/templating-engine/domain/types";
+
 import { eventBus } from "../../app/event-bus";
 
 type RegisterDomEvent = (
@@ -26,265 +45,160 @@ type RegisterDomEvent = (
 
 export interface TemplatingHandlerOptions {
 	app: App;
-	viewContainer: HTMLElement; // the content area (this.containerEl.children[1])
-	registerDomEvent: RegisterDomEvent; // ItemView.registerDomEvent binder for cleanup
-	refreshForFile: (filePath?: string | null) => Promise<void>; // provided by view to suppress+refresh safely
+	viewContainer: HTMLElement;
+	registerDomEvent: RegisterDomEvent;
+
+	// Dashboard refresh hook
+	refreshForFile: (filePath?: string | null) => Promise<void>;
+
+	// Optional notices adapter; if omitted, the generic handler will default to Obsidian Notice
+	notices?: NoticePort;
+
+	// If true (default), allow the generic handler to use Obsidian Notice as fallback
+	useObsidianNotice?: boolean;
 }
 
+/**
+ * Map templating module's ParamInputType to the editor's simplified type.
+ * Unknowns map to "any".
+ */
+function mapParamInputTypeToEditor(
+	t?: TmplParamInputType
+): "string" | "number" | "boolean" | "any" | undefined {
+	if (!t) return undefined;
+	const v = String(t).toLowerCase();
+	if (v.includes("number")) return "number";
+	if (v.includes("bool") || v.includes("toggle") || v.includes("check"))
+		return "boolean";
+	if (
+		v.includes("text") ||
+		v.includes("string") ||
+		v === "input" ||
+		v.includes("area")
+	)
+		return "string";
+	return "any";
+}
+
+/**
+ * Adapt a templating module schema to the editor schema type.
+ */
+function adaptSchemaToEditor(
+	schema: TmplParamsSchema | undefined
+): EditorParamsSchema | undefined {
+	if (!schema || !Array.isArray(schema.fields)) return undefined;
+	const fields: EditorParamsSchema["fields"] = [];
+	for (const f of schema.fields) {
+		fields.push({
+			name: f.name,
+			required: f.required,
+			defaultValue:
+				typeof f.defaultValue === "string"
+					? f.defaultValue
+					: (f.defaultValue as unknown as string | undefined),
+			type: mapParamInputTypeToEditor(f.type),
+		});
+	}
+	return { fields };
+}
+
+/**
+ * Adapt the editor schema to the templating module schema type.
+ * We intentionally omit "type" to avoid enum coupling; the templating UI can infer/default.
+ */
+function adaptSchemaToTemplating(schema: EditorParamsSchema): TmplParamsSchema {
+	const fields: TmplSchemaField[] = [];
+	for (const f of schema.fields) {
+		const out: TmplSchemaField = {
+			name: f.name,
+			required: f.required,
+			defaultValue: f.defaultValue,
+			// Note: omit "type" to avoid enum mismatches
+		} as TmplSchemaField;
+		fields.push(out);
+	}
+	return { fields };
+}
+
+/**
+ * Adapt templating module's TemplateDefinition to the editor's TemplateDef.
+ */
+function adaptTemplateDefToEditor(
+	def: TmplTemplateDef | undefined
+): EditorTemplateDef | undefined {
+	if (!def) return undefined;
+	return {
+		id: def.id,
+		hasParams: !!def.hasParams, // ensure boolean
+		hiddenFromDynamicCommands: def.hiddenFromDynamicCommands,
+		paramsSchema: adaptSchemaToEditor(def.paramsSchema),
+	};
+}
+
+/**
+ * Attach the dashboard templating handler using the refactored feature.
+ * This implementation:
+ * - Uses platform/obsidian's createPathFileRepository for VaultPort compatibility
+ * - Drops legacy infra adapters
+ * - Lets the feature's UI handler default to Obsidian Notice when no notices are provided
+ */
 export function attachDashboardTemplatingHandler(
 	opts: TemplatingHandlerOptions
 ): void {
-	const { app, viewContainer, registerDomEvent, refreshForFile } = opts;
+	const {
+		app,
+		viewContainer,
+		registerDomEvent,
+		refreshForFile,
+		notices,
+		useObsidianNotice = true,
+	} = opts;
 
-	const onClick = async (evt: MouseEvent) => {
-		try {
-			const target = evt.target as HTMLElement | null;
-			if (!target) return;
-
-			const wrapper = target.closest(
-				"span[data-template-wrapper][data-template-key]"
-			) as HTMLElement | null;
-			if (!wrapper) return;
-
-			const templateKey = wrapper.getAttribute("data-template-key") || "";
-			if (!templateKey) return;
-
-			// Skip known hidden templates (e.g., members.assignee handled elsewhere)
-			const def = findTemplateById(templateKey);
-			if (!def || def.hiddenFromDynamicCommands) return;
-			if (!def.hasParams) return;
-
-			evt.preventDefault();
-			evt.stopPropagation();
-			// @ts-ignore
-			evt.stopImmediatePropagation?.();
-
-			const li = wrapper.closest(
-				"li[data-file-path]"
-			) as HTMLElement | null;
-			const filePath = li?.getAttribute("data-file-path") || "";
-			if (!filePath) return;
-
-			const lineHintStr = li?.getAttribute("data-line") || "";
-			const lineHint0 =
-				lineHintStr && /^\d+$/.test(lineHintStr)
-					? parseInt(lineHintStr, 10)
-					: null;
-
-			await handleTemplateEditOnDashboard(
+	// Wire templating ports by wrapping the existing templating service and modal UIs.
+	const templating: TemplatingPorts = {
+		findTemplateById: (id) =>
+			adaptTemplateDefToEditor(realFindTemplateById(id)),
+		prefillTemplateParams: (templateId, wrapperEl) =>
+			realPrefillTemplateParams(templateId, wrapperEl) as TemplateParams,
+		renderTemplateOnly: (templateId, params) =>
+			realRenderTemplateOnly(templateId, params),
+		showSchemaModal: async (templateId, schema, isEdit) => {
+			const schemaForTemplating: TmplParamsSchema =
+				adaptSchemaToTemplating(schema);
+			const result = await realShowSchemaModal(
 				app,
-				templateKey,
-				wrapper,
-				filePath,
-				lineHint0,
-				refreshForFile
+				templateId,
+				schemaForTemplating,
+				isEdit
 			);
-		} catch (err) {
-			new Notice(
-				`Template edit failed: ${String(
-					(err as Error)?.message ?? err
-				)}`
-			);
-		}
+			return result as TemplateParams | undefined;
+		},
+		showJsonModal: (templateId, initialJson) =>
+			realShowJsonModal(app, templateId, initialJson) as Promise<
+				TemplateParams | undefined
+			>,
 	};
 
-	// Use capture to intercept clicks before default link behaviors
-	registerDomEvent(viewContainer, "click", onClick, { capture: true });
-}
+	// Use platform/obsidian file repository as VaultPort.
+	// Note: VaultPort.fileExists is optional; feature code will fall back to read-try/catch if absent.
+	const repo = createPathFileRepository(app);
+	const vault = {
+		readFile: repo.readFile,
+		writeFile: repo.writeFile,
+		// no fileExists; optional by design
+	};
 
-async function handleTemplateEditOnDashboard(
-	app: App,
-	templateKey: string,
-	wrapperEl: HTMLElement,
-	filePath: string,
-	lineHint0: number | null,
-	refreshForFile: (filePath?: string | null) => Promise<void>
-): Promise<void> {
-	const def = findTemplateById(templateKey);
-	if (!def?.hasParams) return;
-
-	const prefill =
-		prefillTemplateParams(templateKey, wrapperEl) ??
-		({} as Record<string, unknown>);
-
-	let params: Record<string, unknown> | undefined;
-	if (def.paramsSchema && def.paramsSchema.fields?.length) {
-		const schema = {
-			...def.paramsSchema,
-			fields: def.paramsSchema.fields.map((f: any) => ({
-				...f,
-				defaultValue:
-					prefill[f.name] != null
-						? String(prefill[f.name] ?? "")
-						: f.defaultValue,
-			})),
-		};
-		params = await showSchemaModal(app, templateKey, schema, true);
-	} else {
-		const jsonParams = JSON.stringify(prefill ?? {}, null, 2);
-		params = (await showJsonModal(app, templateKey, jsonParams)) as
-			| Record<string, unknown>
-			| undefined;
-	}
-	if (!params) return; // cancelled
-
-	let newHtml = renderTemplateOnly(templateKey, params);
-	const instanceId = wrapperEl.getAttribute("data-template-wrapper") || "";
-	if (instanceId) {
-		newHtml = newHtml.replace(
-			/data-template-wrapper="[^"]*"/,
-			`data-template-wrapper="${instanceId}"`
-		);
-	}
-
-	// Optimistic UI update in dashboard
-	try {
-		wrapperEl.outerHTML = newHtml;
-	} catch {
-		/* ignore */
-	}
-
-	eventBus.dispatch("agile:prepare-optimistic-file-change", { filePath });
-
-	const file = app.vault.getAbstractFileByPath(filePath) as TFile;
-	if (!file) throw new Error(`File not found: ${filePath}`);
-	const content = await app.vault.read(file);
-
-	let updated: string | null = null;
-
-	// 1) Replace by unique data-template-wrapper instance id
-	if (instanceId) {
-		const re = new RegExp(
-			`<span\\b[^>]*\\bdata-template-wrapper\\s*=\\s*"` +
-				escapeRegExp(instanceId) +
-				`"[\\s\\S]*?>`,
-			"i"
-		);
-		const m = re.exec(content);
-		if (m && typeof m.index === "number") {
-			const startIndex = m.index;
-			const endIndex = findMatchingSpanEndIndexDeterministic(
-				content,
-				startIndex
-			);
-			if (endIndex !== -1) {
-				updated =
-					content.slice(0, startIndex) +
-					newHtml +
-					content.slice(endIndex);
-			}
-		}
-	}
-
-	// 2) Fallback: scan around lineHint0 for the first wrapper with matching data-template-key
-	if (!updated && lineHint0 != null) {
-		const lines = content.split(/\r?\n/);
-		const idxs = [lineHint0, lineHint0 - 1, lineHint0 + 1].filter(
-			(i) => i >= 0 && i < lines.length
-		);
-		for (const li of idxs) {
-			const line = lines[li];
-			const m = new RegExp(
-				`<span\\b[^>]*\\bdata-template-key\\s*=\\s*"` +
-					escapeRegExp(templateKey) +
-					`"[\\s\\S]*?>`,
-				"i"
-			).exec(line);
-			if (!m) continue;
-			const openIdx = m.index;
-			const absStart = offsetOfLineStart(lines, li) + openIdx;
-			const absEnd = findMatchingSpanEndIndexDeterministic(
-				content,
-				absStart
-			);
-			if (absEnd !== -1) {
-				updated =
-					content.slice(0, absStart) +
-					newHtml +
-					content.slice(absEnd);
-				break;
-			}
-		}
-	}
-
-	// 3) Final fallback: first wrapper with matching data-template-key anywhere in file
-	if (!updated) {
-		const reKey = new RegExp(
-			`<span\\b[^>]*\\bdata-template-key\\s*=\\s*"` +
-				escapeRegExp(templateKey) +
-				`"[\\s\\S]*?>`,
-			"i"
-		);
-		const m = reKey.exec(content);
-		if (m && typeof m.index === "number") {
-			const startIndex = m.index;
-			const endIndex = findMatchingSpanEndIndexDeterministic(
-				content,
-				startIndex
-			);
-			if (endIndex !== -1) {
-				updated =
-					content.slice(0, startIndex) +
-					newHtml +
-					content.slice(endIndex);
-			}
-		}
-	}
-
-	if (!updated || updated === content) {
-		throw new Error("Unable to update template wrapper in file");
-	}
-
-	await app.vault.modify(file, updated);
-
-	await refreshForFile(filePath);
-
-	eventBus.dispatch("agile:task-updated", { filePath });
-}
-
-function escapeRegExp(s: string): string {
-	return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function findMatchingSpanEndIndexDeterministic(
-	s: string,
-	startIdx: number
-): number {
-	const lower = s.toLowerCase();
-	if (lower.slice(startIdx, startIdx + 5) !== "<span") {
-		const firstOpen = lower.indexOf("<span", startIdx);
-		if (firstOpen === -1) return -1;
-		startIdx = firstOpen;
-	}
-	const firstGt = s.indexOf(">", startIdx);
-	if (firstGt === -1) return -1;
-
-	let depth = 1;
-	let i = firstGt + 1;
-	while (i < s.length) {
-		const nextOpen = lower.indexOf("<span", i);
-		const nextClose = lower.indexOf("</span>", i);
-		if (nextClose === -1) return -1;
-
-		if (nextOpen !== -1 && nextOpen < nextClose) {
-			const gt = s.indexOf(">", nextOpen);
-			if (gt === -1) return -1;
-			depth += 1;
-			i = gt + 1;
-			continue;
-		}
-		depth -= 1;
-		const closeEnd = nextClose + "</span>".length;
-		if (depth === 0) return closeEnd;
-		i = closeEnd;
-	}
-	return -1;
-}
-
-function offsetOfLineStart(lines: string[], lineNo: number): number {
-	let off = 0;
-	for (let i = 0; i < lineNo; i++) {
-		off += lines[i].length + 1; // include newline
-	}
-	return off;
+	attachGenericTemplatingHandler({
+		app,
+		viewContainer,
+		registerDomEvent,
+		deps: {
+			templating,
+			vault,
+			refresh: { refreshForFile },
+			notices, // allow undefined; handler will default to Obsidian Notice if allowed
+			eventBus,
+		},
+		useObsidianNotice,
+	});
 }

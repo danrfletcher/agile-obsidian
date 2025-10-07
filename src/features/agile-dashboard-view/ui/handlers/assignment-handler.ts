@@ -29,68 +29,95 @@ export function attachDashboardAssignmentHandler(
 	const { app, orgStructurePort, viewContainer, registerDomEvent } = opts;
 	if (!orgStructurePort) return;
 
-	const onClick = (evt: MouseEvent) => {
-		const tgt = evt.target as HTMLElement | null;
-		const span = tgt?.closest(
-			'span[data-template-key="members.assignee"]'
-		) as HTMLElement | null;
-		if (!span) return;
+	const handleOpenMenu = (evt: MouseEvent) => {
+		try {
+			const tgt = evt.target as HTMLElement | null;
+			if (!tgt) return;
 
-		evt.preventDefault();
-		evt.stopPropagation();
-		// @ts-ignore
-		(evt as any).stopImmediatePropagation?.();
+			// Intercept clicks on the rendered assignee wrapper
+			const span = tgt.closest(
+				'span[data-template-key="members.assignee"]'
+			) as HTMLElement | null;
+			if (!span) return;
 
-		const templateKey = span.getAttribute("data-template-key") ?? "";
-		if (templateKey !== "members.assignee") return;
+			// Prevent default navigation/handlers early
+			evt.preventDefault();
+			evt.stopPropagation();
+			// @ts-ignore
+			(evt as any).stopImmediatePropagation?.();
 
-		const instanceId = span.getAttribute("data-template-wrapper") ?? "";
-		if (!instanceId) return;
+			const templateKey = span.getAttribute("data-template-key") ?? "";
+			if (templateKey !== "members.assignee") return;
 
-		const assignTypeAttr = (
-			span.getAttribute("data-assign-type") || ""
-		).toLowerCase();
-		const assignType: "assignee" | "delegate" =
-			assignTypeAttr === "delegate" ? "delegate" : "assignee";
+			const instanceId = span.getAttribute("data-template-wrapper") ?? "";
+			// AssignType defaults to "assignee" if missing or unknown
+			const assignTypeAttr = (
+				span.getAttribute("data-assign-type") || ""
+			).toLowerCase();
+			const assignType: "assignee" | "delegate" =
+				assignTypeAttr === "delegate" ? "delegate" : "assignee";
 
-		const currentState = (
-			(span.getAttribute("data-assignment-state") || "").toLowerCase() ===
-			"inactive"
-				? "inactive"
-				: "active"
-		) as "active" | "inactive";
+			const currentState = (
+				(
+					span.getAttribute("data-assignment-state") || ""
+				).toLowerCase() === "inactive"
+					? "inactive"
+					: "active"
+			) as "active" | "inactive";
 
-		const currentSlug = (
-			span.getAttribute("data-member-slug") || ""
-		).trim();
+			const currentSlug = (
+				span.getAttribute("data-member-slug") || ""
+			).trim();
 
-		// Map to task LI
-		const li = span.closest("li[data-file-path]") as HTMLElement | null;
-		const filePath = li?.getAttribute("data-file-path") || "";
-		if (!filePath) return;
+			// Map to task LI and resolve file path + optional hints
+			const li =
+				span.closest("li[data-file-path]") ||
+				span.closest("[data-file-path]"); // fallback if structure changes
+			const liEl = li as HTMLElement | null;
+			const filePath = liEl?.getAttribute("data-file-path") || "";
+			if (!filePath) return;
 
-		const parentUid = li?.getAttribute("data-task-uid") || null;
-		const lineHintStr = li?.getAttribute("data-line") || "";
-		const lineHint0 =
-			lineHintStr && /^\d+$/.test(lineHintStr)
-				? parseInt(lineHintStr, 10)
-				: null;
+			const parentUid = liEl?.getAttribute("data-task-uid") || null;
+			const lineHintStr = liEl?.getAttribute("data-line") || "";
+			const lineHint0 =
+				lineHintStr && /^\d+$/.test(lineHintStr)
+					? parseInt(lineHintStr, 10)
+					: null;
 
-		openAssignmentMenuAt({
-			mode: "headless",
-			app,
-			plugin: null,
-			ports: { orgStructure: orgStructurePort },
-			at: { x: evt.clientX, y: evt.clientY },
-			filePath,
-			instanceId,
-			assignType,
-			currentState,
-			currentSlug,
-			parentUid,
-			lineHint0,
-		});
+			openAssignmentMenuAt({
+				mode: "headless",
+				app,
+				plugin: null,
+				ports: { orgStructure: orgStructurePort },
+				at: { x: evt.clientX, y: evt.clientY },
+				filePath,
+				instanceId, // empty string is ok; underlying code will fall back via type/slug/line
+				assignType,
+				currentState,
+				currentSlug,
+				parentUid,
+				lineHint0,
+			});
+		} catch {
+			/* ignore */
+		}
 	};
 
-	registerDomEvent(viewContainer, "click", onClick);
+	// Use capture to intercept before Obsidian's default link behaviors (matches templating handler)
+	registerDomEvent(viewContainer, "click", handleOpenMenu, { capture: true });
+
+	// Optional: allow right-click to open the reassignment menu as well
+	registerDomEvent(
+		viewContainer,
+		"contextmenu",
+		(evt: MouseEvent) => {
+			const tgt = evt.target as HTMLElement | null;
+			const span = tgt?.closest(
+				'span[data-template-key="members.assignee"]'
+			) as HTMLElement | null;
+			if (!span) return;
+			handleOpenMenu(evt);
+		},
+		{ capture: true }
+	);
 }

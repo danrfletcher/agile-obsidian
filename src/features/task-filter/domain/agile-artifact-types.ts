@@ -1,5 +1,5 @@
 import { TaskItem } from "@features/tasks";
-import { getTemplateKeysFromTask } from "@features/templating";
+import { getTemplateKeysFromTask } from "@features/templating-engine";
 import type { AgileArtifactType } from "./types";
 
 /**

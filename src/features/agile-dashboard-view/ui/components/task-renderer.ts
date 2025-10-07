@@ -4,9 +4,13 @@ import {
 	appendSnoozeButtonIfEligible,
 	appendSnoozeAllSubtasksButtonIfEligible,
 } from "./task-buttons";
-import { handleStatusChange } from "../../app/status-update";
 import { normalizeSection as normalizeSectionPolicy } from "./ui-policy";
 import { eventBus } from "../../app/event-bus";
+import {
+	attachCustomCheckboxStatusHandlers,
+	StatusChar,
+} from "@features/task-status-sequencer";
+import { hideTaskAndCollapseAncestors } from "./task-buttons";
 
 function isLeaf(task: TaskItem): boolean {
 	return !task.children || task.children.length === 0;
@@ -45,35 +49,31 @@ function ensureAssignmentEventListener(app: App) {
 	if (assignmentEventListenerAttached) return;
 	assignmentEventListenerAttached = true;
 
-	eventBus.on(
-		"agile:request-assign-propagate",
-		async (detail) => {
-			try {
-				const uid = detail?.uid;
-				const newAlias = detail?.newAlias;
-				if (
-					typeof uid === "string" &&
-					typeof newAlias === "string" &&
-					uid
-				) {
-					const filePath = uid.split(":")[0] || "";
-					if (filePath) {
-						eventBus.dispatch(
-							"agile:prepare-optimistic-file-change",
-							{ filePath }
-						);
-						eventBus.dispatch("agile:assignment-changed", {
-							uid,
-							filePath,
-							newAlias,
-						});
-					}
+	eventBus.on("agile:request-assign-propagate", async (detail) => {
+		try {
+			const uid = detail?.uid;
+			const newAlias = detail?.newAlias;
+			if (
+				typeof uid === "string" &&
+				typeof newAlias === "string" &&
+				uid
+			) {
+				const filePath = uid.split(":")[0] || "";
+				if (filePath) {
+					eventBus.dispatch("agile:prepare-optimistic-file-change", {
+						filePath,
+					});
+					eventBus.dispatch("agile:assignment-changed", {
+						uid,
+						filePath,
+						newAlias,
+					});
 				}
-			} catch {
-				/* ignore */
 			}
+		} catch {
+			/* ignore */
 		}
-	);
+	});
 }
 
 function annotateAssigneeMarks(
@@ -168,6 +168,7 @@ async function openTaskInNewTab(app: App, task: TaskItem): Promise<void> {
 
 /**
  * Attach a long-press handler to the task's LI to open source in new tab.
+ * Ignores interactive targets (checkboxes, buttons, links).
  */
 function attachOpenOnLongPress(
 	liEl: HTMLElement,
@@ -282,6 +283,9 @@ export function renderTaskTree(
 			}
 		}
 
+		// Stamp the section on each LI so localized refreshes can reliably read it
+		taskItemEl.setAttribute("data-section", normalizedSection);
+
 		if (task.annotated) {
 			taskItemEl.addClass("annotated-task");
 		}
@@ -308,14 +312,14 @@ export function renderTaskTree(
 			appendSnoozeButtonIfEligible(
 				task,
 				taskItemEl,
-				sectionType,
+				normalizedSection,
 				app,
 				selectedAlias
 			);
 			appendSnoozeAllSubtasksButtonIfEligible(
 				task,
 				taskItemEl,
-				sectionType,
+				normalizedSection,
 				app,
 				selectedAlias
 			);
@@ -332,6 +336,7 @@ export function renderTaskTree(
 		const checkbox = taskItemEl.querySelector(
 			'input[type="checkbox"]'
 		) as HTMLInputElement | null;
+
 		if (checkbox) {
 			const interactive = shouldEnableCheckbox(
 				sectionType,
@@ -345,95 +350,48 @@ export function renderTaskTree(
 				checkbox.setAttribute("aria-disabled", "true");
 				(checkbox as HTMLElement).style.pointerEvents = "none";
 			} else {
-				let pressTimer: number | null = null;
-				let longPressed = false;
-				const LONG_PRESS_MS = 500;
+				// Wire dashboard checkbox using the sequencer-provided adapter (short vs long-press)
+				const resolvedFilePath =
+					task.link?.path || (task._uniqueId?.split(":")[0] ?? "");
+				const line0 =
+					line != null
+						? line
+						: (() => {
+								const s =
+									taskItemEl.getAttribute("data-line") || "";
+								return /^\d+$/.test(s) ? parseInt(s, 10) : 0;
+						  })();
 
-				let initialChecked = checkbox.checked;
-				let isUpdating = false;
-
-				const performUpdate = async (cancel: boolean) => {
-					if (isUpdating) return;
-					isUpdating = true;
-					try {
-						const result = await handleStatusChange(
-							task,
-							taskItemEl,
-							app,
-							cancel
-						);
-						if (result === "/") {
+				attachCustomCheckboxStatusHandlers({
+					checkboxEl: checkbox,
+					app,
+					task: {
+						filePath: resolvedFilePath,
+						line0,
+						status: (task as any)?.status ?? " ",
+					},
+					onStatusApplied: (to: StatusChar) => {
+						// Update in-memory for downstream code relying on task.status
+						(task as any).status = to;
+						if (to === "/") {
 							rerenderTaskInline(
 								task,
 								taskItemEl,
 								app,
 								sectionType,
-								result,
+								to,
 								isRoot,
 								depth,
 								selectedAlias
 							);
-						} else if (result === "x") {
-							checkbox.checked = true;
-							initialChecked = true;
+						} else if (to === "x" || to === "-") {
+							try {
+								hideTaskAndCollapseAncestors(taskItemEl);
+							} catch {
+								/* ignore */
+							}
 						}
-					} finally {
-						isUpdating = false;
-					}
-				};
-
-				checkbox.addEventListener("change", (ev) => {
-					ev.preventDefault();
-					// @ts-ignore
-					ev.stopImmediatePropagation?.();
-					checkbox.checked = initialChecked;
-				});
-
-				checkbox.addEventListener("keydown", async (ev) => {
-					const key = (ev as KeyboardEvent).key;
-					if (key === " " || key === "Enter") {
-						ev.preventDefault();
-						await performUpdate(false);
-					}
-				});
-
-				const clearTimer = () => {
-					if (pressTimer !== null) {
-						window.clearTimeout(pressTimer);
-						pressTimer = null;
-					}
-				};
-
-				const onPressStart = () => {
-					longPressed = false;
-					clearTimer();
-					pressTimer = window.setTimeout(async () => {
-						longPressed = true;
-						await performUpdate(true);
-					}, LONG_PRESS_MS);
-				};
-
-				const onPressEnd = () => {
-					clearTimer();
-				};
-
-				checkbox.addEventListener("mousedown", onPressStart);
-				checkbox.addEventListener("touchstart", onPressStart, {
-					passive: true,
-				});
-				checkbox.addEventListener("mouseup", onPressEnd);
-				checkbox.addEventListener("mouseleave", onPressEnd);
-				checkbox.addEventListener("touchend", onPressEnd);
-				checkbox.addEventListener("touchcancel", onPressEnd);
-
-				checkbox.addEventListener("click", async (ev) => {
-					ev.preventDefault();
-					ev.stopPropagation();
-					if (longPressed) {
-						longPressed = false;
-						return;
-					}
-					await performUpdate(false);
+					},
 				});
 			}
 		}
@@ -445,7 +403,7 @@ export function renderTaskTree(
 				app,
 				depth + 1,
 				false,
-				sectionType,
+				normalizedSection,
 				selectedAlias
 			);
 		}
@@ -463,6 +421,10 @@ function rerenderTaskInline(
 	selectedAlias: string | null
 ): void {
 	try {
+		const normalizedSection = normalizeSection(sectionType);
+
+		liEl.setAttribute("data-section", normalizedSection);
+
 		const childLists = Array.from(
 			liEl.querySelectorAll(":scope > ul")
 		) as HTMLElement[];
@@ -549,14 +511,14 @@ function rerenderTaskInline(
 			appendSnoozeButtonIfEligible(
 				task,
 				liEl,
-				sectionType,
+				normalizedSection,
 				app,
 				selectedAlias
 			);
 			appendSnoozeAllSubtasksButtonIfEligible(
 				task,
 				liEl,
-				sectionType,
+				normalizedSection,
 				app,
 				selectedAlias
 			);
@@ -587,88 +549,42 @@ function rerenderTaskInline(
 				checkbox.setAttribute("aria-disabled", "true");
 				(checkbox as HTMLElement).style.pointerEvents = "none";
 			} else {
-				let pressTimer: number | null = null;
-				const LONG_PRESS_MS = 500;
+				const resolvedFilePath =
+					task.link?.path || (task._uniqueId?.split(":")[0] ?? "");
+				const lineAttr = liEl.getAttribute("data-line") || "";
+				const line0 = /^\d+$/.test(lineAttr)
+					? parseInt(lineAttr, 10)
+					: getTaskLine(task) ?? 0;
 
-				let initialChecked = checkbox.checked;
-				let isUpdating = false;
-
-				const performUpdate = async (cancel: boolean) => {
-					if (isUpdating) return;
-					isUpdating = true;
-					try {
-						const result = await handleStatusChange(
-							task,
-							liEl,
-							app,
-							cancel
-						);
-						if (result === "/") {
+				attachCustomCheckboxStatusHandlers({
+					checkboxEl: checkbox,
+					app,
+					task: {
+						filePath: resolvedFilePath,
+						line0,
+						status: (task as any)?.status ?? newStatus,
+					},
+					onStatusApplied: (to: StatusChar) => {
+						(task as any).status = to;
+						if (to === "/") {
 							rerenderTaskInline(
 								task,
 								liEl,
 								app,
 								sectionType,
-								result,
+								to,
 								isRoot,
 								depth,
 								selectedAlias
 							);
-						} else if (result === "x") {
-							checkbox.checked = true;
-							initialChecked = true;
+						} else if (to === "x" || to === "-") {
+							try {
+								hideTaskAndCollapseAncestors(liEl);
+							} catch {
+								/* ignore */
+							}
 						}
-					} finally {
-						isUpdating = false;
-					}
-				};
-
-				checkbox.addEventListener("change", (ev) => {
-					ev.preventDefault();
-					// @ts-ignore
-					ev.stopImmediatePropagation?.();
-					checkbox.checked = initialChecked;
-				});
-
-				checkbox.addEventListener("keydown", async (ev) => {
-					const key = (ev as KeyboardEvent).key;
-					if (key === " " || key === "Enter") {
-						ev.preventDefault();
-						await performUpdate(false);
-					}
-				});
-
-				const clearTimer = () => {
-					if (pressTimer !== null) {
-						window.clearTimeout(pressTimer);
-						pressTimer = null;
-					}
-				};
-
-				const onPressStart = () => {
-					clearTimer();
-					pressTimer = window.setTimeout(async () => {
-						await performUpdate(true);
-					}, LONG_PRESS_MS);
-				};
-
-				const onPressEnd = () => {
-					clearTimer();
-				};
-
-				checkbox.addEventListener("mousedown", onPressStart);
-				checkbox.addEventListener("touchstart", onPressStart, {
-					passive: true,
-				});
-				checkbox.addEventListener("mouseup", onPressEnd);
-				checkbox.addEventListener("mouseleave", onPressEnd);
-				checkbox.addEventListener("touchend", onPressEnd);
-				checkbox.addEventListener("touchcancel", onPressEnd);
-
-				checkbox.addEventListener("click", async (ev) => {
-					ev.preventDefault();
-					ev.stopPropagation();
-					await performUpdate(false);
+					},
 				});
 			}
 		}

@@ -53,10 +53,19 @@ export interface TaskItem {
 	status?: string;
 	/** Link to the task's location */
 	link: TaskLink;
-	/** Optional scheduling metadata (ISO strings) */
+
+	/** Optional scheduling metadata (ISO "YYYY-MM-DD" strings) */
 	due?: string;
 	scheduled?: string;
 	start?: string;
+
+	/** Additional date properties parsed from text (ISO "YYYY-MM-DD" strings) */
+	completedDate?: string; // from "✅ YYYY-MM-DD"
+	cancelledDate?: string; // from "❌ YYYY-MM-DD"
+	target?: string; // from "🎯 YYYY-MM-DD"
+
+	/** Recurrence pattern text extracted from calendar markers ("🗓️ Mon-Fri", "Daily", etc.) */
+	recurringPattern?: string;
 
 	/**
 	 * A unique ID constructed by the index (e.g., filePath:line).

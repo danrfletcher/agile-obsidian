@@ -2,11 +2,16 @@ import { App, TFile } from "obsidian";
 import { TaskItem } from "@features/task-index";
 import { hideTaskAndCollapseAncestors } from "../ui/components/task-buttons";
 import { eventBus } from "./event-bus";
+import {
+	DEFAULT_STATUS_SEQUENCE,
+	getNextStatusChar,
+	advanceTaskStatusForTaskItem,
+} from "@features/task-status-sequencer";
 
 /**
- * Toggle or cancel a task's status in the source file and update the UI optimistically.
- * - Short press toggles between "/" and "x"
- * - Long press cancels to "-"
+ * Toggle or cancel a task's status by delegating to task-status-sequence.
+ * - Short press advances via the default sequence: " " → "/" → "x" → "-" → " "
+ * - Long press steps through the sequence until it reaches "-"
  *
  * Returns the new status if updated, otherwise null.
  */
@@ -17,32 +22,37 @@ export const handleStatusChange = async (
 	isCancel = false
 ): Promise<string | null> => {
 	try {
+		// Resolve file path
 		const filePath = task.link?.path || task._uniqueId?.split(":")[0];
 		if (!filePath) throw new Error("Missing task file path");
 
 		const file = app.vault.getAbstractFileByPath(filePath) as TFile;
 		if (!file) throw new Error(`File not found: ${filePath}`);
 
+		// Prepare optimistic UI suppression for vault modify refresh
 		eventBus.dispatch("agile:prepare-optimistic-file-change", { filePath });
 
+		// Read content to robustly locate the target line
 		const content = await app.vault.read(file);
 		const lines = content.split(/\r?\n/);
 
-		// Helpers
+		// Helpers (reuse robust targeting from previous implementation)
 		const parseStatusFromLine = (line: string): string | null => {
-			const m = line.match(/^\s*[-*]\s*\[\s*(.)\s*\]/);
+			const m = line.match(/^\s*[-*+]\s*\[\s*(.)\s*\]/);
 			return m ? m[1] : null;
 		};
 		const normalize = (s: string) =>
 			(s || "")
+				// strip old ✅/❌ markers in comparison context only (not mutating file)
 				.replace(/\s*(✅|❌)\s+\d{4}-\d{2}-\d{2}\b/g, "")
 				.replace(/\s+/g, " ")
 				.trim();
 		const getLineRestNormalized = (line: string): string | null => {
-			const m = line.match(/^\s*[-*]\s*\[\s*.\s*\]\s*(.*)$/);
+			const m = line.match(/^\s*[-*+]\s*\[\s*.\s*\]\s*(.*)$/);
 			return m ? normalize(m[1]) : null;
 		};
 
+		// Try to resolve the correct line index using provided task hints + text match
 		let effectiveStatus = (task.status ?? " ").trim() || " ";
 		let targetLineIndex = -1;
 
@@ -50,7 +60,7 @@ export const handleStatusChange = async (
 			(task.text || task.visual || "").trim()
 		);
 
-		// Candidate indices prefer parsed task position
+		// Prefer parsing from known position or nearby
 		const baseIdx =
 			typeof (task as any)?.position?.start?.line === "number"
 				? (task as any).position.start.line
@@ -76,6 +86,7 @@ export const handleStatusChange = async (
 			}
 		}
 
+		// Fallback scans
 		if (targetLineIndex === -1 && targetTextNorm) {
 			// Exact match anywhere
 			for (let i = 0; i < lines.length; i++) {
@@ -101,108 +112,58 @@ export const handleStatusChange = async (
 			}
 		}
 
-		const newStatus = isCancel ? "-" : effectiveStatus === "/" ? "x" : "/";
+		if (targetLineIndex === -1) {
+			// If we absolutely cannot locate the line, abort (avoid unintended edits)
+			throw new Error("Unable to locate task line for status change");
+		}
 
-		const today = new Date();
-		const yyyy = String(today.getFullYear());
-		const mm = String(today.getMonth() + 1).padStart(2, "0");
-		const dd = String(today.getDate()).padStart(2, "0");
-		const dateStr = `${yyyy}-${mm}-${dd}`;
+		// Predict the next status for short press, or "-" for long press
+		const predictShortNext = (cur: string): string =>
+			getNextStatusChar(cur as any, DEFAULT_STATUS_SEQUENCE);
 
-		const updateLine = (line: string): string => {
-			const m = line.match(/^(\s*[-*]\s*\[\s*)(.)(\s*\]\s*)(.*)$/);
-			if (!m) return line;
+		const targetStatus = isCancel ? "-" : predictShortNext(effectiveStatus);
 
-			const prefix = m[1];
-			const bracketSuffix = m[3];
-			let rest = m[4] ?? "";
-
-			// Remove previous completion/cancel markers
-			rest = rest
-				.replace(/\s*(✅|❌)\s+\d{4}-\d{2}-\d{2}\b/g, "")
-				.trimEnd();
-
-			let updated = `${prefix}${newStatus}${bracketSuffix}${
-				rest ? " " + rest : ""
-			}`;
-
-			if (newStatus === "x") {
-				updated += ` ✅ ${dateStr}`;
-			} else if (newStatus === "-") {
-				updated += ` ❌ ${dateStr}`;
-			}
-
-			return updated;
+		// Run the update via task-status-sequence, preferring active editor for immediate UX
+		// Helper: perform one-step advance
+		const stepOnce = async () => {
+			await advanceTaskStatusForTaskItem({
+				app,
+				task: {
+					filePath,
+					line0: targetLineIndex,
+					status: effectiveStatus,
+				},
+			});
+			// Advance our local tracker too for multi-step logic
+			effectiveStatus = predictShortNext(effectiveStatus);
 		};
 
-		const tryReplaceAtIndex = (idx: number): string | null => {
-			if (idx < 0 || idx >= lines.length) return null;
-			const original = lines[idx];
-			const replaced = updateLine(original);
-			if (replaced !== original) {
-				lines[idx] = replaced;
-				return lines.join("\n");
+		if (isCancel) {
+			// Step through the default sequence until we reach '-'
+			// Sequence is known: [" ", "/", "x", "-"]
+			const seq = DEFAULT_STATUS_SEQUENCE;
+			const curIdx = Math.max(
+				0,
+				seq.findIndex((c) => c === (effectiveStatus as any))
+			);
+			const targetIdx = seq.findIndex((c) => c === "-");
+			const len = seq.length;
+			// If current not found (-1), treat as space at 0
+			const start = curIdx < 0 ? 0 : curIdx;
+			const steps = (targetIdx - start + len) % len;
+			for (let i = 0; i < steps; i++) {
+				await stepOnce();
 			}
-			return null;
-		};
-
-		let newContent: string | null = null;
-
-		if (targetLineIndex !== -1) {
-			newContent = tryReplaceAtIndex(targetLineIndex);
+		} else {
+			// Single step advance
+			await stepOnce();
 		}
 
-		if (newContent == null) {
-			// Exact match scan
-			if (targetTextNorm) {
-				for (let i = 0; i < lines.length; i++) {
-					const m = lines[i].match(/^\s*[-*]\s*\[\s*.\s*\]\s*(.*)$/);
-					if (!m) continue;
-					if (normalize(m[1]) === targetTextNorm) {
-						newContent = tryReplaceAtIndex(i);
-						if (newContent) break;
-					}
-				}
-			}
-			// Prefix match scan
-			if (newContent == null && targetTextNorm) {
-				for (let i = 0; i < lines.length; i++) {
-					const m = lines[i].match(/^\s*[-*]\s*\[\s*.\s*\]\s*(.*)$/);
-					if (!m) continue;
-					if (normalize(m[1]).startsWith(targetTextNorm)) {
-						newContent = tryReplaceAtIndex(i);
-						if (newContent) break;
-					}
-				}
-			}
-		}
+		// Update the TaskItem's in-memory status for immediate UI hints elsewhere
+		(task as any).status = targetStatus;
 
-		// Final fallback: raw regex replace (exact text)
-		if (newContent == null) {
-			const escaped = (task.text || "")
-				.trim()
-				.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-			if (escaped) {
-				const re = new RegExp(
-					`^(\\s*[-*]\\s*\\[\\s*).(\\s*\\]\\s*)${escaped}(.*)$`,
-					"m"
-				);
-				newContent = content.replace(re, (match) => updateLine(match));
-				if (newContent === content) {
-					newContent = null;
-				}
-			}
-		}
-
-		if (!newContent || newContent === content) {
-			throw new Error("Unable to update task line");
-		}
-
-		await app.vault.modify(file, newContent);
-		(task as any).status = newStatus;
-
-		// UI: hide completed/cancelled and collapse ancestors
-		if (newStatus === "x" || newStatus === "-") {
+		// Hide completed/cancelled items immediately in UI
+		if (targetStatus === "x" || targetStatus === "-") {
 			try {
 				hideTaskAndCollapseAncestors(liEl);
 			} catch {
@@ -210,7 +171,7 @@ export const handleStatusChange = async (
 			}
 		}
 
-		return newStatus;
+		return targetStatus;
 	} catch {
 		return null;
 	}

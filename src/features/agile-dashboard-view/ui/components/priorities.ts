@@ -11,10 +11,19 @@ import {
 } from "@features/task-filter";
 import { isRelevantToday } from "@features/task-date-manager";
 import { stripListItems } from "@features/task-tree-builder";
+import { attachSectionFolding } from "@features/task-tree-fold";
+
+type RegisterDomEvent = (
+	el: HTMLElement | Window | Document,
+	type: string,
+	handler: (evt: any) => void,
+	options?: AddEventListenerOptions | boolean
+) => void;
 
 /**
- * Process and render the Priorities section (time-relevant task trees).
- */
+Process and render the Priorities section (time-relevant task trees).
+New: Enable folding on bottom-level items to allow further subtasks expansion.
+*/
 export function processAndRenderPriorities(
 	container: HTMLElement,
 	currentTasks: TaskItem[],
@@ -23,7 +32,8 @@ export function processAndRenderPriorities(
 	app: App,
 	taskMap: Map<string, TaskItem>,
 	childrenMap: Map<string, TaskItem[]>,
-	taskParams: TaskParams
+	taskParams: TaskParams,
+	registerDomEvent?: RegisterDomEvent
 ) {
 	const { inProgress, completed, sleeping, cancelled } = taskParams;
 
@@ -130,5 +140,20 @@ export function processAndRenderPriorities(
 			"priorities",
 			selectedAlias
 		);
+
+		// Add folding for bottom-level items
+		try {
+			attachSectionFolding(container, {
+				app,
+				taskMap,
+				childrenMap,
+				selectedAlias,
+				renderTaskTree,
+				registerDomEvent,
+				sectionName: "priorities",
+			});
+		} catch {
+			/* ignore */
+		}
 	}
 }

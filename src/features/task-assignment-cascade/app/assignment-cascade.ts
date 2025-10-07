@@ -1,13 +1,14 @@
 import type { App, Plugin } from "obsidian";
 import { MarkdownView, Notice, TFile } from "obsidian";
 import type { TaskIndexService } from "@features/task-index";
-import { renderTemplateOnly } from "@features/templating";
+import { renderTemplateOnly } from "@features/templating-engine";
 import { removeWrappersOfTypeOnLine } from "@features/task-assignment";
 import { getDisplayNameFromAlias } from "@shared/identity";
 import {
 	indentWidth,
 	isListLine,
-} from "@platform/obsidian/editor/editor-context-utils";
+	isTaskLine, // NEW: import to match tasks with any status
+} from "@platform/obsidian";
 
 // ---------- helpers ----------
 function getExplicitAssigneeSlugFromText(line: string): string | null {
@@ -55,11 +56,12 @@ function renderAssigneeWrapperForSlug(alias: string): string {
 	});
 }
 
+/**
+ * Previously excluded completed/cancelled tasks by checking the status char.
+ * Now defers to platform isTaskLine, which matches tasks with ANY status.
+ */
 function isReassignableTaskLine(line: string): boolean {
-	const m = /^\s*[-*]\s*\[\s*([^\]]?)\s*\]/i.exec(line);
-	if (!m) return false;
-	const status = (m[1] ?? "").trim().toLowerCase();
-	return status !== "x" && status !== "-";
+	return isTaskLine(line);
 }
 
 // ---------- core ----------

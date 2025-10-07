@@ -8,9 +8,19 @@ import type {
  * Repository responsible for storing and querying the task index in memory.
  */
 export interface TaskIndexRepository {
+	/** Insert or replace a single file snapshot. */
 	upsertFileSnapshot(snapshot: FileTaskSnapshot): void;
+
+	/** Remove a file entirely from the index. */
 	removeFile(path: string): void;
+
+	/** Rename a file key and update node paths/IDs immutably. */
 	renameFile(oldPath: string, newPath: string): void;
+
+	/** Atomically replace the entire index with the provided snapshots. */
+	replaceAll(snapshots: FileTaskSnapshot[]): void;
+
+	/** Getters */
 	getSnapshot(): TaskIndexSnapshot;
 	getByFile(path: string): FileTaskSnapshot | undefined;
 	getAllTasks(): TaskNode[];
@@ -19,7 +29,7 @@ export interface TaskIndexRepository {
 }
 
 /**
- * In-memory repository. Produces new objects on rename to avoid aliasing issues.
+ * In-memory repository. Produces new objects on rename/replace to avoid aliasing issues.
  */
 export function createInMemoryTaskIndexRepository(): TaskIndexRepository {
 	let index: TaskIndexSnapshot = {};
@@ -32,9 +42,11 @@ export function createInMemoryTaskIndexRepository(): TaskIndexRepository {
 				lists: snapshot.lists,
 			};
 		},
+
 		removeFile(path) {
 			delete index[path];
 		},
+
 		renameFile(oldPath, newPath) {
 			const snap = index[oldPath];
 			if (!snap) return;
@@ -42,12 +54,27 @@ export function createInMemoryTaskIndexRepository(): TaskIndexRepository {
 			delete index[oldPath];
 			index[newPath] = updated;
 		},
+
+		replaceAll(snapshots) {
+			const next: TaskIndexSnapshot = {};
+			for (const snap of snapshots) {
+				if (!snap) continue;
+				next[snap.filePath] = {
+					filePath: snap.filePath,
+					lists: snap.lists,
+				};
+			}
+			index = next;
+		},
+
 		getSnapshot() {
 			return index;
 		},
+
 		getByFile(path) {
 			return index[path];
 		},
+
 		getAllTasks() {
 			const result: TaskNode[] = [];
 			Object.values(index).forEach((fileSnap) => {
@@ -62,6 +89,7 @@ export function createInMemoryTaskIndexRepository(): TaskIndexRepository {
 			});
 			return result;
 		},
+
 		getById(id) {
 			for (const fileSnap of Object.values(index)) {
 				const found = findById(fileSnap.lists, id);

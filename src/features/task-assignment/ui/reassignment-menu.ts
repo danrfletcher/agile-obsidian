@@ -1,6 +1,6 @@
 import type { App, Plugin } from "obsidian";
 import { MarkdownView, Notice, Menu, TFile } from "obsidian";
-import { renderTemplateOnly } from "@features/templating";
+import { renderTemplateOnly } from "@features/templating-engine";
 import type {
 	OrgStructurePort,
 	MemberInfo,
