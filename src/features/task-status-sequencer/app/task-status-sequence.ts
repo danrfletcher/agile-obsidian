@@ -62,8 +62,144 @@ export function updateLineWithNextStatus(
 }
 
 /**
+ * Try to get the scroll container for the active editor. We favor CM6 .cm-scroller.
+ */
+function getEditorScroller(editor: Editor): HTMLElement | null {
+	try {
+		const cm: any = (editor as any).cm;
+		if (cm?.scrollDOM) return cm.scrollDOM as HTMLElement;
+	} catch {
+		// ignore
+	}
+	try {
+		const active = document.querySelector(
+			".workspace-leaf.mod-active .cm-scroller"
+		) as HTMLElement | null;
+		if (active) return active;
+		return document.querySelector(".cm-scroller") as HTMLElement | null;
+	} catch {
+		return null;
+	}
+}
+
+type ScrollSnapshot = {
+	el: HTMLElement | null;
+	top: number;
+	left: number;
+	// Optional CM6-based anchor info
+	view?: any;
+	anchorLine?: number;
+	anchorTop?: number;
+	scrollTop?: number;
+};
+
+function captureEditorScroll(editor: Editor): ScrollSnapshot {
+	const el = getEditorScroller(editor);
+	let snap: ScrollSnapshot = {
+		el,
+		top: el ? el.scrollTop : 0,
+		left: el ? el.scrollLeft : 0,
+	};
+
+	// Try to anchor to the first visible line using CM6 internals.
+	try {
+		const view: any = (editor as any).cm;
+		if (
+			view &&
+			view.state &&
+			view.viewport &&
+			typeof view.viewport.from === "number"
+		) {
+			const doc = view.state.doc;
+			// First visible doc offset -> line number (1-based from CM, convert to 0-based)
+			const firstVisibleLineNo0 =
+				doc.lineAt(view.viewport.from).number - 1;
+			// Get block info to read its top (document coordinate)
+			const block = view.lineBlockAt(
+				doc.line(firstVisibleLineNo0 + 1).from
+			);
+			if (block && typeof block.top === "number") {
+				snap.view = view;
+				snap.anchorLine = firstVisibleLineNo0;
+				snap.anchorTop = block.top;
+				snap.scrollTop = el ? el.scrollTop : 0;
+			}
+		}
+	} catch {
+		// Soft-fail: we'll just fall back to basic scroll restore
+	}
+
+	return snap;
+}
+
+function restoreEditorScrollLater(snap: ScrollSnapshot) {
+	// If we have an anchor, compute the delta between the old and new block top
+	// and adjust scrollTop so the anchor stays at the same screen position.
+	const tryRestoreWithAnchor = () => {
+		try {
+			if (
+				!snap.el ||
+				!snap.view ||
+				snap.anchorLine == null ||
+				snap.anchorTop == null ||
+				snap.scrollTop == null
+			) {
+				// Fallback: restore simple scroll position
+				if (snap.el) {
+					snap.el.scrollTop = snap.top;
+					snap.el.scrollLeft = snap.left;
+				}
+				return;
+			}
+			const view = snap.view;
+			const el = snap.el;
+			const doc = view.state?.doc;
+			if (!doc) {
+				el.scrollTop = snap.top;
+				el.scrollLeft = snap.left;
+				return;
+			}
+			// Guard against out-of-range after edits
+			const lineNo0 = Math.min(
+				Math.max(0, snap.anchorLine),
+				doc.lines - 1
+			);
+			const blockNow = view.lineBlockAt(doc.line(lineNo0 + 1).from);
+			if (!blockNow || typeof blockNow.top !== "number") {
+				el.scrollTop = snap.top;
+				el.scrollLeft = snap.left;
+				return;
+			}
+			// Compute how much the anchor moved in document coords
+			const delta = blockNow.top - snap.anchorTop;
+			// To keep the anchor at the same viewport position, adjust scrollTop by that delta.
+			const targetScrollTop = (snap.scrollTop ?? snap.top) + delta;
+			el.scrollTop = targetScrollTop;
+			el.scrollLeft = snap.left;
+		} catch {
+			// Fallback on any error
+			if (snap.el) {
+				try {
+					snap.el.scrollTop = snap.top;
+					snap.el.scrollLeft = snap.left;
+				} catch {}
+			}
+		}
+	};
+
+	// Run after layout settles
+	requestAnimationFrame(() => {
+		tryRestoreWithAnchor();
+		// One more frame in case of late paint (CodeMirror sometimes batches)
+		requestAnimationFrame(() => {
+			tryRestoreWithAnchor();
+		});
+	});
+}
+
+/**
  * Advance the task status at a specific editor line according to the provided sequence.
- * Returns details about the change.
+ * Returns details about the change. Preserves editor scroll position and selection.
  */
 export function advanceTaskStatusAtEditorLine(
 	editor: Editor,
@@ -76,28 +212,9 @@ export function advanceTaskStatusAtEditorLine(
 	const to = getNextStatusChar(from, sequence);
 	const updated = setCheckboxStatusChar(orig, to);
 	if (updated === orig) return { from, to, didChange: false };
-	editor.replaceRange(
-		updated,
-		{ line: line0, ch: 0 },
-		{ line: line0, ch: orig.length }
-	);
-	return { from, to, didChange: true };
-}
 
-/**
- * Set the task status at a specific editor line to an explicit target char.
- * Returns details about the change.
- */
-export function setTaskStatusAtEditorLine(
-	editor: Editor,
-	line0: number,
-	to: StatusChar
-): { from: string | null; to: StatusChar; didChange: boolean } {
-	const orig = editor.getLine(line0) ?? "";
-	const from = getCheckboxStatusChar(orig);
-	if (from == null) return { from, to, didChange: false };
-	const updated = setCheckboxStatusChar(orig, to);
-	if (updated === orig) return { from, to, didChange: false };
+	const scroll = captureEditorScroll(editor);
+
 	// Preserve selection/cursor if on the same line
 	let fromSel: any = editor.getCursor?.("from");
 	let toSel: any = editor.getCursor?.("to");
@@ -138,6 +255,68 @@ export function setTaskStatusAtEditorLine(
 		} catch {}
 	}
 
+	restoreEditorScrollLater(scroll);
+	return { from, to, didChange: true };
+}
+
+/**
+ * Set the task status at a specific editor line to an explicit target char.
+ * Returns details about the change. Preserves editor scroll position and selection.
+ */
+export function setTaskStatusAtEditorLine(
+	editor: Editor,
+	line0: number,
+	to: StatusChar
+): { from: string | null; to: StatusChar; didChange: boolean } {
+	const orig = editor.getLine(line0) ?? "";
+	const from = getCheckboxStatusChar(orig);
+	if (from == null) return { from, to, didChange: false };
+	const updated = setCheckboxStatusChar(orig, to);
+	if (updated === orig) return { from, to, didChange: false };
+
+	const scroll = captureEditorScroll(editor);
+
+	// Preserve selection/cursor if on the same line
+	let fromSel: any = editor.getCursor?.("from");
+	let toSel: any = editor.getCursor?.("to");
+	const hasCursorAPI =
+		fromSel &&
+		toSel &&
+		typeof fromSel.line === "number" &&
+		typeof fromSel.ch === "number" &&
+		typeof toSel.line === "number" &&
+		typeof toSel.ch === "number";
+	const selectionOnLine =
+		hasCursorAPI &&
+		(fromSel.line === line0 || toSel.line === line0) &&
+		fromSel.line === toSel.line;
+
+	editor.replaceRange(
+		updated,
+		{ line: line0, ch: 0 },
+		{ line: line0, ch: orig.length }
+	);
+
+	if (selectionOnLine) {
+		try {
+			const newLen = updated.length;
+			const newFromCh = Math.max(0, Math.min(newLen, fromSel.ch));
+			const newToCh = Math.max(0, Math.min(newLen, toSel.ch));
+			if (typeof (editor as any).setSelection === "function") {
+				(editor as any).setSelection(
+					{ line: line0, ch: newFromCh },
+					{ line: line0, ch: newToCh }
+				);
+			} else if (
+				newFromCh === newToCh &&
+				typeof (editor as any).setCursor === "function"
+			) {
+				(editor as any).setCursor({ line: line0, ch: newFromCh });
+			}
+		} catch {}
+	}
+
+	restoreEditorScrollLater(scroll);
 	return { from, to, didChange: true };
 }
 
@@ -146,7 +325,7 @@ export function setTaskStatusAtEditorLine(
  */
 function findPosFromEvent(
 	editor: Editor,
-	evt: MouseEvent | KeyboardEvent
+	evt: MouseEvent | KeyboardEvent | PointerEvent
 ): { line: number; ch: number } | null {
 	let x: number | null = null;
 	let y: number | null = null;
@@ -431,10 +610,12 @@ export async function setTaskStatusForTaskItem(params: {
  * Wire up editor-change handling so that clicking a checkbox in an open note
  * follows our custom circular sequence and supports long-press-to-cancel ("-").
  *
- * Updates:
- * - Long-press only applies on release (no mid-press mutations) → avoids flicker.
- * - We suppress the subsequent click to prevent Obsidian's default toggle.
- * - We only treat presses in the actual "[ ]" token as checkbox intent.
+ * Updates in this version:
+ * - Prevent default on pointerdown within the checkbox token to avoid flicker/indent jump.
+ * - Long-press applies immediately on timeout (not waiting for release).
+ * - Short press applies on release (advance).
+ * - After either path, suppress the subsequent click to prevent Obsidian's default toggle.
+ * - Preserve editor scroll position across edits.
  */
 export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 	// Per-view snapshots to diff line changes
@@ -448,7 +629,7 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 		line0: number;
 		filePath: string;
 		timerId: number | null;
-		longPressReady: boolean;
+		longApplied: boolean; // true after we applied cancel due to long press
 	};
 	const pressState = new WeakMap<MarkdownView, PressState>();
 
@@ -609,7 +790,10 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 		})
 	);
 
-	// Pointer-based press handling (decide on release: short => advance, long => cancel)
+	// Pointer-based press handling:
+	// - pointerdown: if on "[ ]" token, prevent default and arm long-press
+	// - timer fires: apply cancel ("-") immediately, suppress next click
+	// - pointerup: if long already applied -> swallow; else short-press advance
 	const onPointerDown = (evt: PointerEvent) => {
 		try {
 			const view = app.workspace.getActiveViewOfType(MarkdownView);
@@ -621,15 +805,18 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 				(view as any).contentEl || (view as any).containerEl || null;
 			if (!container || !container.contains(evt.target as Node)) return;
 
-			// Must be on a checkbox token
 			const pos = findPosFromEvent(editor, evt as any);
 			if (!pos) return;
 			const line0 = pos.line;
 			const lineText = editor.getLine(line0) ?? "";
 			if (!isPosOnCheckboxToken(lineText, pos.ch)) return;
 
-			// Start a new press state (we don't mutate yet)
-			// Do NOT preventDefault here—let CM handle cursor, but we will suppress click later.
+			// Stop default checkbox behavior early to avoid flicker/indent jump
+			evt.preventDefault();
+			evt.stopPropagation();
+			// @ts-ignore
+			evt.stopImmediatePropagation?.();
+
 			const filePath = view.file?.path || "";
 			const existing = pressState.get(view);
 			if (existing?.timerId != null) {
@@ -639,12 +826,53 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 				line0,
 				filePath,
 				timerId: null,
-				longPressReady: false,
+				longApplied: false,
 			};
 			const timerId = window.setTimeout(() => {
-				// Arm long-press; we will apply on release
-				state.longPressReady = true;
-				state.timerId = null;
+				// Apply cancel immediately on long-press timeout
+				try {
+					const before = editor.getLine(state.line0) ?? "";
+					if (getCheckboxStatusChar(before) == null) return;
+
+					const res = setTaskStatusAtEditorLine(
+						editor,
+						state.line0,
+						"-"
+					);
+					if (res.didChange) {
+						ignoreNextEditorChange.set(view, true);
+						try {
+							document.dispatchEvent(
+								new CustomEvent(
+									"agile:task-status-changed" as any,
+									{
+										detail: {
+											filePath: state.filePath,
+											id: "",
+											line0: state.line0,
+											fromStatus: res.from,
+											toStatus: res.to,
+										},
+									}
+								)
+							);
+						} catch {}
+						try {
+							viewSnapshots.set(view, {
+								path: state.filePath,
+								lines: collectLines(editor),
+							});
+						} catch {}
+					}
+					state.longApplied = true;
+
+					// Ensure the click after release is swallowed
+					suppressNextClick.set(view, Date.now());
+				} catch {
+					/* ignore */
+				} finally {
+					state.timerId = null;
+				}
 			}, LONG_PRESS_CANCEL_MS);
 			state.timerId = timerId as unknown as number;
 			pressState.set(view, state);
@@ -653,7 +881,7 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 		}
 	};
 
-	const finishPressIfAny = (ev?: Event) => {
+	const finishShortPressIfAny = (ev?: Event) => {
 		try {
 			const view = app.workspace.getActiveViewOfType(MarkdownView);
 			if (!view || !view.file) return;
@@ -663,7 +891,7 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 			const state = pressState.get(view);
 			if (!state) return;
 
-			// Clear any pending timer
+			// Clear any pending timer if still running
 			if (state.timerId != null) {
 				window.clearTimeout(state.timerId);
 				state.timerId = null;
@@ -671,31 +899,37 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 
 			const path = state.filePath;
 			const line0 = state.line0;
-			const orig = editor.getLine(line0) ?? "";
-			const from = getCheckboxStatusChar(orig);
 
+			// If long-press already applied, just swallow the release/click
+			if (state.longApplied) {
+				// Swallow the immediate click, too (belt & suspenders)
+				suppressNextClick.set(view, Date.now());
+				pressState.delete(view);
+
+				if (ev) {
+					try {
+						ev.preventDefault();
+						ev.stopPropagation();
+						// @ts-ignore
+						(ev as any).stopImmediatePropagation?.();
+					} catch {}
+				}
+				return;
+			}
+
+			// Short press → advance on release
+			const before = editor.getLine(line0) ?? "";
+			const from = getCheckboxStatusChar(before);
 			if (from == null) {
 				pressState.delete(view);
 				return;
 			}
 
-			// Apply either cancel ("-") or short-press advance on release
-			let applied: {
-				from: string | null;
-				to: StatusChar | null;
-				didChange: boolean;
-			};
-			if (state.longPressReady) {
-				applied = setTaskStatusAtEditorLine(editor, line0, "-");
-			} else {
-				applied = advanceTaskStatusAtEditorLine(
-					editor,
-					line0,
-					DEFAULT_STATUS_SEQUENCE
-				);
-			}
-
-			// Update snapshot and emit event if we actually changed something
+			const applied = advanceTaskStatusAtEditorLine(
+				editor,
+				line0,
+				DEFAULT_STATUS_SEQUENCE
+			);
 			if (applied.didChange && applied.to) {
 				ignoreNextEditorChange.set(view, true);
 				try {
@@ -724,11 +958,10 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 
 			pressState.delete(view);
 
-			// Also prevent the default click if we have the event here (e.g., touchend bubbling)
-			if (ev && "preventDefault" in ev) {
+			if (ev) {
 				try {
-					(ev as any).preventDefault?.();
-					(ev as any).stopPropagation?.();
+					ev.preventDefault();
+					ev.stopPropagation();
 					// @ts-ignore
 					(ev as any).stopImmediatePropagation?.();
 				} catch {}
@@ -739,7 +972,7 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 	};
 
 	const onPointerUpOrCancel = (evt: Event) => {
-		finishPressIfAny(evt);
+		finishShortPressIfAny(evt);
 	};
 
 	plugin.registerDomEvent(document, "pointerdown", onPointerDown as any);
@@ -783,11 +1016,9 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 /**
  * Attach handlers to a custom view checkbox element to:
  * - Short press: advance by DEFAULT_STATUS_SEQUENCE
- * - Long press: set to "-" (cancel)
+ * - Long press: set to "-" (cancel), applied immediately on timeout
  *
- * Changes:
- * - Apply on release (no mid-press mutation) to avoid flicker.
- * - Suppress the click that follows the press we handled.
+ * Also suppresses the subsequent click and preserves visual "checked" only for 'x'.
  */
 export function attachCustomCheckboxStatusHandlers(opts: {
 	checkboxEl: HTMLInputElement;
@@ -809,14 +1040,13 @@ export function attachCustomCheckboxStatusHandlers(opts: {
 	} = opts;
 
 	let pressTimer: number | null = null;
-	let longPressReady = false;
+	let longApplied = false; // true once we’ve performed cancel due to long-press
 	let isUpdating = false;
 	let suppressNextClick = false;
 
 	// Manage the input's visual state (checked only for 'x')
 	const setCheckedForStatus = (s: StatusChar | string) => {
-		const checked = s === "x";
-		checkboxEl.checked = checked;
+		checkboxEl.checked = s === "x";
 	};
 
 	const clearTimer = () => {
@@ -830,6 +1060,7 @@ export function attachCustomCheckboxStatusHandlers(opts: {
 		if (isUpdating) return;
 		isUpdating = true;
 		try {
+			// Predict next for immediate UI sync
 			const predicted = getNextStatusChar(
 				task.status ?? " ",
 				DEFAULT_STATUS_SEQUENCE
@@ -880,33 +1111,48 @@ export function attachCustomCheckboxStatusHandlers(opts: {
 	});
 
 	const onPressStart = () => {
-		longPressReady = false;
+		longApplied = false;
 		clearTimer();
-		pressTimer = window.setTimeout(() => {
-			longPressReady = true;
+		pressTimer = window.setTimeout(async () => {
+			// Long-press: apply cancel immediately
+			longApplied = true;
+			await performCancel();
+			// Swallow ensuing click
+			suppressNextClick = true;
 		}, longPressMs);
 	};
 
 	const onPressEnd = async (ev?: Event) => {
+		const hadTimer = pressTimer !== null;
 		clearTimer();
-		// Apply on release
-		if (longPressReady) {
-			await performCancel();
-		} else {
-			await performAdvance();
+		if (longApplied) {
+			// Already canceled – just swallow this release
+			if (ev) {
+				try {
+					ev.preventDefault();
+					ev.stopPropagation();
+					// @ts-ignore
+					(ev as any).stopImmediatePropagation?.();
+				} catch {}
+			}
+			return;
 		}
-		// Swallow the immediate click
-		suppressNextClick = true;
-		if (ev) {
-			try {
-				ev.preventDefault();
-				ev.stopPropagation();
-				// @ts-ignore
-				(ev as any).stopImmediatePropagation?.();
-			} catch {}
+		// Short press path: only when timer hadn’t fired
+		if (hadTimer) {
+			await performAdvance();
+			suppressNextClick = true;
+			if (ev) {
+				try {
+					ev.preventDefault();
+					ev.stopPropagation();
+					// @ts-ignore
+					(ev as any).stopImmediatePropagation?.();
+				} catch {}
+			}
 		}
 	};
 
+	// Pointer handlers
 	checkboxEl.addEventListener("pointerdown", onPressStart);
 	checkboxEl.addEventListener("pointerup", onPressEnd);
 	checkboxEl.addEventListener("pointercancel", () => {
