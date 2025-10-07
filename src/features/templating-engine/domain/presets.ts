@@ -1284,7 +1284,6 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 
 			return wrapTemplate("workflows.metadata.version", inner, {
 				orderTag: this.orderTag,
-				version,
 			});
 		},
 	},
