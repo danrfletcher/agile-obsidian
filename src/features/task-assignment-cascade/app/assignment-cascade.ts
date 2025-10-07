@@ -7,6 +7,7 @@ import { getDisplayNameFromAlias } from "@shared/identity";
 import {
 	indentWidth,
 	isListLine,
+	isTaskLine, // NEW: import to match tasks with any status
 } from "@platform/obsidian";
 
 // ---------- helpers ----------
@@ -55,11 +56,12 @@ function renderAssigneeWrapperForSlug(alias: string): string {
 	});
 }
 
+/**
+ * Previously excluded completed/cancelled tasks by checking the status char.
+ * Now defers to platform isTaskLine, which matches tasks with ANY status.
+ */
 function isReassignableTaskLine(line: string): boolean {
-	const m = /^\s*[-*]\s*\[\s*([^\]]?)\s*\]/i.exec(line);
-	if (!m) return false;
-	const status = (m[1] ?? "").trim().toLowerCase();
-	return status !== "x" && status !== "-";
+	return isTaskLine(line);
 }
 
 // ---------- core ----------
