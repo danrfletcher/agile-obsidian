@@ -1,20 +1,36 @@
+// Barrel: Public API for the task-status-sequencer feature.
+
 export {
 	DEFAULT_STATUS_SEQUENCE,
 	getNextStatusChar,
-	updateLineWithNextStatus,
-	advanceTaskStatusAtEditorLine,
-	findLineFromEvent,
-	computeDesiredNextFromLine,
-	advanceTaskStatusByFileLine,
-	advanceTaskStatusForTaskItem,
-	setTaskStatusAtEditorLine,
-	setTaskStatusByFileLine,
-	setTaskStatusForTaskItem,
-	wireTaskStatusSequence,
-	LONG_PRESS_CANCEL_MS,
-	attachCustomCheckboxStatusHandlers,
-} from "./app/task-status-sequence";
+	type StatusChar,
+} from "./domain/task-status-sequence";
 
-export type { StatusChar } from "./app/task-status-sequence";
+export {
+	updateLineWithNextStatus,
+	computeDesiredNextFromLine,
+} from "./domain/task-line";
+
+export {
+	advanceTaskStatusAtEditorLine,
+	setTaskStatusAtEditorLine,
+	findLineFromEvent,
+} from "./infra/obsidian/editor-status-mutations";
+
+export {
+	advanceTaskStatusByFileLine,
+	setTaskStatusByFileLine,
+} from "./infra/obsidian/vault-status-mutations";
+
+export {
+	advanceTaskStatusForTaskItem,
+	setTaskStatusForTaskItem,
+} from "./app/task-status-for-task-item";
+
+export { wireTaskStatusSequence } from "./app/wire-task-status-sequence";
+
+export { attachCustomCheckboxStatusHandlers } from "./ui/attach-custom-checkbox-status-handlers";
+
+export { LONG_PRESS_CANCEL_MS } from "./app/constants";
 
 export { setCheckboxStatusChar } from "./domain/task-status-utils";
