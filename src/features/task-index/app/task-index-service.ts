@@ -15,9 +15,19 @@ import { createInMemoryTaskIndexRepository } from "../repository/task-index-repo
  * This is the main entrypoint for programmatic control; orchestration will call into this.
  */
 export interface TaskIndexService {
+	/**
+	 * Build the index for all Markdown files and atomically replace the current index
+	 * (prevents stale leftovers from previous runs).
+	 */
 	buildAll(): Promise<void>;
+
+	/** Update (re-parse) a single file after a modification. */
 	updateFile(file: TFile): Promise<void>;
+
+	/** Remove a file from the index after deletion. */
 	removeFile(path: string): void;
+
+	/** Rename a file within the index; updates IDs and links. */
 	renameFile(oldPath: string, newPath: string): void;
 
 	// Queries
@@ -63,8 +73,34 @@ export function createTaskIndexService(
 
 	const isMarkdown = (file: TFile) => file.extension === "md";
 
+	const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
+
+	/**
+	 * Wait briefly for Obsidian's metadata cache to populate listItems for a modified file.
+	 * Helps avoid racing the "modify" event (vault) before the metadata cache is ready.
+	 */
+	const waitForListItems = async (
+		file: TFile,
+		maxWaitMs = 600,
+		stepMs = 50
+	): Promise<CachedMetadata | null> => {
+		const end = Date.now() + Math.max(0, maxWaitMs);
+		let cache: CachedMetadata | null = app.getFileCache(file);
+		if (cache?.listItems?.length) return cache;
+
+		while (Date.now() < end) {
+			await delay(stepMs);
+			cache = app.getFileCache(file);
+			if (cache?.listItems?.length) return cache;
+			// Exponential-ish backoff without going wild
+			stepMs = Math.min(120, Math.round(stepMs * 1.5));
+		}
+		return cache ?? null;
+	};
+
 	const parseOne = async (file: TFile): Promise<FileTaskSnapshot | null> => {
-		const cache: CachedMetadata | null = app.getFileCache(file);
+		// Try to wait for the cache to be ready; reduces wipe-to-empty during rapid edits
+		const cache: CachedMetadata | null = await waitForListItems(file);
 		if (!cache || !cache.listItems) {
 			// Store an empty snapshot to represent the file without lists
 			return { filePath: file.path, lists: [] };
@@ -129,15 +165,17 @@ export function createTaskIndexService(
 	};
 
 	return {
+		/**
+		 * Full rebuild that atomically replaces the existing index.
+		 * Prevents stale files from lingering if they were removed/renamed outside incremental flow.
+		 */
 		async buildAll() {
-			const files = app.getMarkdownFiles();
-			const snapshots = await Promise.all(
-				files.filter(isMarkdown).map(parseOne)
+			const files = app.getMarkdownFiles().filter(isMarkdown);
+			const snapshotsOrNull = await Promise.all(files.map(parseOne));
+			const snapshots = snapshotsOrNull.filter(
+				(snap): snap is FileTaskSnapshot => !!snap
 			);
-			snapshots.forEach((snap) => {
-				if (!snap) return;
-				repo.upsertFileSnapshot(snap);
-			});
+			repo.replaceAll(snapshots);
 		},
 
 		async updateFile(file) {

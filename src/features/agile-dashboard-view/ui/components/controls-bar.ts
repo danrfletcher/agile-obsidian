@@ -12,6 +12,8 @@ export interface ControlsBarOptions {
 	onActiveToggleChange: (active: boolean) => void;
 	onMemberChange: (alias: string | null) => void;
 	onSelectTeamsClick: (anchor: HTMLElement) => void;
+	/** New: trigger a full task-index rebuild */
+	onRebuildIndexClick: () => void;
 }
 
 export interface ControlsBarRefs {
@@ -21,6 +23,7 @@ export interface ControlsBarRefs {
 	activeToggleLabel: HTMLSpanElement;
 	memberSelect: HTMLSelectElement;
 	selectTeamsBtn: HTMLButtonElement;
+	rebuildBtn: HTMLButtonElement;
 }
 
 export function renderControlsBar(opts: ControlsBarOptions): ControlsBarRefs {
@@ -35,6 +38,7 @@ export function renderControlsBar(opts: ControlsBarOptions): ControlsBarRefs {
 		onActiveToggleChange,
 		onMemberChange,
 		onSelectTeamsClick,
+		onRebuildIndexClick,
 	} = opts;
 
 	const controlsContainer = container.createEl("div", {
@@ -43,10 +47,24 @@ export function renderControlsBar(opts: ControlsBarOptions): ControlsBarRefs {
 		},
 	});
 
+	// Version
 	const versionText = controlsContainer.createEl("p");
 	const strongText = versionText.createEl("strong");
 	strongText.textContent = `Agile Obsidian v${version}`;
 
+	// Rebuild index icon button (moved here: right after version text)
+	const rebuildBtn = controlsContainer.createEl("button", {
+		text: "↻",
+	}) as HTMLButtonElement;
+	rebuildBtn.title = "Rebuild Task Index";
+	rebuildBtn.setAttribute("aria-label", "Rebuild Task Index");
+	rebuildBtn.addEventListener("click", (ev) => {
+		ev.preventDefault();
+		ev.stopPropagation();
+		onRebuildIndexClick();
+	});
+
+	// View selector comes after the rebuild button
 	const viewSelect = controlsContainer.createEl("select");
 	viewSelect.innerHTML = `
     <option value="projects">🚀 Projects</option>
@@ -59,6 +77,7 @@ export function renderControlsBar(opts: ControlsBarOptions): ControlsBarRefs {
 		);
 	});
 
+	// Member selector
 	const memberSelect = buildGroupedMemberSelect(
 		settingsService,
 		initialAlias
@@ -68,6 +87,7 @@ export function renderControlsBar(opts: ControlsBarOptions): ControlsBarRefs {
 	});
 	controlsContainer.appendChild(memberSelect);
 
+	// Team selection button
 	const selectTeamsBtn = controlsContainer.createEl("button", {
 		text: "Select Teams",
 	}) as HTMLButtonElement;
@@ -77,6 +97,7 @@ export function renderControlsBar(opts: ControlsBarOptions): ControlsBarRefs {
 		onSelectTeamsClick(selectTeamsBtn);
 	});
 
+	// Active/Inactive toggle
 	const statusToggleContainer = controlsContainer.createEl("span", {
 		attr: { style: "display:inline-flex; align-items:center; gap:6px;" },
 	});
@@ -109,5 +130,6 @@ export function renderControlsBar(opts: ControlsBarOptions): ControlsBarRefs {
 		activeToggleLabel,
 		memberSelect,
 		selectTeamsBtn,
+		rebuildBtn,
 	};
 }

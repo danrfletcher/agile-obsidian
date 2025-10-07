@@ -1,4 +1,4 @@
-import type { App, ItemView } from "obsidian";
+import { Notice, type App, type ItemView } from "obsidian";
 import type { TaskIndexService } from "@features/task-index";
 import type { SettingsService } from "@settings";
 import type { OrgStructurePort } from "@features/org-structure";
@@ -90,6 +90,21 @@ export class DashboardController {
 				if (this.teamsPopupEl) this.renderTeamsPopup();
 			},
 			onSelectTeamsClick: (anchor) => this.toggleTeamsPopup(anchor),
+			onRebuildIndexClick: async () => {
+				// Show notice when starting rebuild, then a follow-up notice on completion or failure.
+				new Notice("Rebuilding task index…", 1500);
+				try {
+					await this.deps.taskIndexService.buildAll();
+					new Notice("Task index rebuilt.", 2000);
+				} catch (e) {
+					console.error("[agile-dashboard] Rebuild index failed", e);
+					new Notice(
+						"Failed to rebuild task index. See console for details.",
+						4000
+					);
+				}
+				await this.updateView();
+			},
 		});
 
 		// Handlers (assignment + templating)
