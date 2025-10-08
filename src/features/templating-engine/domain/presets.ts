@@ -178,16 +178,37 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 		orderTag: "artifact-item-type",
 		id: "agile.product",
 		label: "Agile - Product",
+		hasParams: true,
+		paramsSchema: {
+			title: "Create Product",
+			titles: { create: "Create Product", edit: "Edit Product" },
+			description:
+				"Provide a title and optional details for the product.",
+			fields: [
+				{
+					name: "title",
+					label: "Title",
+					required: true,
+					placeholder: "e.g., AI Chatbot Platform",
+				},
+				{
+					name: "details",
+					label: "Details",
+					type: "textarea",
+					placeholder: "Optional details...",
+				},
+			],
+		},
 		rules: { allowedOn: ["task"] },
-		render(params?: { title?: string; details?: string }) {
+		render(params: { title: string; details?: string }) {
 			const title = params?.title?.trim() ?? "";
 			const details = params?.details?.trim() ?? "";
 			const main = title
-				? `<strong>${emojis.product} ${title}${
+				? `<strong>${emojis.product} ${wrapVar("title",title)}${
 						details ? ":" : ""
 				  }</strong>`
 				: `<strong>${emojis.product} </strong>`;
-			const tail = details ? ` ${details}` : "";
+			const tail = details ? ` ${wrapVar("details", details)}` : "";
 			const inner = chip({
 				id: "agile-product",
 				text: `${main}${tail}`,
