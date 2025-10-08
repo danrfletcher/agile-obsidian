@@ -1,5 +1,8 @@
 import type { SettingsService } from "@settings";
-import { buildGroupedMemberSelect } from "./member-select";
+import {
+	buildGroupedMemberSelect,
+	refreshGroupedMemberSelect,
+} from "./member-select";
 
 export interface ControlsBarOptions {
 	container: HTMLElement;
@@ -14,6 +17,10 @@ export interface ControlsBarOptions {
 	onSelectTeamsClick: (anchor: HTMLElement) => void;
 	/** New: trigger a full task-index rebuild */
 	onRebuildIndexClick: () => void;
+
+	/** New: provide current team selection state so we can filter the member dropdown */
+	getSelectedTeamSlugs: () => Set<string>;
+	getImplicitAllSelected: () => boolean;
 }
 
 export interface ControlsBarRefs {
@@ -24,6 +31,9 @@ export interface ControlsBarRefs {
 	memberSelect: HTMLSelectElement;
 	selectTeamsBtn: HTMLButtonElement;
 	rebuildBtn: HTMLButtonElement;
+
+	/** New: repopulate the member dropdown based on current team selection; returns applied alias */
+	refreshMemberSelect: (preferredAlias?: string | null) => string | null;
 }
 
 export function renderControlsBar(opts: ControlsBarOptions): ControlsBarRefs {
@@ -39,6 +49,8 @@ export function renderControlsBar(opts: ControlsBarOptions): ControlsBarRefs {
 		onMemberChange,
 		onSelectTeamsClick,
 		onRebuildIndexClick,
+		getSelectedTeamSlugs,
+		getImplicitAllSelected,
 	} = opts;
 
 	const controlsContainer = container.createEl("div", {
@@ -77,10 +89,14 @@ export function renderControlsBar(opts: ControlsBarOptions): ControlsBarRefs {
 		);
 	});
 
-	// Member selector
+	// Member selector (now filtered by currently selected teams)
 	const memberSelect = buildGroupedMemberSelect(
 		settingsService,
-		initialAlias
+		initialAlias,
+		{
+			selectedTeamSlugs: getSelectedTeamSlugs(),
+			implicitAllSelected: getImplicitAllSelected(),
+		}
 	);
 	memberSelect.addEventListener("change", () => {
 		onMemberChange(memberSelect.value || null);
@@ -123,6 +139,24 @@ export function renderControlsBar(opts: ControlsBarOptions): ControlsBarRefs {
 			viewSelect.value === "projects" ? "inline-flex" : "none";
 	});
 
+	// Provide a way to refresh the member select when teams change
+	const refreshMemberSelect = (
+		preferredAlias?: string | null
+	): string | null => {
+		const applied = refreshGroupedMemberSelect(
+			memberSelect,
+			settingsService,
+			preferredAlias ?? memberSelect.value ?? null,
+			{
+				selectedTeamSlugs: getSelectedTeamSlugs(),
+				implicitAllSelected: getImplicitAllSelected(),
+			}
+		);
+		// Fire onMemberChange if selection actually changed due to filtering, so the controller
+		// can react if needed. We do not auto-fire here to avoid recursion; controller can compare.
+		return applied;
+	};
+
 	return {
 		root: controlsContainer,
 		viewSelect,
@@ -131,5 +165,6 @@ export function renderControlsBar(opts: ControlsBarOptions): ControlsBarRefs {
 		memberSelect,
 		selectTeamsBtn,
 		rebuildBtn,
+		refreshMemberSelect,
 	};
 }

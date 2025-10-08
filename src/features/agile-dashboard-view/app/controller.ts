@@ -2,7 +2,10 @@ import { Notice, type App, type ItemView } from "obsidian";
 import type { TaskIndexService } from "@features/task-index";
 import type { SettingsService } from "@settings";
 import type { OrgStructurePort } from "@features/org-structure";
-import { renderControlsBar } from "../ui/components/controls-bar";
+import {
+	renderControlsBar,
+	type ControlsBarRefs,
+} from "../ui/components/controls-bar";
 import { attachDashboardAssignmentHandler } from "../ui/handlers/assignment-handler";
 import { attachDashboardTemplatingHandler } from "../ui/handlers/templating-handler";
 import { wireDashboardEvents } from "../ui/handlers/event-wiring";
@@ -45,6 +48,7 @@ export class DashboardController {
 	private teamsPopupEl: HTMLDivElement | null = null;
 	private outsideClickHandler: ((ev: MouseEvent) => void) | null = null;
 	private suppressedFiles = new Set<string>();
+	private controls?: ControlsBarRefs;
 
 	constructor(private readonly deps: DashboardControllerDeps) {
 		const initialAlias =
@@ -66,13 +70,17 @@ export class DashboardController {
 		container.empty();
 
 		// Controls
-		renderControlsBar({
+		this.controls = renderControlsBar({
 			container,
 			version: this.deps.manifestVersion,
 			settingsService: this.deps.settingsService,
 			initialView: this.state.selectedView,
 			initialActiveOnly: this.state.activeOnly,
 			initialAlias: this.state.selectedAlias,
+			getSelectedTeamSlugs: () =>
+				this.teamSelection.getSelectedTeamSlugs(),
+			getImplicitAllSelected: () =>
+				this.teamSelection.getImplicitAllSelected(),
 			onViewChange: (v) => {
 				this.state.selectedView = v;
 				this.updateView();
@@ -82,16 +90,13 @@ export class DashboardController {
 				this.updateView();
 			},
 			onMemberChange: (alias) => {
+				// Note: Do NOT restrict teams based on selected member anymore.
 				this.state.selectedAlias = alias;
-				this.teamSelection.restrictSelectedTeamsToUserMembership(
-					this.state.selectedAlias
-				);
 				this.updateView();
 				if (this.teamsPopupEl) this.renderTeamsPopup();
 			},
 			onSelectTeamsClick: (anchor) => this.toggleTeamsPopup(anchor),
 			onRebuildIndexClick: async () => {
-				// Show notice when starting rebuild, then a follow-up notice on completion or failure.
 				new Notice("Rebuilding task index…", 1500);
 				try {
 					await this.deps.taskIndexService.buildAll();
@@ -237,6 +242,8 @@ export class DashboardController {
 	private renderTeamsPopup() {
 		if (!this.teamsPopupEl) return;
 
+		const prevAlias = this.state.selectedAlias;
+
 		const ctx: TeamsPopupContext = {
 			root: this.teamsPopupEl,
 			orgStructurePort: this.deps.orgStructurePort,
@@ -252,13 +259,23 @@ export class DashboardController {
 				this.teamSelection.removeSelectedSlugs(slugs);
 			},
 			onSelectionChanged: () => {
+				// Re-render teams popup UI
 				this.renderTeamsPopup();
+				// Refresh the member dropdown to reflect new team selection
+				const appliedAlias =
+					this.controls?.refreshMemberSelect?.(
+						this.state.selectedAlias
+					) ?? this.state.selectedAlias;
+				// If the selected alias changed as a result of filtering, update state and re-render
+				if (appliedAlias !== prevAlias) {
+					this.state.selectedAlias = appliedAlias;
+				}
+				// Update the main view
 				this.updateView();
 			},
-			getAllowedTeamSlugsForSelectedUser: () =>
-				this.teamSelection.getAllowedTeamSlugsForSelectedUser(
-					this.state.selectedAlias
-				),
+			// IMPORTANT: Do NOT restrict the teams list by selected user anymore.
+			// Returning null signals "no restriction" to the popup implementation.
+			getAllowedTeamSlugsForSelectedUser: () => null,
 		};
 
 		renderTeamsPopupContent(ctx);
