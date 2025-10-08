@@ -46,6 +46,12 @@ export interface TaskIndexService {
 		filePath: string;
 		lineNumber: number;
 	}): TaskNode | undefined;
+
+	/**
+	 * Resolve a TaskNode by a block reference string in the form "<filePath>#^<blockId>".
+	 * If <filePath> is omitted ("#^<blockId>"), implementors MAY scan all files to resolve a unique match.
+	 */
+	getTaskByBlockRef(blockRef: string): TaskNode | undefined;
 }
 
 export interface TaskIndexServiceDeps {
@@ -164,6 +170,37 @@ export function createTaskIndexService(
 		return v.length ? v.toLowerCase() : "";
 	};
 
+	// Helper: find first node with blockId in a file snap
+	const findByBlockIdInFile = (
+		fileSnap: FileTaskSnapshot,
+		blockId: string
+	): TaskNode | undefined => {
+		const walk = (nodes: TaskNode[]): TaskNode | undefined => {
+			for (const n of nodes) {
+				if (n.blockId && n.blockId === blockId) return n;
+				if (n.children?.length) {
+					const inChild = walk(n.children as TaskNode[]);
+					if (inChild) return inChild;
+				}
+			}
+			return undefined;
+		};
+		return walk(fileSnap.lists);
+	};
+
+	// Helper: parse "<path>#^blockId" or "#^blockId"
+	const parseBlockRef = (
+		ref: string
+	): { path?: string; blockId?: string } => {
+		const trimmed = (ref ?? "").trim();
+		if (!trimmed) return {};
+		const hashIdx = trimmed.indexOf("#^");
+		if (hashIdx === -1) return {};
+		const path = hashIdx > 0 ? trimmed.slice(0, hashIdx) : undefined;
+		const blockId = trimmed.slice(hashIdx + 2);
+		return { path, blockId: blockId || undefined };
+	};
+
 	return {
 		/**
 		 * Full rebuild that atomically replaces the existing index.
@@ -248,6 +285,29 @@ export function createTaskIndexService(
 			const { filePath, lineNumber } = cursor;
 			if (!filePath || typeof lineNumber !== "number") return undefined;
 			return repo.getNodeAtLine(filePath, lineNumber);
+		},
+
+		getTaskByBlockRef(blockRef: string) {
+			try {
+				const { path, blockId } = parseBlockRef(blockRef);
+				if (!blockId) return undefined;
+
+				if (path) {
+					const snap = repo.getByFile(path);
+					if (!snap) return undefined;
+					return findByBlockIdInFile(snap, blockId);
+				}
+
+				// Fallback: scan all tasks to locate a unique matching blockId
+				// (best effort; if multiple, returns first found)
+				const all = repo.getAllTasks();
+				for (const n of all) {
+					if (n.blockId === blockId) return n;
+				}
+				return undefined;
+			} catch {
+				return undefined;
+			}
 		},
 	};
 }
