@@ -28,10 +28,10 @@ export type ParamsSchemaTitles = {
 	edit?: string;
 };
 
+// Dropdown options: simplified (index signature removed)
 export type ParamsSchemaOptions = Array<{
 	label: string;
 	value: string;
-	[key: string]: unknown;
 }>;
 
 export type ParamsSchemaField = {
@@ -68,6 +68,9 @@ export interface TemplateDefinition<TParams = unknown> {
 	rules?: Rule; // typed rules instead of unknown Record
 	// New: each template can declare its orderTag at the definition level
 	orderTag?: string;
+	// Optional insertion workflows (run before insertion)
+	// Each string references a workflow or composed workflow registered in template-workflows.ts
+	insertWorkflows?: string[];
 	render?: (params?: TParams) => string;
 	parseParamsFromDom?: (
 		el: HTMLElement

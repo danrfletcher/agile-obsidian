@@ -6,7 +6,8 @@ import {
 	extractParamsFromWrapperEl,
 	attrVar,
 } from "./template-parameter-helpers";
-import { artifactOptions, currencyDropdownOptions } from "../app/constants";
+import { currencyDropdownOptions } from "../app/constants";
+import type { AgileArtifactType } from "@features/task-filter";
 
 // Derive from JSON
 const colors = tokensData.colors as Record<string, string>;
@@ -1219,6 +1220,8 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 		id: "workflows.metadata.linkToArtifact",
 		label: "Workflow - Link to Artifact",
 		hasParams: true,
+		// Run inference workflow during insertion
+		insertWorkflows: ["resolveArtifactTypeFromBlockRef"],
 		paramsSchema: {
 			title: "Link Artifact",
 			titles: {
@@ -1233,33 +1236,41 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 					type: "blockSelect",
 					placeholder: "Start typing...",
 				},
-				{
-					name: "artifactType",
-					label: "Artifact Type",
-					type: "dropdown",
-					required: true,
-					placeholder: "Select artifact type…",
-					defaultValue: null,
-					options: artifactOptions,
-				},
 			],
 		},
 		rules: { allowedOn: ["task"] },
-		render(params: { blockRef: string; artifactType: string }) {
-			const blockRef = params.blockRef.trim();
-			const selected = artifactOptions.find(
-				(o) => o.value === params.artifactType
-			);
-			// Given required field + controlled options, selected should always exist.
-			// If not, fail loudly to surface configuration mismatch.
-			if (!selected) {
-				throw new Error(
-					`Unknown artifactType value: ${params.artifactType}`
-				);
-			}
+		render(params: {
+			blockRef: string;
+			linkedArtifactType?: AgileArtifactType;
+		}) {
+			const blockRef = params.blockRef?.trim?.() ?? "";
+			const type = params.linkedArtifactType;
 
-			const emoji = selected.value;
-			const linkedArtifactType = selected.text;
+			const emojiForType = (t?: AgileArtifactType | null): string => {
+				switch (t) {
+					case "initiative":
+						return emojis.initiative;
+					case "learning-initiative":
+						return emojis.learningGrad;
+					case "epic":
+						return emojis.epic;
+					case "learning-epic":
+						return emojis.learningBook;
+					case "story":
+						return emojis.story;
+					case "okr":
+						return emojis.okr;
+					case "recurring-responsibility":
+						return emojis.kpi;
+					case "task":
+						return ""; // keep plain link icon for generic task
+					default:
+						return "";
+				}
+			};
+
+			const artifactEmoji = emojiForType(type);
+			const linkText = artifactEmoji ? `🔗${artifactEmoji}` : `🔗`;
 
 			const inner = chip({
 				id: "wf-link-to-artifact",
@@ -1267,14 +1278,15 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 					"href",
 					"blockRef",
 					blockRef
-				)}>🔗${emoji}</a></strong>`,
+				)}>${linkText}</a></strong>`,
 				bg: colors.black,
 				color: colors.textGrey,
 			});
 
 			return wrapTemplate("workflows.metadata.linkToArtifact", inner, {
 				orderTag: this.orderTag,
-				linkedArtifactType,
+				// Emit only if present (wrapTemplate skips null/undefined)
+				linkedArtifactType: type ?? undefined,
 			});
 		},
 	},

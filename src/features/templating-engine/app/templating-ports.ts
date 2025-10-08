@@ -9,4 +9,11 @@ export interface TaskIndexPort {
 		filePath: string;
 		lineNumber: number; // 0-based
 	}): TaskItem | undefined;
+
+	/**
+	 * Resolve a TaskItem by a vault block reference string in the form:
+	 *   "<filePath>#^<blockId>"
+	 * Implementations may optionally support resolving "#^<blockId>" by scanning all files.
+	 */
+	getTaskByBlockRef(blockRef: string): TaskItem | undefined;
 }
