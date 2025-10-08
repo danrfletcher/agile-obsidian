@@ -5,6 +5,7 @@ import { activeForMember, getAgileArtifactType } from "@features/task-filter";
 import { buildPrunedMergedTrees } from "@features/task-tree-builder";
 import { isShownByParams } from "../utils/filters";
 import { attachSectionFolding } from "@features/task-tree-fold";
+import { inferTeamSlugFromPath } from "@features/org-structure";
 
 type RegisterDomEvent = (
 	el: HTMLElement | Window | Document,
@@ -14,8 +15,14 @@ type RegisterDomEvent = (
 ) => void;
 
 /**
-Process and render Objectives (OKRs) and their linked item trees.
-Folding behavior:
+Process and render Objectives (OKRs) and their linked item trees with a per-team limit.
+
+Key behavior:
+- Limit to at most one OKR per team among the OKRs assigned to the selected user.
+- Selection policy: choose the first OKR encountered per team in the existing order
+  (correlates to the first objective listed in the note that is not completed/cancelled).
+
+Folding behavior (unchanged):
 - Render objectives (OKRs) without their native children, and enable fold/unfold on the OKR itself.
 - In the "Linked Items" section, only add fold toggles on bottom-level items currently displayed.
 */
@@ -41,17 +48,25 @@ export function processAndRenderObjectives(
 			activeForMember(task, status, selectedAlias)
 	);
 
-	// For each assigned OKR, collect linked items based on structured template attributes:
-	// Discovery pool: search across ALL currentTasks (unfiltered) to avoid missing links due to visibility filters.
-	// Visibility: after discovering links, filter by isShownByParams before rendering.
-	type OKREntry = { okr: TaskItem; linkedTrees: TaskItem[] };
-	const entries: OKREntry[] = assignedOKRs.map((okr) => {
+	// Build entries with inferred team slugs and linked item trees
+	type OKREntry = {
+		okr: TaskItem;
+		linkedTrees: TaskItem[];
+		teamSlug: string | null;
+		origIndex: number;
+	};
+
+	const entries: OKREntry[] = assignedOKRs.map((okr, idx) => {
 		const rawBlockId = (okr as any)?.blockId
 			? String((okr as any).blockId)
 			: "";
 		const blockId = rawBlockId.startsWith("^")
 			? rawBlockId.slice(1)
 			: rawBlockId;
+
+		// Resolve team slug for the OKR based on its file path by scanning path segments
+		const filePath = okr.link?.path || (okr._uniqueId?.split(":")[0] ?? "");
+		const teamSlug = inferTeamSlugFromPath(filePath);
 
 		let linkedTrees: TaskItem[] = [];
 
@@ -88,49 +103,34 @@ export function processAndRenderObjectives(
 					node.children?.forEach((child) => updateStatusDFS(child));
 				};
 				linkedTrees.forEach((tree) => updateStatusDFS(tree));
-
-				// Sort trees: any with active leaves come first, then with inactive leaves, then others
-				const getTreeLeaves = (
-					node: TaskItem,
-					leaves: TaskItem[] = []
-				): TaskItem[] => {
-					if (!node.children || node.children.length === 0) {
-						leaves.push(node);
-					} else {
-						node.children.forEach((child) =>
-							getTreeLeaves(child, leaves)
-						);
-					}
-					return leaves;
-				};
-
-				const getTreePriority = (tree: TaskItem): number => {
-					const leaves = getTreeLeaves(tree);
-					const hasActive = leaves.some((leaf) =>
-						activeForMember(leaf, true)
-					);
-					if (hasActive) return 1;
-					const hasInactive = leaves.some((leaf) =>
-						activeForMember(leaf, false)
-					);
-					if (hasInactive) return 2;
-					return 3;
-				};
-
-				linkedTrees.sort(
-					(a, b) => getTreePriority(a) - getTreePriority(b)
-				);
 			}
 		}
 
-		return { okr, linkedTrees };
+		return {
+			okr,
+			linkedTrees,
+			teamSlug,
+			origIndex: idx,
+		};
 	});
 
-	// Render only if we're in "Active" mode and there is at least one assigned OKR
-	if (entries.length > 0 && status) {
+	// First-encountered per team: keep the first OKR we see for each teamSlug (including one for "no team").
+	const keyFor = (slug: string | null) => slug || "__no_team__";
+	const seenTeams = new Set<string>();
+	const entriesToRender: OKREntry[] = [];
+	for (const e of entries) {
+		const k = keyFor(e.teamSlug);
+		if (!seenTeams.has(k)) {
+			seenTeams.add(k);
+			entriesToRender.push(e);
+		}
+	}
+
+	// Render only if we're in "Active" mode and there is at least one selected OKR
+	if (entriesToRender.length > 0 && status) {
 		container.createEl("h2", { text: "🎯 Objectives" });
 
-		entries.forEach(({ okr, linkedTrees }) => {
+		entriesToRender.forEach(({ okr, linkedTrees }) => {
 			// Render the OKR itself without its native children
 			const okrShallow: TaskItem = { ...okr, children: [] };
 			renderTaskTree(
@@ -241,7 +241,8 @@ function extractOkrBlockRefsFromText(raw: string): string[] {
 					const m = attr.name.match(/^data-tpl-attr-var-(.+)$/);
 					if (m && attr.value === "blockRef") {
 						const targetAttrName = m[1];
-						const blockRefVal = el.getAttribute(targetAttrName) || "";
+						const blockRefVal =
+							el.getAttribute(targetAttrName) || "";
 						if (blockRefVal) results.add(blockRefVal);
 					}
 				}

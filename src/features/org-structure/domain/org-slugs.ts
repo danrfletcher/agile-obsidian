@@ -211,3 +211,28 @@ export function isChildSlugOf(parentSlug: string, childSlug: string): boolean {
 	if (cBase === pBase) return false;
 	return true;
 }
+
+/**
+ * Infer a team slug from a file path by scanning its folder segments
+ * for the canonical "<Name> (<slug>)" pattern with a valid trailing code.
+ * Picks the deepest matching segment.
+ */
+export function inferTeamSlugFromPath(
+	filePath: string | null | undefined
+): string | null {
+	try {
+		if (!filePath) return null;
+		const segs = String(filePath).split("/").filter(Boolean);
+		for (let i = segs.length - 1; i >= 0; i--) {
+			const name = segs[i];
+			// Ensure this segment conforms to "<Name> (<slug-with-code>)"
+			if (isTeamFolderName(name)) {
+				const parsed = parseTeamFolderName(name);
+				if (parsed?.slug) return parsed.slug;
+			}
+		}
+		return null;
+	} catch {
+		return null;
+	}
+}
