@@ -41,27 +41,38 @@ export function processAndRenderObjectives(
 			activeForMember(task, status, selectedAlias)
 	);
 
-	// For each assigned OKR, attempt to collect linked items (if blockId present).
-	// If none found or no blockId, show the OKR alone and hide the Linked Items sub-section.
+	// For each assigned OKR, collect linked items based on structured template attributes:
+	// Discovery pool: search across ALL currentTasks (unfiltered) to avoid missing links due to visibility filters.
+	// Visibility: after discovering links, filter by isShownByParams before rendering.
 	type OKREntry = { okr: TaskItem; linkedTrees: TaskItem[] };
 	const entries: OKREntry[] = assignedOKRs.map((okr) => {
-		const code = okr.blockId;
+		const rawBlockId = (okr as any)?.blockId
+			? String((okr as any).blockId)
+			: "";
+		const blockId = rawBlockId.startsWith("^")
+			? rawBlockId.slice(1)
+			: rawBlockId;
+
 		let linkedTrees: TaskItem[] = [];
 
-		if (code && /^[A-Za-z0-9]{6}$/.test(code)) {
-			// Look for visible, in-scope linked items with the 🔗🎯 link text pointing to ^blockId
-			const linkedPattern = new RegExp(`${code}">🔗🎯`);
-			const rawLinked = sectionTasks.filter((t) =>
-				linkedPattern.test(t.text)
+		if (blockId) {
+			// 1) Discover any items that link to this OKR block, regardless of status filters
+			const discovered = currentTasks.filter((t) =>
+				hasOkrBlockRefLink(t, blockId)
 			);
 
-			if (rawLinked.length > 0) {
-				// Build pruned/merged trees
-				linkedTrees = buildPrunedMergedTrees(rawLinked, taskMap);
+			// 2) Respect visibility toggles for what we actually show
+			const visibleLinked = discovered.filter((task) =>
+				isShownByParams(task, taskMap, selectedAlias, taskParams)
+			);
+
+			if (visibleLinked.length > 0) {
+				// Build pruned/merged trees from linked roots
+				linkedTrees = buildPrunedMergedTrees(visibleLinked, taskMap);
 
 				// Mark directly-linked items' leaves as "p" status to visually distinguish
 				const linkedIds = new Set(
-					rawLinked.map((t) => t._uniqueId ?? "")
+					visibleLinked.map((t) => t._uniqueId ?? "")
 				);
 
 				const updateStatusDFS = (node: TaskItem) => {
@@ -182,5 +193,63 @@ export function processAndRenderObjectives(
 				}
 			}
 		});
+	}
+}
+
+/**
+ * Return true if the task text contains a templated OKR link whose blockRef attribute
+ * references the given OKR blockId (i.e., the attribute value contains "#^<blockId>").
+ *
+ * Detection logic:
+ * - Find span[data-linked-artifact-type="okr"]
+ * - Within, find any element E where an attribute named data-tpl-attr-var-<attrName> has value "blockRef"
+ * - Read E.getAttribute(<attrName>) to get the full blockRef (e.g., "OKRs (okrs-xyz)#^abcdef")
+ * - Match when the value includes "#^<blockId>"
+ */
+function hasOkrBlockRefLink(task: TaskItem, blockId: string): boolean {
+	const raw =
+		(task.visual && task.visual.trim()) ||
+		(task.text && task.text.trim()) ||
+		"";
+	if (!raw || !blockId) return false;
+	const bid = blockId.startsWith("^") ? blockId.slice(1) : blockId;
+	const refs = extractOkrBlockRefsFromText(raw);
+	const needle = `#^${bid}`;
+	return refs.some((r) => typeof r === "string" && r.includes(needle));
+}
+
+/**
+ * Extract all OKR blockRef attribute values from the task's raw text/HTML.
+ * This parses the raw string as HTML and returns values of the attributes indicated
+ * by data-tpl-attr-var-<attribute>="blockRef" under a wrapper span with
+ * data-linked-artifact-type="okr".
+ */
+function extractOkrBlockRefsFromText(raw: string): string[] {
+	try {
+		const container = document.createElement("div");
+		container.innerHTML = raw;
+
+		const results = new Set<string>();
+		const wrappers = container.querySelectorAll(
+			'span[data-linked-artifact-type="okr"]'
+		) as NodeListOf<HTMLElement>;
+
+		wrappers.forEach((span) => {
+			const els = span.querySelectorAll("*") as NodeListOf<HTMLElement>;
+			els.forEach((el) => {
+				for (const attr of Array.from(el.attributes)) {
+					const m = attr.name.match(/^data-tpl-attr-var-(.+)$/);
+					if (m && attr.value === "blockRef") {
+						const targetAttrName = m[1];
+						const blockRefVal = el.getAttribute(targetAttrName) || "";
+						if (blockRefVal) results.add(blockRefVal);
+					}
+				}
+			});
+		});
+
+		return Array.from(results);
+	} catch {
+		return [];
 	}
 }

@@ -28,6 +28,12 @@ export type ParamsSchemaTitles = {
 	edit?: string;
 };
 
+export type ParamsSchemaOptions = Array<{
+	label: string;
+	value: string;
+	[key: string]: unknown;
+}>;
+
 export type ParamsSchemaField = {
 	name: string;
 	label?: string;
@@ -41,7 +47,7 @@ export type ParamsSchemaField = {
 	 - Provide an array of options. "label" is the user-facing string, "value" is returned to the template.
 	 - If defaultValue is provided and matches an option's value, that option will be preselected.
 	*/
-	options?: Array<{ label: string; value: string }>;
+	options?: ParamsSchemaOptions;
 };
 
 // Params schema used to render input modals; fields are required for clarity downstream

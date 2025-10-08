@@ -6,6 +6,7 @@ import {
 	extractParamsFromWrapperEl,
 	attrVar,
 } from "./template-parameter-helpers";
+import { artifactOptions, currencyDropdownOptions } from "../app/constants";
 
 // Derive from JSON
 const colors = tokensData.colors as Record<string, string>;
@@ -482,22 +483,6 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 };
-
-// Reusable dropdown options for currency selectors
-export const currencyDropdownOptions: Array<{ label: string; value: string }> =
-	[
-		{ label: "USD $", value: "$" },
-		{ label: "EUR €", value: "€" },
-		{ label: "GBP £", value: "£" },
-		{ label: "AUD A$", value: "A$ " },
-		{ label: "CAD C$", value: "C$ " },
-		{ label: "JPY ¥", value: "JPY ¥" },
-		{ label: "INR ₹", value: "INR ₹" },
-		{ label: "CHF ₣", value: "CHF " },
-		{ label: "CNY ¥", value: "CNY ¥" },
-		{ label: "SEK kr", value: "SEK" },
-		{ label: "NZD NZ$", value: "NZ$ " },
-	];
 
 /**
  * CRM
@@ -1233,20 +1218,63 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 		orderTag: "metadata",
 		id: "workflows.metadata.linkToArtifact",
 		label: "Workflow - Link to Artifact",
+		hasParams: true,
+		paramsSchema: {
+			title: "Link Artifact",
+			titles: {
+				create: "Link Artifact",
+				edit: "Edit Linked Artifact",
+			},
+			fields: [
+				{
+					name: "blockRef",
+					label: "Linked Artifact",
+					required: true,
+					type: "blockSelect",
+					placeholder: "Start typing...",
+				},
+				{
+					name: "artifactType",
+					label: "Artifact Type",
+					type: "dropdown",
+					required: true,
+					placeholder: "Select artifact type…",
+					defaultValue: null,
+					options: artifactOptions,
+				},
+			],
+		},
 		rules: { allowedOn: ["task"] },
-		render(params?: { href?: string; text?: string }) {
-			const href = (
-				params?.href ?? "Artifact-block-link-with-no-square-brackets"
-			).trim();
-			const text = (params?.text ?? "🔗").trim();
+		render(params: { blockRef: string; artifactType: string }) {
+			const blockRef = params.blockRef.trim();
+			const selected = artifactOptions.find(
+				(o) => o.value === params.artifactType
+			);
+			// Given required field + controlled options, selected should always exist.
+			// If not, fail loudly to surface configuration mismatch.
+			if (!selected) {
+				throw new Error(
+					`Unknown artifactType value: ${params.artifactType}`
+				);
+			}
+
+			const emoji = selected.value;
+			const linkedArtifactType = selected.text;
+
 			const inner = chip({
 				id: "wf-link-to-artifact",
-				text: `<strong><a class="internal-link" href="${href}">${text}</a></strong>`,
+				text: `<strong><a class="internal-link" ${attrVar(
+					"href",
+					"blockRef",
+					blockRef
+				)}>🔗${emoji}</a></strong>`,
 				bg: colors.black,
 				color: colors.textGrey,
 			});
+
 			return wrapTemplate("workflows.metadata.linkToArtifact", inner, {
 				orderTag: this.orderTag,
+				linkedArtifactType,
 			});
 		},
 	},
