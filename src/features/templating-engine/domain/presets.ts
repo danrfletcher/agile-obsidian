@@ -1106,11 +1106,7 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		label: "NALAp - Adhoc",
 		rules: { allowedOn: ["list"] },
 		render() {
-			const inner = chip({
-				id: "nalap-adhoc",
-				text: `📂 <strong>Adhoc</strong>`,
-				bg: colors.kanoBasic,
-			});
+			const inner = `📂 <strong>Adhoc</strong>`;
 			return wrapTemplate("prio.nalap.adhoc", inner, {
 				orderTag: this.orderTag,
 			});
@@ -1121,11 +1117,7 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		label: "NALAp - Always",
 		rules: { allowedOn: ["list"] },
 		render() {
-			const inner = chip({
-				id: "nalap-always",
-				text: `📍 <strong>Always</strong>`,
-				bg: colors.kanoPerformant,
-			});
+			const inner = `📍 <strong>Always</strong>`;
 			return wrapTemplate("prio.nalap.always", inner, {
 				orderTag: this.orderTag,
 			});
@@ -1136,11 +1128,7 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		label: "NALAp - Done",
 		rules: { allowedOn: ["list"] },
 		render() {
-			const inner = chip({
-				id: "nalap-done",
-				text: `✅ <strong>Done</strong>`,
-				bg: colors.crmPaidFull,
-			});
+			const inner = `✅ <strong>Done</strong>`;
 			return wrapTemplate("prio.nalap.done", inner, {
 				orderTag: this.orderTag,
 			});
@@ -1151,11 +1139,7 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		label: "NALAp - Dropped",
 		rules: { allowedOn: ["list"] },
 		render() {
-			const inner = chip({
-				id: "nalap-dropped",
-				text: `❌ <strong>Dropped</strong>`,
-				bg: colors.moscowWont,
-			});
+			const inner = `❌ <strong>Dropped</strong>`;
 			return wrapTemplate("prio.nalap.dropped", inner, {
 				orderTag: this.orderTag,
 			});
@@ -1166,11 +1150,7 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		label: "NALAp - Later",
 		rules: { allowedOn: ["list"] },
 		render() {
-			const inner = chip({
-				id: "nalap-later",
-				text: `🛠️ <strong>Later</strong>`,
-				bg: colors.moscowShould,
-			});
+			const inner = `🛠️ <strong>Later</strong>`;
 			return wrapTemplate("prio.nalap.later", inner, {
 				orderTag: this.orderTag,
 			});
@@ -1181,11 +1161,7 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		label: "NALAp - Now",
 		rules: { allowedOn: ["list"] },
 		render() {
-			const inner = chip({
-				id: "nalap-now",
-				text: `🚀 <strong>Now</strong>`,
-				bg: colors.moscowMust,
-			});
+			const inner = `🚀 <strong>Now</strong>`;
 			return wrapTemplate("prio.nalap.now", inner, {
 				orderTag: this.orderTag,
 			});
