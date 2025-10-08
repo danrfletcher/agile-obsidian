@@ -13,10 +13,3 @@ export const currencyDropdownOptions: Array<{ label: string; value: string }> =
 		{ label: "SEK kr", value: "SEK" },
 		{ label: "NZD NZ$", value: "NZ$ " },
 	];
-
-export const artifactOptions: Array<{
-	label: string;
-	value: string;
-    text: string;
-}> = [{ label: "OKR 🎯", value: "🎯", text: "okr" }];
-
