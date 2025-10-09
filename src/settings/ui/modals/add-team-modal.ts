@@ -5,6 +5,13 @@
 import { App, Modal, Notice, TFolder } from "obsidian";
 import { buildTeamSlug } from "@features/org-structure";
 
+export type AddTeamModalOptions = Partial<{
+	presetName: string;
+	disableNameInput: boolean;
+	submitLabel: string;
+	seedWithSampleData: boolean; // passed through to onSubmit options
+}>;
+
 export class AddTeamModal extends Modal {
 	constructor(
 		app: App,
@@ -13,8 +20,10 @@ export class AddTeamModal extends Modal {
 			teamName: string,
 			parentPath: string,
 			teamSlug: string,
-			code: string
-		) => Promise<void> | void
+			code: string,
+			options?: { seedWithSampleData?: boolean }
+		) => Promise<void> | void,
+		private options?: AddTeamModalOptions
 	) {
 		super(app);
 	}
@@ -26,6 +35,11 @@ export class AddTeamModal extends Modal {
 	onOpen(): void {
 		const { contentEl } = this;
 		contentEl.empty();
+
+		const submitLabel = this.options?.submitLabel || "Add Team";
+		const presetName = (this.options?.presetName || "").trim();
+		const disableName = !!this.options?.disableNameInput;
+
 		contentEl.createEl("h3", { text: "Add Team" });
 
 		const nameWrapper = contentEl.createEl("div", {
@@ -39,6 +53,12 @@ export class AddTeamModal extends Modal {
 			type: "text",
 			attr: { placeholder: "e.g., Sample Team", style: "width: 100%;" },
 		}) as HTMLInputElement;
+		if (presetName) nameInput.value = presetName;
+		if (disableName) {
+			nameInput.readOnly = true;
+			nameInput.disabled = true;
+			nameInput.style.opacity = "0.7";
+		}
 
 		const folderWrapper = contentEl.createEl("div", {
 			attr: { style: "margin-bottom: 12px;" },
@@ -74,7 +94,8 @@ export class AddTeamModal extends Modal {
 		}).style.fontWeight = "600";
 		const aliasValue = aliasPreview.createEl("code", { text: "" });
 		const updateAlias = () => {
-			const teamName = nameInput.value.trim() || "sample";
+			const teamName =
+				(nameInput.value.trim() || "sample") + (disableName ? "" : "");
 			aliasValue.textContent = buildTeamSlug(teamName, code, null as any);
 		};
 		nameInput.addEventListener("input", updateAlias);
@@ -87,7 +108,7 @@ export class AddTeamModal extends Modal {
 		});
 		const cancelBtn = btns.createEl("button", { text: "Cancel" });
 		cancelBtn.addEventListener("click", () => this.close());
-		const addBtn = btns.createEl("button", { text: "Add Team" });
+		const addBtn = btns.createEl("button", { text: submitLabel });
 		addBtn.addEventListener("click", async () => {
 			const teamName = nameInput.value.trim();
 			const parentPath = selectEl.value;
@@ -96,7 +117,9 @@ export class AddTeamModal extends Modal {
 				return;
 			}
 			const slug = buildTeamSlug(teamName, code, null as any);
-			await this.onSubmit(teamName, parentPath, slug, code);
+			await this.onSubmit(teamName, parentPath, slug, code, {
+				seedWithSampleData: !!this.options?.seedWithSampleData,
+			});
 			this.close();
 		});
 	}

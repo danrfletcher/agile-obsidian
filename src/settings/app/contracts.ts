@@ -23,12 +23,14 @@ export interface SettingsOrgActions {
 	 * Create a team at a specific parent folder with a specific slug and code.
 	 * - teamSlug should include the 6-char code (e.g., "engineering-1ab2cd").
 	 * - code must be a 6-char string matching /^[0-9][a-z0-9]{5}$/i.
+	 * - options.seedWithSampleData: when true, seed blueprint file contents for the Sample Team; otherwise create empty files.
 	 */
 	createTeam: (
 		teamName: string,
 		parentPath: string,
 		teamSlug: string,
-		code: string
+		code: string,
+		options?: { seedWithSampleData?: boolean }
 	) => Promise<void>;
 
 	/**
