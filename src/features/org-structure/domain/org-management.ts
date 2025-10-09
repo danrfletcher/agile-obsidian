@@ -17,13 +17,23 @@ import {
 } from "@platform/obsidian";
 import { TeamInfo } from "./org-types";
 import { slugifyName, TEAM_CODE_RE } from "@shared/identity";
+import {
+	NEW_TEAM_BLUEPRINT,
+	type BlueprintNode,
+} from "../infra/seed-templates/new-team-blueprint";
 
+/**
+ * Create a team folder and seed its resources from the blueprint.
+ * If seedWithSampleData is true, markdown files created from the blueprint
+ * will include the provided sample content; otherwise they will be empty.
+ */
 export async function createTeamResources(
 	app: App,
 	teamName: string,
 	parentPath: string,
 	teamSlug: string,
-	resourcePathIdOverride?: string | null
+	resourcePathIdOverride?: string | null,
+	seedWithSampleData: boolean = false
 ): Promise<{ info: { name: string; slug: string; rootPath: string } }> {
 	const vault = app.vault;
 
@@ -45,48 +55,16 @@ export async function createTeamResources(
 	const teamRoot = normalizedParent
 		? `${normalizedParent}/${teamFolderName}`
 		: teamFolderName;
-	if (!(await vault.adapter.exists(teamRoot))) {
-		await vault.createFolder(teamRoot);
-	}
+	await ensureFolder(vault, teamRoot);
 
-	// Ensure Docs folder
-	const docs = `${teamRoot}/Docs`;
-	if (!(await vault.adapter.exists(docs))) {
-		await vault.createFolder(docs);
-	}
-
-	const initDirName = buildResourceFolderName(
-		"initiatives",
+	// Walk the blueprint and materialize it under teamRoot
+	await materializeBlueprint({
+		app,
+		targetRoot: teamRoot,
 		code,
-		effectivePathId
-	);
-	const initDir = `${teamRoot}/${initDirName}`;
-	if (!(await vault.adapter.exists(initDir))) {
-		await vault.createFolder(initDir);
-	}
-
-	// Create the three files in the Initiatives folder
-	const completedFile = `${initDir}/${buildResourceFileName(
-		"completed",
-		code,
-		effectivePathId
-	)}`;
-	const initiativesFile = `${initDir}/${buildResourceFileName(
-		"initiatives",
-		code,
-		effectivePathId
-	)}`;
-	const prioritiesFile = `${initDir}/${buildResourceFileName(
-		"priorities",
-		code,
-		effectivePathId
-	)}`;
-	if (!(await vault.adapter.exists(completedFile)))
-		await vault.create(completedFile, "");
-	if (!(await vault.adapter.exists(initiativesFile)))
-		await vault.create(initiativesFile, "");
-	if (!(await vault.adapter.exists(prioritiesFile)))
-		await vault.create(prioritiesFile, "");
+		pathId: effectivePathId ?? null,
+		seedWithSampleData,
+	});
 
 	return {
 		info: { name: teamName, slug: canonicalSlug, rootPath: teamRoot },
@@ -194,7 +172,8 @@ export async function createOrganizationFromTeam(opts: {
 				childName,
 				parentPathForChild,
 				childSlug,
-				pid
+				pid,
+				/* seedWithSampleData */ false
 			);
 
 			createdTeamSlugs.push(info.slug);
@@ -212,6 +191,7 @@ export async function createOrganizationFromTeam(opts: {
 /**
  * Add teams to an existing organization (without restructuring).
  * Creates Teams/<OrgName Suffix> (...) for each suffix, seeding Projects/Initiatives structure.
+ * This function preserves prior behavior for org child teams.
  */
 export async function addTeamsToExistingOrganization(
 	app: App,
@@ -252,8 +232,6 @@ export async function addTeamsToExistingOrganization(
 		// listing failed; proceed with empty set
 	}
 
-	// Using slugified team names for pathIds; no letter index allocation required.
-
 	for (let i = 0; i < suffixes.length; i++) {
 		const rawSuffix = (suffixes[i] ?? "").trim();
 		const displaySuffix = rawSuffix || `${i + 1}`;
@@ -275,13 +253,12 @@ export async function addTeamsToExistingOrganization(
 			await app.vault.createFolder(folder);
 		}
 
-		// Create Docs once (fix duplicate const bug)
+		// Maintain existing Projects/Initiatives structure for this org flow.
 		const docs = `${folder}/Docs`;
 		if (!(await app.vault.adapter.exists(docs))) {
 			await app.vault.createFolder(docs);
 		}
 
-		// Seed Projects/Initiatives
 		const projects = `${folder}/Projects`;
 		if (!(await app.vault.adapter.exists(projects))) {
 			await app.vault.createFolder(projects);
@@ -322,7 +299,7 @@ export async function addTeamsToExistingOrganization(
 /**
  * Create subteams under an existing team.
  * Produces Teams/<OrgName Suffix> (...) under the parent, without a pathId in the slug; resources also omit pathId.
- * This now mirrors the organization child creation flow and reuses createTeamResources.
+ * This mirrors the organization child creation flow and reuses createTeamResources.
  */
 export async function createSubteams(
 	app: App,
@@ -354,42 +331,7 @@ export async function createSubteams(
 	}
 
 	const teamsDir = `${parentTeam.rootPath}/Teams`;
-	if (!(await vault.adapter.exists(teamsDir))) {
-		await vault.createFolder(teamsDir);
-	}
-
-	// Determine next numeric suffix from existing subteams
-	const usedNums = new Set<number>();
-	try {
-		const list = await (vault.adapter as any).list(teamsDir);
-		const folders: string[] = Array.isArray(list?.folders)
-			? list.folders
-			: [];
-		for (const full of folders) {
-			const name = full.split("/").filter(Boolean).pop()!;
-			const p = parseTeamFolderName(name);
-			if (p) {
-				const base = slugifyName(p.name);
-				const pid = getPathIdFromSlug(p.slug, base);
-				if (pid) {
-					const parts = pid.split("-");
-					const last = parts[parts.length - 1];
-					const n = parseInt(last, 10);
-					if (Number.isFinite(n)) usedNums.add(n);
-				}
-			}
-		}
-	} catch {
-		// If list fails, we'll start from 1
-	}
-
-	let n = 1;
-	const nextNum = () => {
-		while (usedNums.has(n)) n++;
-		const val = n;
-		usedNums.add(n);
-		return val;
-	};
+	await ensureFolder(vault, teamsDir);
 
 	for (const suf of suffixes) {
 		const childName = `${orgName} ${suf}`;
@@ -410,7 +352,8 @@ export async function createSubteams(
 			childName,
 			parentPathForChild,
 			childSlug,
-			childPathId
+			childPathId,
+			/* seedWithSampleData */ false
 		);
 	}
 }
@@ -441,4 +384,102 @@ function inferPathIdFromTeamSlug(
 		return left.slice(nameSlug.length + 1) || null;
 	}
 	return null;
+}
+
+/**
+ * Materialize the blueprint under the team root.
+ * - "Docs" folder is created as-is (no slug in name).
+ * - "Initiatives" folder is renamed to include slug: "Initiatives (initiatives[-<pathId>]-<code>)".
+ * - Markdown files inside Initiatives are renamed to "<Stem> (<stem-slug>[-<pathId>]-<code>).md".
+ *   For "Completed", "Initiatives", and "Priorities", we use the existing builders to preserve exact casing rules.
+ *   For any additional files (e.g., "OKRs.md"), we generate "<stem-slug>" from the stem text.
+ * - For seedWithSampleData=false: blank file content; for true: use blueprint file content.
+ */
+async function materializeBlueprint(params: {
+	app: App;
+	targetRoot: string;
+	code: string;
+	pathId: string | null;
+	seedWithSampleData: boolean;
+}) {
+	const { app, targetRoot, code, pathId, seedWithSampleData } = params;
+	const vault = app.vault;
+
+	async function writeNode(
+		node: BlueprintNode,
+		currentTargetDir: string,
+		ancestorInitiatives: boolean
+	) {
+		if (node.type === "folder") {
+			let folderName = node.name;
+			let isInitiatives = false;
+
+			if (node.name.trim().toLowerCase() === "initiatives") {
+				// Rename Initiatives folder to include slug
+				folderName = buildResourceFolderName(
+					"initiatives",
+					code,
+					pathId
+				);
+				isInitiatives = true;
+			} else if (node.name.trim().toLowerCase() === "docs") {
+				// Keep Docs as plain
+				folderName = "Docs";
+			}
+
+			const newDir = joinPath(currentTargetDir, folderName);
+			await ensureFolder(vault, newDir);
+
+			for (const child of node.children ?? []) {
+				await writeNode(
+					child,
+					newDir,
+					isInitiatives || ancestorInitiatives
+				);
+			}
+		} else {
+			// File
+			const stem = node.name.replace(/\.md$/i, "");
+			let fileName = node.name;
+
+			if (ancestorInitiatives) {
+				// Inside Initiatives folder: rename to include slug
+				const stemSlug = stem.trim().toLowerCase();
+				if (
+					stemSlug === "completed" ||
+					stemSlug === "initiatives" ||
+					stemSlug === "priorities"
+				) {
+					fileName = buildResourceFileName(
+						stemSlug as "completed" | "initiatives" | "priorities",
+						code,
+						pathId
+					);
+				} else {
+					// Generic: "<Stem> (<slugified-stem>[-<pathId>]-<code>).md"
+					const genericSlug =
+						slugifyName(stem) +
+						(pathId ? `-${pathId}` : "") +
+						`-${code}`;
+					fileName = `${stem} (${genericSlug}).md`;
+				}
+			} else {
+				// Outside Initiatives: keep original name as-is
+				fileName = node.name;
+			}
+
+			const targetPath = joinPath(currentTargetDir, fileName);
+			if (!(await vault.adapter.exists(targetPath))) {
+				const content =
+					seedWithSampleData && typeof node.content === "string"
+						? node.content
+						: "";
+				await vault.create(targetPath, content);
+			}
+		}
+	}
+
+	for (const top of NEW_TEAM_BLUEPRINT) {
+		await writeNode(top, targetRoot, false);
+	}
 }

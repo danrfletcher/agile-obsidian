@@ -45,12 +45,14 @@ export function registerOrgStructureSettings(ports: {
 		saveSettings: async () => {
 			await saveSettings();
 		},
-		createTeam: async (teamName, parentPath, teamSlug, _code) => {
+		createTeam: async (teamName, parentPath, teamSlug, _code, options) => {
 			const res = await createTeamResources(
 				app,
 				teamName,
 				parentPath,
-				teamSlug
+				teamSlug,
+				/* resourcePathIdOverride */ null,
+				/* seedWithSampleData */ !!options?.seedWithSampleData
 			);
 			const info = res.info as {
 				name: string;
