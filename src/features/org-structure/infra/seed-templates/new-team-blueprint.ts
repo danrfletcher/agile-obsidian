@@ -3,70 +3,78 @@
  * This is used for both regular teams (empty content) and the Sample Team (pre-populated content).
  *
  * Rules applied by createTeamResources/materializeBlueprint:
- * - "Docs" folder is created as-is.
- * - "Initiatives" folder is renamed to include slug.
- * - Markdown files inside "Initiatives" are renamed to include slug, and a few known stems
- *   ("Completed", "Initiatives", "Priorities") use explicit naming helpers.
+ * - By default, all folders and files are renamed to include the slug.
+ * - You can disable slug renaming per node with `renameWithSlug: false`. This setting
+ *   is inherited by children unless they explicitly set their own flag.
+ * - "Initiatives" folder and its known files ("Completed", "Initiatives", "Priorities")
+ *   use explicit naming helpers to preserve exact casing and conventions.
+ *
+ * Content source:
+ * - We import sample markdown content from collocated files so it’s easy to edit.
+ * - Ensure your bundler (esbuild) has a loader configured for .md: loader: { ".md": "text" }.
  */
 
+import INITIATIVES_MD from "./content/new-team/Initiatives.md";
+import PRIORITIES_MD from "./content/new-team/Priorities.md";
+import COMPLETED_MD from "./content/new-team/Completed.md";
+import OKRS_MD from "./content/new-team/OKRs.md";
+
 export type BlueprintNode =
-	| { type: "folder"; name: string; children?: BlueprintNode[] }
-	| { type: "file"; name: string; content?: string };
+	| {
+			type: "folder";
+			name: string;
+			children?: BlueprintNode[];
+			/**
+			 * If true (default) this node (and, via inheritance, its children) are renamed to include the slug.
+			 * If false, no slug renaming is applied to this node; children inherit this setting unless overridden.
+			 */
+			renameWithSlug?: boolean;
+	  }
+	| {
+			type: "file";
+			name: string;
+			content?: string;
+			/**
+			 * If true (default) this file is renamed to include the slug; if false, keep the original name.
+			 */
+			renameWithSlug?: boolean;
+	  };
 
 export const NEW_TEAM_BLUEPRINT: BlueprintNode[] = [
 	{
 		type: "folder",
 		name: "Docs",
+		renameWithSlug: false, // Do not add slug to "Docs" (and its descendants)
 		children: [
-			// Add any docs that should exist for all teams by default.
-			// Example starter doc (optional):
-			// { type: "file", name: "README.md", content: "# Team Docs\n\nWelcome to your team Docs." }
+			// Optionally add docs for all teams:
+			// { type: "file", name: "README.md", content: README_MD },
 		],
 	},
 	{
 		type: "folder",
 		name: "Initiatives",
+		// renameWithSlug omitted -> defaults to true
 		children: [
 			{
 				type: "file",
 				name: "Initiatives.md",
-				content: `# Initiatives
-
-- [ ] Draft initial roadmap for the next quarter
-- [ ] Identify key stakeholders and align on priorities
-- [ ] Define success metrics
-
-> Tip: Use checkboxes to track progress on initiatives.
-`,
+				content: INITIATIVES_MD,
 			},
 			{
 				type: "file",
 				name: "Priorities.md",
-				content: `# Priorities
-
-1. Stabilize onboarding flow
-2. Improve dashboard load times
-3. Standardize coding guidelines
-
-> Reorder as needed to reflect current focus.
-`,
+				content: PRIORITIES_MD,
 			},
 			{
 				type: "file",
 				name: "Completed.md",
-				content: `# Completed
-
-- Initial team setup
-- Defined meeting cadence
-- Established communication channels
-`,
+				content: COMPLETED_MD,
 			},
-			// You can add more files here, e.g., OKRs.md — they will be auto-renamed with slugs:
-			// {
-			//   type: "file",
-			//   name: "OKRs.md",
-			//   content: "# OKRs\n\nObjective: Deliver high-quality releases faster.\n- Key Result 1: ...\n- Key Result 2: ...\n"
-			// },
+			{
+				type: "file",
+				name: "OKRs.md",
+				content: OKRS_MD,
+			},
 		],
 	},
 ];

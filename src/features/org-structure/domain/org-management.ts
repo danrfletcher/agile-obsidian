@@ -388,11 +388,16 @@ function inferPathIdFromTeamSlug(
 
 /**
  * Materialize the blueprint under the team root.
- * - "Docs" folder is created as-is (no slug in name).
- * - "Initiatives" folder is renamed to include slug: "Initiatives (initiatives[-<pathId>]-<code>)".
- * - Markdown files inside Initiatives are renamed to "<Stem> (<stem-slug>[-<pathId>]-<code>).md".
- *   For "Completed", "Initiatives", and "Priorities", we use the existing builders to preserve exact casing rules.
- *   For any additional files (e.g., "OKRs.md"), we generate "<stem-slug>" from the stem text.
+ * Default behavior:
+ * - All folders and files are renamed to include the slug:
+ *   - Folder: "<Name> (<slugified-name>[-<pathId>]-<code>)"
+ *   - File:   "<Stem> (<slugified-stem>[-<pathId>]-<code>).md"
+ * - Special cases:
+ *   - "Initiatives" folder name uses buildResourceFolderName("initiatives", code, pathId)
+ *   - Files named "Completed.md", "Initiatives.md", "Priorities.md" under "Initiatives"
+ *     use buildResourceFileName to retain exact naming rules.
+ * - You can disable slug renaming per node with renameWithSlug=false in the blueprint.
+ *   This setting is inherited by children unless they explicitly set their own flag.
  * - For seedWithSampleData=false: blank file content; for true: use blueprint file content.
  */
 async function materializeBlueprint(params: {
@@ -408,23 +413,39 @@ async function materializeBlueprint(params: {
 	async function writeNode(
 		node: BlueprintNode,
 		currentTargetDir: string,
-		ancestorInitiatives: boolean
+		ancestorInitiatives: boolean,
+		parentRenameEnabled: boolean
 	) {
-		if (node.type === "folder") {
-			let folderName = node.name;
-			let isInitiatives = false;
+		// Inherit rename flag down the tree; default to true
+		const selfRenameEnabled = (node as any).renameWithSlug ?? true;
+		const effectiveRename = parentRenameEnabled && selfRenameEnabled;
 
-			if (node.name.trim().toLowerCase() === "initiatives") {
-				// Rename Initiatives folder to include slug
-				folderName = buildResourceFolderName(
-					"initiatives",
-					code,
-					pathId
-				);
-				isInitiatives = true;
-			} else if (node.name.trim().toLowerCase() === "docs") {
-				// Keep Docs as plain
-				folderName = "Docs";
+		if (node.type === "folder") {
+			// Determine if this logical node is "Initiatives"
+			const isNodeInitiatives =
+				node.name.trim().toLowerCase() === "initiatives";
+
+			// Choose folder name
+			let folderName = node.name;
+
+			if (effectiveRename) {
+				if (isNodeInitiatives) {
+					// "Initiatives (initiatives[-<pathId>]-<code>)"
+					folderName = buildResourceFolderName(
+						"initiatives",
+						code,
+						pathId
+					);
+				} else {
+					// Generic: "<Name> (<slugified-name>[-<pathId>]-<code>)"
+					const baseSlug = slugifyName(node.name);
+					const folderSlug =
+						baseSlug + (pathId ? `-${pathId}` : "") + `-${code}`;
+					folderName = `${node.name} (${folderSlug})`;
+				}
+			} else {
+				// No rename; keep original name (e.g., "Docs")
+				folderName = node.name;
 			}
 
 			const newDir = joinPath(currentTargetDir, folderName);
@@ -434,7 +455,8 @@ async function materializeBlueprint(params: {
 				await writeNode(
 					child,
 					newDir,
-					isInitiatives || ancestorInitiatives
+					isNodeInitiatives || ancestorInitiatives,
+					effectiveRename
 				);
 			}
 		} else {
@@ -442,16 +464,18 @@ async function materializeBlueprint(params: {
 			const stem = node.name.replace(/\.md$/i, "");
 			let fileName = node.name;
 
-			if (ancestorInitiatives) {
-				// Inside Initiatives folder: rename to include slug
-				const stemSlug = stem.trim().toLowerCase();
-				if (
-					stemSlug === "completed" ||
-					stemSlug === "initiatives" ||
-					stemSlug === "priorities"
-				) {
+			if (effectiveRename) {
+				// If inside Initiatives, use specific builders for known stems
+				const stemSlugLower = stem.trim().toLowerCase();
+				const isKnownInitiativesStem =
+					ancestorInitiatives &&
+					(stemSlugLower === "completed" ||
+						stemSlugLower === "initiatives" ||
+						stemSlugLower === "priorities");
+
+				if (isKnownInitiativesStem) {
 					fileName = buildResourceFileName(
-						stemSlug as "completed" | "initiatives" | "priorities",
+						stemSlugLower as "completed" | "initiatives" | "priorities",
 						code,
 						pathId
 					);
@@ -464,7 +488,7 @@ async function materializeBlueprint(params: {
 					fileName = `${stem} (${genericSlug}).md`;
 				}
 			} else {
-				// Outside Initiatives: keep original name as-is
+				// No rename; keep original file name
 				fileName = node.name;
 			}
 
@@ -480,6 +504,6 @@ async function materializeBlueprint(params: {
 	}
 
 	for (const top of NEW_TEAM_BLUEPRINT) {
-		await writeNode(top, targetRoot, false);
+		await writeNode(top, targetRoot, false, true);
 	}
 }
