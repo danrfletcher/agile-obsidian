@@ -3,6 +3,20 @@ cssclasses:
   - full-width-edit
   - full-width-preview
 ---
+# Initiatives
+**Purpose**
+- Program-level view of initiatives that bundle multiple epics and stories.
+
+**Use in Plugin & PM System**
+- Powers the “🎖️ Initiatives” section in the Agile Dashboard.
+- Lets you open an initiative and reveal its direct epics without auto-expanding the entire tree.
+
+**How it Works**
+- The dashboard renders initiatives as roots with children hidden by default.
+- Folding controls allow progressive reveal of direct epics, and then deeper levels on demand.
+- Status and assignment are interactive at appropriate levels; completed/cancelled items can be hidden.
+___
+
 - [/] <span data-template-wrapper="tpl-da-init2" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">Predictive Analytics Operationalization &amp; Scale-Up</span></strong></mark></span> <span data-template-wrapper="tpl-px3" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="alex-rivera-58h2bf" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Alex Rivera</strong></mark></span> <span data-template-wrapper="tpl-0blri8ymgi5us0r" data-template-key="workflows.metadata.linkToArtifact" data-order-tag="metadata" data-linked-artifact-type="okr"><mark style="background: #000000; color: #878787;"><strong><a class="internal-link" href="OKRs (okrs-6yc6n9)#^69pe5iya" data-tpl-attr-var-href="blockRef">🔗🎯</a></strong></mark></span> 
 	- [/] <span data-template-wrapper="tpl-da-ep1" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Prod-Grade Feature Pipelines</span></strong></mark></span> 
 		- [x] Baseline audit for data leakage, target leakage, and feature drift across top 5 customer-behavior datasets ✅ 2025-10-05
@@ -29,8 +43,8 @@ cssclasses:
 		- [ ] Parallelize cross-validation and hyperparameter search; cap end-to-end training time to target SLA
 		- [ ] Implement distributed training setup for large-scale experiments; test with multi-GPU configuration 
 	- [ ] <span data-template-wrapper="tpl-metrics-epic" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Model Monitoring & MLOps Foundations</span></strong></mark></span> 
-		- [ ] Set up model monitoring pipeline for drift detection (data, concept, prediction) 
-		- [ ] Create automated retraining triggers based on performance thresholds 
+		- [ ] Set up model monitoring pipeline for drift detection (data, concept, prediction)
+		- [ ] Create automated retraining triggers based on performance thresholds
 		- [ ] Document MLOps playbook including CI/CD for models and compliance requirements
 - [/] <span data-template-wrapper="tpl-jr2" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">Real-time Data Platform Modernization</span></strong></mark></span> <span data-template-wrapper="tpl-jr3" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="jordan-patel-97c96r" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Jordan Patel</strong></mark></span> 
 	- [/] <span data-template-wrapper="tpl-jr5" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Source Integrations (CRM, Web, IoT)</span></strong></mark></span> 
@@ -43,19 +57,19 @@ cssclasses:
 		- [x] Provision streaming cluster + schema registry; create data contracts for 3 key topics ✅ 2025-10-04
 		- [ ] Implement structured streaming jobs for 3 real-time views (customers, sessions, device-events) with SLAs 
 		- [ ] Optimize storage tiering (hot/warm) and retention; document cost model
-		- [ ] Set up data lakehouse architecture with query federation across sources 
+		- [ ] Set up data lakehouse architecture with query federation across sources
 	- [/] <span data-template-wrapper="tpl-jr7" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Reliability, Observability & Uptime</span></strong></mark></span> 
 		- [ ] Define SLOs (latency, availability) to support 99.9% uptime; wire alerts to on-call 
 		- [ ] Add end-to-end synthetic tests and chaos drills (broker restart, partial outage) monthly
 		- [ ] Create incident runbook v1 and postmortem template; share in team drive 
 		- [ ] Implement comprehensive logging and tracing across the pipeline
 	- [/] <span data-template-wrapper="tpl-jr8" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Enablement & Adoption</span></strong></mark></span> 
-		- [ ] Deliver 2 cross-team training sessions; measure +25% adoption via dashboard usage metrics 
+		- [ ] Deliver 2 cross-team training sessions; measure +25% adoption via dashboard usage metrics
 		- [ ] Publish self-serve docs and quick-start notebooks; gather feedback from 10 stakeholders
 		- [ ] Create data catalog with business glossary and lineage visualization 
 		- [ ] Set up self-service query patterns and governance for ad-hoc analysis
 	- [ ] <span data-template-wrapper="tpl-security-epic" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Data Security & Compliance</span></strong></mark></span> 
-		- [ ] Implement RBAC and column-level encryption for sensitive PII fields 
+		- [ ] Implement RBAC and column-level encryption for sensitive PII fields
 		- [ ] Conduct privacy impact assessment and data classification
 		- [ ] Set up audit logging for data access and modifications 
 		- [ ] Create compliance reporting dashboard for regulatory requirements
@@ -159,12 +173,12 @@ cssclasses:
 		- [ ] Establish cost allocation and chargeback mechanisms
 - [ ] <span data-template-wrapper="tpl-innovation1" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">Data Innovation Lab</span></strong></mark></span> <span data-template-wrapper="tpl-innovation-assignee" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="taylor-kim-8sj62i" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Taylor Kim</strong></mark></span> 
 	- [ ] <span data-template-wrapper="tpl-emerging-tech" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Emerging Technology Exploration</span></strong></mark></span> 
-		- [ ] Research and prototype generative AI use cases 
+		- [ ] Research and prototype generative AI use cases
 		- [ ] Explore federated learning for privacy-preserving ML
-		- [ ] Investigate graph analytics for relationship discovery 
+		- [ ] Investigate graph analytics for relationship discovery
 		- [ ] Experiment with real-time ML inference patterns
 	- [ ] <span data-template-wrapper="tpl-innovation-projects" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Innovation Projects</span></strong></mark></span> 
-		- [ ] Launch 3 innovation hackathons per year 
+		- [ ] Launch 3 innovation hackathons per year
 		- [ ] Create innovation project incubation process
-		- [ ] Establish success metrics for innovation initiatives 
+		- [ ] Establish success metrics for innovation initiatives
 		- [ ] Create knowledge transfer from innovation to production

@@ -3,82 +3,98 @@ cssclasses:
   - full-width-edit
   - full-width-preview
 ---
+# Priorities
+
+**Purpose**
+- Focus list of time-relevant items that matter “now” (e.g., 🚀, 📦, ⚡, ⭐).
+- Surfaces operational work rather than planning artifacts.
+
+**Use in Plugin & PM System**
+- Feeds the “📂 Priorities” section of the Agile Dashboard.
+- Only includes items relevant today, excluding long-horizon structures (🎖️, 🏆, 📝).
+
+**How it Works**
+- The dashboard builds trees starting from top-level “O” tasks that are relevant today, not cancelled, not snoozed.
+- Children are pruned to show only items assigned to the selected member or inherited via parents.
+- Bottom-level items get fold toggles so you can expand into deeper subtasks when needed.
+___
+
 - [O] Data & AI Delivery <span data-template-wrapper="tpl-a1" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="jordan-patel-97c96r" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Jordan Patel</strong></mark></span> ^da-root
 	- <span data-template-wrapper="tpl-azej3ykmgi83en0" data-template-key="prio.nalap.now">🚀 <strong>Now</strong></span> 
 		- [/] <span data-template-wrapper="tpl-a3" data-template-key="agile.product" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>📦 <span data-tpl-var="title">Predictive Analytics Suite</span></strong></mark></span> ^da-prod1
-			- <span data-template-wrapper="tpl-a4" data-template-key="prio.kano.basic"><mark style="background: #CACFD9A6;"><strong>📦 Kano - Basic</strong></mark></span>
+			- <span data-template-wrapper="tpl-a10" data-template-key="prio.kano.performantHeader"><mark style="background: #FFF3A3A6;"><strong>⚡ Kano - Performant</strong></mark></span> 
+				- [ ] Integrate predictions into BI; used in ≥50% team reports
+				- [ ] Establish weekly model review; capture drift/perf/adoption
+				- [ ] Create model registry with versioning + metadata
 				- [ ] <span data-template-wrapper="tpl-a5" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">Predictive Analytics Operationalization &amp; Scale-Up</span></strong></mark></span> <span data-template-wrapper="tpl-a6" data-template-key="workflows.metadata.linkToArtifact" data-order-tag="metadata" data-linked-artifact-type="okr"><mark style="background: #000000; color: #878787;"><strong><a class="internal-link" href="OKRs (okrs-6yc6n9)#^69pe5iya" data-tpl-attr-var-href="blockRef">🔗🎯</a></strong></mark></span> 
+					- [s] <span data-template-wrapper="tpl-a7" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Prod-Grade Feature Pipelines</span></strong></mark></span> 
 					- [s] <span data-template-wrapper="tpl-a7" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Prod-Grade Feature Pipelines</span></strong></mark></span> 
 						- [x] Baseline audit for data leakage/drift across 5 datasets ✅ 2025-10-05
 						- [ ] SLA-backed feature jobs with caching + warm starts
-						- [ ] Data validation contracts + developer docs
+					- [s] <span data-template-wrapper="tpl-a8" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Model Promotion &amp; Governance</span></strong></mark></span> 
 					- [s] <span data-template-wrapper="tpl-a8" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Model Promotion &amp; Governance</span></strong></mark></span> 
 						- [ ] Champion to prod via canary + auto-rollback
 						- [ ] Fairness/bias checks; sign-offs recorded
-						- [ ] SHAP summaries embedded in BI 
-			- <span data-template-wrapper="tpl-a10" data-template-key="prio.kano.performantHeader"><mark style="background: #FFF3A3A6;"><strong>⚡ Kano - Performant</strong></mark></span> 
-				- [ ] Integrate predictions into BI; used in ≥50% team reports 
-				- [ ] Establish weekly model review; capture drift/perf/adoption
-				- [ ] Create model registry with versioning + metadata
+						- [ ] SHAP summaries embedded in BI
 			- <span data-template-wrapper="tpl-a12" data-template-key="prio.kano.delighter"><mark style="background: #00A86B;"><strong>💝 Kano - Delighter</strong></mark></span> 
 				- [ ] Auto-notifications when explanations show unstable features week-over-week
 		- [/] <span data-template-wrapper="tpl-a13" data-template-key="agile.product" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>📦 <span data-tpl-var="title">Real-time Data Platform</span></strong></mark></span> ^da-prod2
-			- <span data-template-wrapper="tpl-a14" data-template-key="prio.kano.basic"><mark style="background: #CACFD9A6;"><strong>📦 Kano - Basic</strong></mark></span>
-				- [ ] <span data-template-wrapper="tpl-a15" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">Self-Service &amp; SLA Expansion</span></strong></mark></span> 
-					- [s] <span data-template-wrapper="tpl-a16" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Producer Onboarding &amp; Templates</span></strong></mark></span> 
-						- [ ] Data product templates (schemas, contracts, SLOs)
-						- [ ] CDC + GA4 + IoT blueprints with docs
-						- [ ] PII policy enforcement + anonymization defaults
-					- [s] <span data-template-wrapper="tpl-a17" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Streaming Views with SLAs</span></strong></mark></span> 
-						- [x] Cluster + schema registry + data contracts ✅ 2025-10-04
-						- [ ] 3 SLO-backed views; hot/warm tiering
-						- [ ] Lakehouse federation with query caching
+			- [ ] <span data-template-wrapper="tpl-a15" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">Self-Service &amp; SLA Expansion</span></strong></mark></span> 
+				- [s] <span data-template-wrapper="tpl-a16" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Producer Onboarding &amp; Templates</span></strong></mark></span> 
+				- [s] <span data-template-wrapper="tpl-a16" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Producer Onboarding &amp; Templates</span></strong></mark></span> 
+					- [ ] Data product templates (schemas, contracts, SLOs)
+					- [ ] CDC + GA4 + IoT blueprints with docs
+				- [s] <span data-template-wrapper="tpl-a17" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Streaming Views with SLAs</span></strong></mark></span> 
+			- [s] <span data-template-wrapper="tpl-a17" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Streaming Views with SLAs</span></strong></mark></span> 
+				- [x] Cluster + schema registry + data contracts ✅ 2025-10-04
+				- [ ] 3 SLO-backed views; hot/warm tiering
+				- [ ] Lakehouse federation with query caching
 			- <span data-template-wrapper="tpl-a18" data-template-key="prio.kano.performantHeader"><mark style="background: #FFF3A3A6;"><strong>⚡ Kano - Performant</strong></mark></span>
 				- [ ] Reliability & Observability: 99.9% uptime; monthly chaos drills
 				- [ ] End-to-end tracing + structured logging
 			- <span data-template-wrapper="tpl-a19" data-template-key="prio.kano.delighter"><mark style="background: #00A86B;"><strong>💝 Kano - Delighter</strong></mark></span>
 				- [ ] Self-service governance: query patterns + guardrails
 		- [/] <span data-template-wrapper="tpl-a20" data-template-key="agile.product" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>📦 <span data-tpl-var="title">Market Insight Hub</span></strong></mark></span> ^da-prod3
-			- <span data-template-wrapper="tpl-a21" data-template-key="prio.kano.basic"><mark style="background: #CACFD9A6;"><strong>📦 Kano - Basic</strong></mark></span>
-				- [ ] <span data-template-wrapper="tpl-a22" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">Commercialization &amp; GTM</span></strong></mark></span> <span data-template-wrapper="tpl-a23" data-template-key="workflows.metadata.linkToArtifact" data-order-tag="metadata" data-linked-artifact-type="okr"><mark style="background: #000000; color: #878787;"><strong><a class="internal-link" href="Sample Team OKRs#^okr-taylor" data-tpl-attr-var-href="blockRef">🔗🎯</a></strong></mark></span> 
-					- [s] <span data-template-wrapper="tpl-a24" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Packaging &amp; Pricing</span></strong></mark></span> 
-						- [x] Secure 5 market trend datasets ✅ 2025-10-03
-						- [ ] Tiered offering (Free/Pro/Enterprise)
-						- [ ] 3 high-impact opportunities validated with customers
-					- [s] <span data-template-wrapper="tpl-a25" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Adoption &amp; Feedback Loops</span></strong></mark></span> 
-						- [ ] Quarterly Insights Report; +40% usage uptick
-						- [ ] Dashboard tiles + weekly email digest
-						- [ ] Impact scoring framework live <span data-template-wrapper="tpl-a26" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="jordan-patel-97c96r" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Jordan Patel</strong></mark></span> 
+			- [ ] <span data-template-wrapper="tpl-a22" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">Commercialization &amp; GTM</span></strong></mark></span> <span data-template-wrapper="tpl-a23" data-template-key="workflows.metadata.linkToArtifact" data-order-tag="metadata" data-linked-artifact-type="okr"><mark style="background: #000000; color: #878787;"><strong><a class="internal-link" href="Sample Team OKRs#^okr-taylor" data-tpl-attr-var-href="blockRef">🔗🎯</a></strong></mark></span> 
+				- [s] <span data-template-wrapper="tpl-a24" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Packaging &amp; Pricing</span></strong></mark></span> 
+				- [s] <span data-template-wrapper="tpl-a24" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Packaging &amp; Pricing</span></strong></mark></span> 
+					- [x] Secure 5 market trend datasets ✅ 2025-10-03
+					- [ ] Tiered offering (Free/Pro/Enterprise)
+				- [s] <span data-template-wrapper="tpl-a25" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Adoption &amp; Feedback Loops</span></strong></mark></span> 
+				- [s] <span data-template-wrapper="tpl-a25" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Adoption &amp; Feedback Loops</span></strong></mark></span> 
+					- [ ] Quarterly Insights Report; +40% usage uptick
+					- [ ] Impact scoring framework live <span data-template-wrapper="tpl-a26" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="inactive" data-member-slug="jordan-patel-97c96r" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #CACFD9A6; color: #000000;"><strong>👋 Jordan Patel</strong></mark></span> 
+					- [ ] Impact scoring framework live <span data-template-wrapper="tpl-a26sfse" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="inactive" data-member-slug="jordan-patel-97c96r" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #CACFD9A6; color: #000000;"><strong>👋 Jordan Patel</strong></mark></span> 
 	- <span data-template-wrapper="tpl-edwlt83mgi84oxr" data-template-key="prio.nalap.later">🛠️ <strong>Later</strong></span> 
-		- [ ] <span data-template-wrapper="tpl-a28" data-template-key="agile.product" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>📦 <span data-tpl-var="title">AI Experimentation Platform</span></strong></mark></span> ^da-prod4
-			- [ ] <span data-template-wrapper="tpl-a29" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">Experimentation Platform v2</span></strong>:</mark> <span data-tpl-var="details">AutoML &amp; Guardrails</span></span> 
-				- [ ] AutoML jobs with quota controls + approvals
-				- [ ] Governance: experiment policies, PII shielding, audit trail
-		- [ ] <span data-template-wrapper="tpl-a30" data-template-key="agile.product" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>📦 <span data-tpl-var="title">Data Innovation Lab</span></strong></mark></span> ^da-prod5
-			- [ ] <span data-template-wrapper="tpl-a31" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">Innovation-to-Production Pipeline</span></strong></mark></span> 
-				- [ ] Stage-gate from PoC Pilot GA
-				- [ ] Productization playbooks; sandbox to prod handoff
+		- [ ] <span data-template-wrapper="tpl-a29" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">Experimentation Platform v2</span></strong>:</mark> <span data-tpl-var="details">AutoML &amp; Guardrails</span></span> 
+		- [ ] <span data-template-wrapper="tpl-a29" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">Experimentation Platform v2</span></strong>:</mark> <span data-tpl-var="details">AutoML &amp; Guardrails</span></span> 
+			- [ ] AutoML jobs with quota controls + approvals
+			- [ ] Governance: experiment policies, PII shielding, audit trail
+		- [ ] <span data-template-wrapper="tpl-a31" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">Innovation-to-Production Pipeline</span></strong></mark></span> 
+		- [ ] <span data-template-wrapper="tpl-a31" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">Innovation-to-Production Pipeline</span></strong></mark></span> 
+			- [ ] Stage-gate from PoC Pilot GA
+			- [ ] Productization playbooks; sandbox to prod handoff
 
 - [O] Platform & MLOps <span data-template-wrapper="tpl-b1" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="alex-rivera-58h2bf" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Alex Rivera</strong></mark></span> ^plat-root
 	- <span data-template-wrapper="tpl-o49wqwgmgict7jw" data-template-key="prio.nalap.now">🚀 <strong>Now</strong></span> 
-		- [/] <span data-template-wrapper="tpl-b3" data-template-key="agile.product" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>📦 <span data-tpl-var="title">MLOps Platform</span></strong></mark></span> ^plat-prod1
-			- [ ] <span data-template-wrapper="tpl-b4" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Automated Model Lifecycle</span></strong></mark></span> 
-				- [ ] Experiment tracking + model registry
-				- [ ] CI/CD for deployment with canary & blue/green
-				- [ ] Performance monitoring & alerts
-		- [/] <span data-template-wrapper="tpl-b5" data-template-key="agile.product" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>📦 <span data-tpl-var="title">Training Efficiency</span></strong></mark></span> ^plat-prod2
-			- [s] <span data-template-wrapper="tpl-b6" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Training Efficiency Optimization</span></strong></mark></span> 
-				- [x] Profile bottlenecks ✅ 2025-10-06
-				- [/] <span data-template-wrapper="tpl-b7" data-template-key="agile.userStory" data-order-tag="artifact-item-type"><mark style="background: linear-gradient(to right, #00B7FF, #A890FE);"><strong>📝 <span data-tpl-var="title">Implement caching + mixed precision</span>:</strong></mark> <strong>As a</strong> <span data-tpl-var="persona">ML engineer</span>, <strong>I want to</strong> <span data-tpl-var="desire">cache intermediate datasets and enable AMP</span>, <strong>so that</strong> <span data-tpl-var="outcome">we cut training time by ≥30% without accuracy loss</span></span> <span data-template-wrapper="tpl-b8" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="jordan-patel-97c96r" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Jordan Patel</strong></mark></span> 
-					- [ ] Cacheable steps identified; versioned cache with invalidation
-					- [ ] AMP benchmarking vs FP32; accuracy parity validated
-					- [ ] Config toggles; E2E test shows ≥30% time reduction
-			- [ ] Distributed training (multi-GPU) baseline 
-		- [ ] <span data-template-wrapper="tpl-b10" data-template-key="agile.product" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>📦 <span data-tpl-var="title">Security &amp; Compliance</span></strong></mark></span> ^plat-prod3
-			- [ ] <span data-template-wrapper="tpl-b11" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Data Security &amp; Compliance</span></strong></mark></span> 
-				- [ ] RBAC + column encryption for PII
-				- [ ] Privacy impact assessment + classification
-				- [ ] Audit logs + compliance dashboards
+		- [ ] <span data-template-wrapper="tpl-b4" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Automated Model Lifecycle</span></strong></mark></span> 
+		- [ ] <span data-template-wrapper="tpl-b4" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Automated Model Lifecycle</span></strong></mark></span> 
+			- [ ] Experiment tracking + model registry
+			- [ ] CI/CD for deployment with canary & blue/green
+			- [ ] Performance monitoring & alerts
+		- [s] <span data-template-wrapper="tpl-b6" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Training Efficiency Optimization</span></strong></mark></span> 
+		- [s] <span data-template-wrapper="tpl-b6" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Training Efficiency Optimization</span></strong></mark></span> 
+			- [/] <span data-template-wrapper="tpl-b7" data-template-key="agile.userStory" data-order-tag="artifact-item-type"><mark style="background: linear-gradient(to right, #00B7FF, #A890FE);"><strong>📝 <span data-tpl-var="title">Implement caching + mixed precision</span>:</strong></mark> <strong>As a</strong> <span data-tpl-var="persona">ML engineer</span>, <strong>I want to</strong> <span data-tpl-var="desire">cache intermediate datasets and enable AMP</span>, <strong>so that</strong> <span data-tpl-var="outcome">we cut training time by ≥30% without accuracy loss</span></span> <span data-template-wrapper="tpl-b8" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="inactive" data-member-slug="jordan-patel-97c96r" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #CACFD9A6; color: #000000;"><strong>👋 Jordan Patel</strong></mark></span> 
+			- [/] <span data-template-wrapper="tpl-b7" data-template-key="agile.userStory" data-order-tag="artifact-item-type"><mark style="background: linear-gradient(to right, #00B7FF, #A890FE);"><strong>📝 <span data-tpl-var="title">Implement caching + mixed precision</span>:</strong></mark> <strong>As a</strong> <span data-tpl-var="persona">ML engineer</span>, <strong>I want to</strong> <span data-tpl-var="desire">cache intermediate datasets and enable AMP</span>, <strong>so that</strong> <span data-tpl-var="outcome">we cut training time by ≥30% without accuracy loss</span></span> <span data-template-wrapper="tpl-bdd8" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="inactive" data-member-slug="jordan-patel-97c96r" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #CACFD9A6; color: #000000;"><strong>👋 Jordan Patel</strong></mark></span> 
+				- [ ] Cacheable steps identified; versioned cache with invalidation
+				- [ ] AMP benchmarking vs FP32; accuracy parity validated
+				- [ ] Config toggles; E2E test shows ≥30% time reduction
+		- [ ] Distributed training (multi-GPU) baseline
+		- [ ] <span data-template-wrapper="tpl-b11" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Data Security &amp; Compliance</span></strong></mark></span> 
+		- [ ] <span data-template-wrapper="tpl-b11" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Data Security &amp; Compliance</span></strong></mark></span> 
+			- [ ] RBAC + column encryption for PII
+			- [ ] Privacy impact assessment + classification
+			- [ ] Audit logs + compliance dashboards
 	- <span data-template-wrapper="tpl-4twqrgmmgi851x1" data-template-key="prio.nalap.later">🛠️ <strong>Later</strong></span> 
 		- [ ] <span data-template-wrapper="tpl-b13" data-template-key="agile.product" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>📦 <span data-tpl-var="title">Cost Optimization Toolkit</span></strong></mark></span> ^plat-prod4
 			- [ ] Storage tiering & compression policies
@@ -88,9 +104,9 @@ cssclasses:
 - [O] BI, Enablement & Adoption <span data-template-wrapper="tpl-c1" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="taylor-kim-8sj62i" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Taylor Kim</strong></mark></span> ^bi-root
 	- <span data-template-wrapper="tpl-xgai7idmgi855sd" data-template-key="prio.nalap.now">🚀 <strong>Now</strong></span> 
 		- [/] <span data-template-wrapper="tpl-c3" data-template-key="agile.product" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>📦 <span data-tpl-var="title">Executive BI</span></strong></mark></span> ^bi-prod1
-			- <span data-template-wrapper="tpl-c4" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">BI Modernization</span></strong></mark></span>
-				- [ ] Migrate legacy reports; implement semantic layer <span data-template-wrapper="tpl-c5" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="alex-rivera-58h2bf" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Alex Rivera</strong></mark></span> 
-				- [ ] Self-serve analytics + governance standards
+			- [ ] Migrate legacy reports; implement semantic layer <span data-template-wrapper="tpl-c5" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="inactive" data-member-slug="alex-rivera-58h2bf" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #CACFD9A6; color: #000000;"><strong>👋 Alex Rivera</strong></mark></span> 
+			- [ ] Migrate legacy reports; implement semantic layer <span data-template-wrapper="tpl-c5ddf" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="inactive" data-member-slug="alex-rivera-58h2bf" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #CACFD9A6; color: #000000;"><strong>👋 Alex Rivera</strong></mark></span> 
+			- [ ] Self-serve analytics + governance standards
 		- [ ] <span data-template-wrapper="tpl-c6" data-template-key="agile.product" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>📦 <span data-tpl-var="title">Enablement &amp; Training</span></strong></mark></span> ^bi-prod2
 			- [ ] 2 cross-team sessions; +25% adoption lift
 			- [ ] Self-serve docs + quick-start notebooks; 10 stakeholder feedbacks
@@ -101,15 +117,15 @@ cssclasses:
 
 - [O] Governance & DataOps <span data-template-wrapper="tpl-d1" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="jordan-patel-97c96r" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Jordan Patel</strong></mark></span> ^gov-root
 	- <span data-template-wrapper="tpl-98r351wmgi85ewg" data-template-key="prio.nalap.now">🚀 <strong>Now</strong></span> 
-		- [/] <span data-template-wrapper="tpl-d3" data-template-key="agile.product" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>📦 <span data-tpl-var="title">Cross-Team Data Governance</span></strong></mark></span> ^gov-prod1
-			- [ ] <span data-template-wrapper="tpl-d4" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Framework</span></strong></mark></span> 
-				- [ ] Data classification policy + tagging standards <span data-template-wrapper="tpl-d5" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="taylor-kim-8sj62i" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Taylor Kim</strong></mark></span> 
-				- [ ] Ownership model + stewardship council
-			- [ ] <span data-template-wrapper="tpl-d6" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Tooling</span></strong></mark></span> 
-				- [ ] Data catalog + lineage tracking
-				- [ ] Self-service data access portal; compliance dashboards
+		- [ ] <span data-template-wrapper="tpl-d4" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Framework</span></strong></mark></span> 
+		- [ ] <span data-template-wrapper="tpl-d4" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Framework</span></strong></mark></span> 
+			- [ ] Data classification policy + tagging standards <span data-template-wrapper="tpl-d5" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="inactive" data-member-slug="taylor-kim-8sj62i" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #CACFD9A6; color: #000000;"><strong>👋 Taylor Kim</strong></mark></span> 
+			- [ ] Ownership model + stewardship council
+		- [ ] <span data-template-wrapper="tpl-d6" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Tooling</span></strong></mark></span> 
+			- [ ] Data catalog + lineage tracking
+			- [ ] Self-service data access portal; compliance dashboards
 		- [/] <span data-template-wrapper="tpl-d7" data-template-key="agile.product" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>📦 <span data-tpl-var="title">DataOps Transformation</span></strong></mark></span> ^gov-prod2
-			- [ ] CI/CD for pipelines; automated testing + rollbacks 
+			- [ ] CI/CD for pipelines; automated testing + rollbacks
 			- [ ] Data quality framework; monitoring + SLAs + remediation
 	- <span data-template-wrapper="tpl-dvdosrwmgi85kpp" data-template-key="prio.nalap.later">🛠️ <strong>Later</strong></span> 
 		- [ ] <span data-template-wrapper="tpl-d10" data-template-key="agile.product" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>📦 <span data-tpl-var="title">Knowledge Management</span></strong></mark></span> ^gov-prod3
@@ -179,34 +195,30 @@ cssclasses:
 				- Equipment Lease – GPU Nodes: -$48,600 remaining / 24m / 0% APR
 
 - [O] Scrum <span data-template-wrapper="tpl-f1" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="jordan-patel-97c96r" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Jordan Patel</strong></mark></span> ^scrum-root
-	- [/] <span data-template-wrapper="tpl-f2" data-template-key="agile.product" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>📦 <span data-tpl-var="title">Sprint Review</span></strong></mark></span> ^scrum-sr
-		- [/] <span data-template-wrapper="tpl-f3" data-template-key="agile.recurringRes" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🔁 <span data-tpl-var="title">Create Sprint Review Notes</span></strong></mark></span> 🗓️ Wednesdays <span data-template-wrapper="tpl-f4" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="everyone" data-member-type="special" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>🤝 Everyone</strong></mark></span> 
-		- [/] <span data-template-wrapper="tpl-f5" data-template-key="agile.recurringRes" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🔁 <span data-tpl-var="title">Sprint Review Meeting</span></strong></mark></span> 🗓️ Thursdays 17:00 UK, Zoom <span data-template-wrapper="tpl-f6" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="everyone" data-member-type="special" data-assign-type="assignee"><mark  style="background: #BBFABBA6; color: #000000;"><strong>🤝 Everyone</strong></mark></span> 
-			- [d] Sprint Goal Recap; Demos; Feedback <span data-template-wrapper="tpl-g2cugwfmgj81kfb" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="alex-rivera-58h2bf" data-member-type="teamMember" data-assign-type="assignee"><mark  style="background: #BBFABBA6; color: #000000;"><strong>👋 Alex Rivera</strong></mark></span>
 	- [/] <span data-template-wrapper="tpl-f7" data-template-key="agile.recurringRes" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🔁 <span data-tpl-var="title">Async Daily Scrum</span></strong></mark></span> 🗓️ Every weekday, Slack #ai-team <span data-template-wrapper="tpl-f8" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="taylor-kim-8sj62i" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Taylor Kim</strong></mark></span> ^scrum-daily
 		- [ ] Identify blockers from task dashboards; nudge owners
 
 - [O] Sales & Customer Success <span data-template-wrapper="tpl-g1" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="taylor-kim-8sj62i" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Taylor Kim</strong></mark></span> ^sales-root
-	- <span data-template-wrapper="tpl-vukiq3mmgi85qk9" data-template-key="prio.nalap.now">🚀 <strong>Now</strong></span> 
-		- [/] <span data-template-wrapper="tpl-g3" data-template-key="agile.product" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>📦 <span data-tpl-var="title">Insights Direct</span></strong></mark></span> 
-			- [/] <span data-template-wrapper="tpl-g4" data-template-key="agile.recurringRes" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🔁 <span data-tpl-var="title">Sell 6 Quarterly Insight Subscriptions / Quarter</span></strong></mark></span> <span data-template-wrapper="tpl-g5" data-template-key="workflows.metadata.linkToArtifact" data-order-tag="metadata" data-linked-artifact-type="okr"><mark style="background: #000000; color: #878787;"><strong><a class="internal-link" href="OKRs (okrs-6yc6n9)#^2kh3dqff" data-tpl-attr-var-href="blockRef">🔗🎯</a></strong></mark></span> 
-			- [/] <span data-template-wrapper="tpl-g6" data-template-key="agile.recurringRes" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🔁 <span data-tpl-var="title">Post 1 Data Insight Teaser / Week</span></strong></mark></span> ^sales-teasers
-	- <span data-template-wrapper="tpl-no2giv9mgi85utz" data-template-key="prio.nalap.later">🛠️ <strong>Later</strong></span> 
-		- [ ] <span data-template-wrapper="tpl-g8" data-template-key="agile.product" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>📦 <span data-tpl-var="title">Adoption Playbooks</span></strong></mark></span> 
-			- [ ] Sector-specific onboarding for Retail, SaaS, FinServ
-			- [ ] KPI templates aligned to executive BI dashboards
+	- [/] <span data-template-wrapper="tpl-g3" data-template-key="agile.product" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>📦 <span data-tpl-var="title">Insights Direct</span></strong></mark></span> 
+	- [/] <span data-template-wrapper="tpl-g3" data-template-key="agile.product" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>📦 <span data-tpl-var="title">Insights Direct</span></strong></mark></span> 
+		- [/] <span data-template-wrapper="tpl-g4" data-template-key="agile.recurringRes" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🔁 <span data-tpl-var="title">Sell 6 Quarterly Insight Subscriptions / Quarter</span></strong></mark></span> <span data-template-wrapper="tpl-g5" data-template-key="workflows.metadata.linkToArtifact" data-order-tag="metadata" data-linked-artifact-type="okr"><mark style="background: #000000; color: #878787;"><strong><a class="internal-link" href="OKRs (okrs-6yc6n9)#^2kh3dqff" data-tpl-attr-var-href="blockRef">🔗🎯</a></strong></mark></span> 
+		- [/] <span data-template-wrapper="tpl-g6" data-template-key="agile.recurringRes" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🔁 <span data-tpl-var="title">Post 1 Data Insight Teaser / Week</span></strong></mark></span> ^sales-teasers
+	- [ ] <span data-template-wrapper="tpl-g8" data-template-key="agile.product" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>📦 <span data-tpl-var="title">Adoption Playbooks</span></strong></mark></span> 
+	- [ ] <span data-template-wrapper="tpl-g8" data-template-key="agile.product" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>📦 <span data-tpl-var="title">Adoption Playbooks</span></strong></mark></span> 
+		- [ ] Sector-specific onboarding for Retail, SaaS, FinServ
+		- [ ] KPI templates aligned to executive BI dashboards
 
 - [O] Product Backlog (Cross-Cutting) ^pb-root
-	- <span data-template-wrapper="tpl-v9zjlq9mgi85ywx" data-template-key="prio.nalap.now">🚀 <strong>Now</strong></span> 
-		- [ ] <span data-template-wrapper="tpl-h3" data-template-key="agile.feature" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>⭐ <span data-tpl-var="title">Caching &amp; Mixed Precision Rollout</span></strong>:</mark> <span data-tpl-var="details">Apply to 3 representative models; demonstrate ≥30% training time reduction across board</span></span> 
-		- [ ] <span data-template-wrapper="tpl-h6" data-template-key="agile.feature" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>⭐ <span data-tpl-var="title">Drift Monitoring</span></strong>:</mark> <span data-tpl-var="details">Deploy data/concept drift for 2 production models; alert thresholds + auto-ticket creation</span></span> 
-		- [ ] <span data-template-wrapper="tpl-h7" data-template-key="agile.feature" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>⭐ <span data-tpl-var="title">Cost Telemetry</span></strong>:</mark> <span data-tpl-var="details">Dashboard for per-model train/serve spend with daily deltas</span></span> 
+	- [ ] <span data-template-wrapper="tpl-h3" data-template-key="agile.feature" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>⭐ <span data-tpl-var="title">Caching &amp; Mixed Precision Rollout</span></strong>:</mark> <span data-tpl-var="details">Apply to 3 representative models; demonstrate ≥30% training time reduction across board</span></span> 
+	- [ ] <span data-template-wrapper="tpl-h3" data-template-key="agile.feature" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>⭐ <span data-tpl-var="title">Caching &amp; Mixed Precision Rollout</span></strong>:</mark> <span data-tpl-var="details">Apply to 3 representative models; demonstrate ≥30% training time reduction across board</span></span> 
+	- [ ] <span data-template-wrapper="tpl-h6" data-template-key="agile.feature" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>⭐ <span data-tpl-var="title">Drift Monitoring</span></strong>:</mark> <span data-tpl-var="details">Deploy data/concept drift for 2 production models; alert thresholds + auto-ticket creation</span></span> 
+	- [ ] <span data-template-wrapper="tpl-h7" data-template-key="agile.feature" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>⭐ <span data-tpl-var="title">Cost Telemetry</span></strong>:</mark> <span data-tpl-var="details">Dashboard for per-model train/serve spend with daily deltas</span></span> 
 
 - [O] Knowledge & Community <span data-template-wrapper="tpl-i1" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="taylor-kim-8sj62i" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Taylor Kim</strong></mark></span> ^kn-root
-	- <span data-template-wrapper="tpl-rfzripbmgi864g0" data-template-key="prio.nalap.now">🚀 <strong>Now</strong></span> 
-		- [ ] <span data-template-wrapper="tpl-i3" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">Data Knowledge Management</span></strong></mark></span> 
-			- [ ] Data dictionary & glossary; publish v1 in wiki 
-			- [ ] Data literacy labs; measure skill uplift via pre/post survey
-	- <span data-template-wrapper="tpl-fv4txfkmgi86axc" data-template-key="prio.nalap.later">🛠️ <strong>Later</strong></span> 
-		- [ ] <span data-template-wrapper="tpl-i6" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">Community of Practice</span></strong></mark></span> 
-			- Monthly ML brown-bags; repo of reusable notebooks
+	- [ ] <span data-template-wrapper="tpl-i3" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">Data Knowledge Management</span></strong></mark></span> 
+	- [ ] <span data-template-wrapper="tpl-i3" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">Data Knowledge Management</span></strong></mark></span> 
+		- [ ] Data dictionary & glossary; publish v1 in wiki
+		- [ ] Data literacy labs; measure skill uplift via pre/post survey
+	- [ ] <span data-template-wrapper="tpl-i6" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">Community of Practice</span></strong></mark></span> 
+	- [ ] <span data-template-wrapper="tpl-i6" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">Community of Practice</span></strong></mark></span> 
+		- Monthly ML brown-bags; repo of reusable notebooks

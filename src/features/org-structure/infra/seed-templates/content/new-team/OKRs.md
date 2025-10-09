@@ -3,6 +3,22 @@ cssclasses:
   - full-width-edit
   - full-width-preview
 ---
+# OKRs
+
+**Purpose**
+- Central source of quarterly Objectives and measurable Key Results (OKRs).
+- The Agile Dashboard parses OKRs for each user and links them to work items across the vault.
+
+**Use in Plugin & PM System**
+- OKRs assigned via assignee chips & are shown in the Objectives section in the dashboard.
+- Per-team limiting: the dashboard shows at most one active OKR for each member in their dashboard.
+
+**How it Works**
+- Each OKR is a markdown task with a block ID (e.g., ^blockId) and templated links in other notes refer back to it.
+- The dashboard detects linked items through templating attributes (data-tpl-attr-var-...="blockRef").
+- Status changes (checkbox) and assignee changes are handled in-place with optimistic UI updates.
+___
+
 - [ ] <span data-template-wrapper="tpl-6vqzncfmggjcbto" data-template-key="agile.okr" data-order-tag="artifact-item-type"><mark style="background: linear-gradient(to left, #38ADAE, #CD395A);"><strong>🎯 <span data-tpl-var="title">Enhance Predictive Analytics Capabilities</span></strong></mark></span> <span data-template-wrapper="tpl-rpa8qkpmggjcncj" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="alex-rivera-58h2bf" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Alex Rivera</strong></mark></span> ^69pe5iya
 	- [E] Develop and deploy at least two new machine learning models for customer behavior analysis, achieving a predictive accuracy improvement of 20% over current benchmarks by quarter-end.
 	- [E] Reduce model training time by 30% through optimization techniques, enabling faster iterations and testing.
