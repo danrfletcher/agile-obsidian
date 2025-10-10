@@ -1,4 +1,4 @@
-import { TaskItem } from "@features/tasks";
+import { TaskItem } from "@features/task-index";
 
 /**
  * Recursively attaches filtered children to a task up to a specified depth.
