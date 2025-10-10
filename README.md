@@ -1,277 +1,335 @@
+[![Buy me a coffee logo](https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExdWlscGFteGJsejlxNmQ0dzNyZGg5YzVsNDB6bXN1Z2Ewd2FoNTBiYSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/McUSEJHHoZMUL99iW9/giphy.gif)](https://buymeacoffee.com/danrfletcher)
+
 # Agile Obsidian Documentation
 
-Version: 0.6.1  
-Description: Turns Obsidian into a powerful collaborative Agile productivity hub inspired by ClickUp, Jira, and Notion. Focuses on small startup teams with features like templating, task assignment, and an Agile Dashboard for inbox-zero workflows. Free, data-owned, and Markdown-native.
+**Version: 1.0.0**
 
-## Table of Contents
-- [Quick Start](#quick-start)
-- [Installation](#installation)
-- [Core Concepts](#core-concepts)
-- [User Guide](#user-guide)
-  - [Setting Up Your Organization](#setting-up-your-organization)
-  - [Creating and Managing Tasks](#creating-and-managing-tasks)
-  - [Using the Agile Dashboard](#using-the-agile-dashboard)
-  - [Task Assignment and Delegation](#task-assignment-and-delegation)
-  - [Templating Engine](#templating-engine)
-  - [Advanced Features](#advanced-features)
-- [Configuration and Settings](#configuration-and-settings)
-- [Integrations](#integrations)
-- [Troubleshooting](#troubleshooting)
-- [Roadmap and Limitations](#roadmap-and-limitations)
-- [Extending the Plugin](#extending-the-plugin)
-- [API Reference](#api-reference) [TBD: Developer-focused, post-core docs]
-- [Changelog](#changelog)
-- [Contributing](#contributing)
-- [Glossary](#glossary)
+### Overview
 
-## Quick Start
-Get up and running in under 5 minutes.
+Agile Obsidian is a plugin that transforms your Obsidian vault into a powerful, markdown-native Agile project management hub. It is designed for small, collaborative teams who want to own their data and manage projects, tasks, and goals directly within their notes. Inspired by tools like Jira, ClickUp, and Notion, it provides a structured yet flexible system for tracking work without leaving your knowledge base.
 
-1. Install the Plugin:
-   - Open Obsidian > Settings > Community Plugins > Browse.
-   - Search for “Agile Obsidian” and install/enable it.
-   - No prerequisites beyond Obsidian 1.0+ (recommended: 1.4+ for stability).
+#### Primary use cases
+-   Managing team projects with Agile artifacts like Initiatives, Epics, and Stories.
+-   Creating a personal or team-wide "inbox zero" workflow for assigned tasks.
+-   Tracking Objectives and Key Results (OKRs) and linking them to day-to-day work.
+-   Structuring and prioritizing backlogs using established frameworks (Kano, MoSCoW).
+-   Collaborating on tasks in real-time within a shared vault (requires Obsidian Relay).
 
-2. Initial Setup:
-   - Go to Settings > Agile Obsidian.
-   - Create your first team or organization (see Setting Up Your Organization).
-   - Add the “Sample Team” from settings to familiarize yourself with agile note layouts.
-   - Use the /assign command in a note to test task assignment.
+#### Architecture Summary
+- Host: Obsidian app
+    - Loads the plugin
+    - Emits file events when notes change (create, modify, delete)
+- Plugin entry (main.ts)
+    - Runs onload
+    - Initializes dependency injection (DI) container
+    - Registers settings tab, commands, views, and event listeners
+- DI container (services you can think of as singletons)
+    - Settings service: load/save plugin settings; expose org/team/member config
+    - Command service: register and handle user-triggered commands
+    - View service: register/open the Agile Dashboard view
+    - Template service: insert and edit structured “chips” (initiative, epic, OKR, etc.)
+    - Task indexer/parser: watch vault for changes; parse canonical task lines; keep an in‑memory index
+- Commands (user entry points)
+    - Open Agile Dashboard
+    - Insert Template (choose initiative/epic/story/OKR, etc.)
+    - Set Assignee (assign current task to a member or “everyone”)
+    - Set Delegate (optional reviewer/helper for a task)
+- Views
+    - Agile Dashboard view
+        - Subscribes to task index updates
+        - Filters by org/team/member
+        - Lets you mark done/in progress/cancelled, snooze, reassign
+- Data model (where things live)
+    - Tasks and artifacts: plain Markdown lines in your vault
+        - Canonical ordering of chips/metadata in a single line
+    - Settings: data.json under .obsidian/plugins/agile-obsidian/
+- Core flow (how updates propagate)
+    - You run a command or edit via the Dashboard → plugin writes a change to a Markdown file
+    - Obsidian fires a file event → task indexer re-parses affected files
+    - Index is updated → Dashboard refreshes to reflect the latest state
+- Boundaries/adapters
+    - Obsidian API: workspace, vault, file events, view registration
+    - Filesystem: read/write Markdown; no external network calls
+- Persistence and privacy
+    - All project/task data is in your notes
+    - Plugin settings are local to the vault
+    - No data leaves your machine
 
-3. First Workflow:
-   - Open your new team’s “Initiatives” note & create a new task (- [ ]).
-   - Type /initiative (or use the command palette) to insert an Agile template.
-   - Assign a task: Command Palette > /assign, select a member.
-   - Open the Agile Dashboard: Command Palette > “Open Agile Dashboard View”.
-   - Work toward inbox zero by completing or snoozing items.
 
-Tip:
-- For teams, install Obsidian Relay for live syncing. Test in a sample vault first.
+#### Key Capabilities Table
 
-## Installation
-- Via Obsidian: As above—no downloads needed.
-- Via BRAT: Install BRAT in Obsidian; click “Install Beta plugin”; paste the GitHub repo for Agile Obsidian; select version; install.
-- Vault Setup: No special folders required. The plugin auto-indexes & creates required team folders from settings.
-- Recommended Plugins:
-  - Obsidian Relay: For multiplayer editing (uses Y.js/CRDTs).
-  - Highlightr: For styled assignee chips and templates.
-  - Folder Notes: For folders with sub-pages
+| Feature | Primary Value | Entry Surface | Stability |
+| :--- | :--- | :--- | :--- |
+| Agile Dashboard | Centralized, "inbox zero" view of all your assigned tasks. | Command, Status Bar | Beta |
+| Advanced Templating Engine | Insert structured Agile artifacts and metadata with slash commands. Edit template parameters with modals & run complex template workflows. | Command | Beta |
+| Org & Team Mgmt | Organize work and permissions across multiple teams. | Settings | Beta |
+| Task Assignment | Assign tasks to team members with optional delegation. | Command, Agile Dashboard, UI Menu | Beta |
+| Canonical Formatting | Automatically keeps task metadata consistent and parseable. | Automatic (on task edit) | Beta |
 
-Warning:
-- Obsidian Sync/Git can work for versioning, but Relay is best for real-time collaboration.
-- Current limitations with Relay: edits made in the Agile Dashboard are not currently routed through Y.js transactions, so will result in merge conflicts in the differ. Workaround: keep the note & agile dashboard view open simultaneously when editing in from the view.
+#### Other Capabilities Table
 
-## Core Concepts
-Agile Obsidian builds on Obsidian’s Markdown lists (tasks as “- [ ] Task text”) with Agile layers.
+| Feature | Primary Value | Entry Surface | Stability |
+| :--- | :--- | :--- | :--- |
+| Inbox Zero Task Snooze | Inbox zero functionality; delay tasks (hide from dashboard) until a specified date | Agile Dashboard, task metadata | Beta |
+| Task Assignment Cascade | Tasks may be implicitly assigned e.g., epic under assigned initiative. Maintains consistency when assignments are changed. | Automatic (on assignment change) | Beta |
+| Task Close Cascade | Completed or cancels nested & deeply nested subtasks when the parent is cancelled | Automatic (on task close) | Beta |
+| Task Close Dates | Adds completed & cancelled data metadata on task close (complete or cancel) | Automatic (on task close) | Stable |
+| Agile Task Date Manager | Adds UI menu with date picker to manage start, scheduled, due & target dates | Command, Agile Dashboard, UI Menu | Experimental |
+| Task Metadata Cleanup | Automated metadata cleanup e.g., removing expired snooze dates from tasks | Automatic (on Obsidian start, Agile Dashboard open) | Beta |
+| Agile Task Statuses | Additional preset task statuses & custom task checkboxes [ ] → [/] → [x] → [-] | Automatic (click to advance status, long-click to cancel) | Stable |
+| Quick Insert Multiple Agile Artifacts | Press enter on a task line with an existing agile atifact e.g., Epic to insert another agile artifact e.g., Epic on the next line | Automatic (on enter click on task line with Agile artifact) | Stable
 
-- Tasks: Any list item (“- [ ]”) with metadata (e.g., dates, assignees). Supports hierarchies (subtasks, parent chains).
-- Agile Artifacts: Structured templates for Initiatives (projects), Epics (features), Stories (user needs), OKRs (goals), Priorities (backlog), Responsibilities (recurring duties).
-- Organization Structure: Teams, subteams, members (team members, internal delegates, external delegates). Supports multiple teams per user.
-- Inbox Zero Flow: Dashboard prioritizes: Objectives > Responsibilities > Tasks > Stories > Epics > Initiatives > Priorities. Snooze/complete to clear blockers.
-- Metadata Canonical Format: [status] {parent-link} {artifact-type} {task text} {state} {tags} {assignee → delegate} {metadata} {ordered date tokens} {block ID}. Auto-formatted.
-- Cascading Behaviors: Close/assign/snooze changes can propagate to subtasks by convention. Implicit assignments exist in notes but the dashboard renders based on explicit assignments.
-- Statuses: Unstarted “ ”, In Progress “/”, Done “x”, Cancelled “-”. Click to advance; long-press to cancel.
+### Quickstart
 
-## User Guide
+This guide will get you running with Agile Obsidian in under 5 minutes.
 
-### Setting Up Your Organization
-Manage teams via Settings > Agile Obsidian > Organizations.
+#### Prerequisites
+-   Obsidian v0.15.0 or newer. (Recommended: v1.4+ for best performance).
+-   Supported platforms: Desktop (Windows, macOS, Linux) and Mobile (iOS, Android).
 
-1. Add Team: “Add Team” > Name (e.g., “Engineering”).
-2. Add members: Create a task in one of the team’s notes, /assign > select “New Member” to add and assign.
-3. Subteams: Nest under teams for hierarchy (e.g., “Frontend” under Engineering).
-4. Sample Data: Use “Load Sample Team” to import demo OKRs/Initiatives for testing.
+#### Installation and setup
+1.  **Install:** Open Obsidian Settings > Community Plugins > Browse. Search for "Agile Obsidian" and click **Install**, then **Enable**.
+2.  **Configure Your First Team:**
+    -   Navigate to Settings > Agile Obsidian.
+    -   Under the "Organizations" section, click "Add Team" and give it a name (e.g., "My Team").
+    -   For a quick demo, click **Load Sample Team**. This will create a folder in your vault with pre-populated notes demonstrating Initiatives, OKRs, and more.
+3.  **Validation:** Open the "Sample Team" folder and look at the notes to see how Agile artifacts are structured.
 
-Note:
-- Members are identified by names and auto-generated slugs. External delegates don’t need Obsidian access.
+#### Minimal Workflow
+1.  **Create a Task:** 
+    - Go to any note in the team's folder (e.g., "Initiatives") and create a new initiative. Open the Command Pallete ( `Ctrl/Cmd+P` ).
+    - Type `Agile Obsidian: Insert Template: Agile - Initiative`
+    - Name the initiative via the modal & click "Insert".
+2.  **Assign the Task:**
+    -   With your cursor on the task line, open the Command Palette ( `Ctrl/Cmd+P` ).
+    -   Type `Agile Obsidian: Set Active Assignee as New Member` and press Enter.
+    -   Enter your name in the modal to assign the task. You should see a `Your Name` chip appear on the line.
+3.  **Open the Dashboard:**
+    -   Open the Command Palette again.
+    -   Type `Agile Obsidian: Open Agile Dashboard` and press Enter.
+4.  **Verify:** Your task, should appear in the "Initiatives" section of the dashboard. Clicking the checkbox in the dashboard will advance the status in the team note.
+5.  **Logs/Errors:** If something goes wrong, check the developer console ( `Ctrl/Cmd+Shift+I` ).
 
-### Creating and Managing Tasks
-Tasks are Markdown list items. Use commands or templates.
+### Architecture
 
-- Insert Task: “- [ ] My Task”.
-- Status:
-  - Click the checkbox to advance: “ ” → “/” → “x” → “-”.
-  - Long-press the checkbox to cancel (“-”) directly.
-- Closing:
-  - Mark “x” or “-”; completion/cancellation dates are added; can cascade to subtasks.
-- Snooze:
-  - In Dashboard: Click snooze button to snooze until tomorrow; long-press to choose a date.
-  - In notes: Use templated commands like /snooze or dedicated date helpers (planned).
-- Trees and Folding:
-  - Use indentation for subtasks. Dashboard prunes to show just the relevant branches.
+#### Components and responsibilities
+-   **Plugin Class (`main.ts`):** The main entry point. It orchestrates the plugin's lifecycle (`onload`) and holds the central DI container.
+-   **Composition Wiring (`@composition/*`):** A set of modules responsible for initializing and registering all the plugin's features (styles, settings, commands, events) with the container and Obsidian.
+-   **DI Container:** A central registry for all services. This allows for loose coupling between modules (e.g., the Dashboard doesn't need to know how the Task Indexer works, it just asks the container for the indexed tasks).
+-   **Task Indexer/Parser (inferred from `registerEvents`):** A service that listens for vault changes, parses Markdown files for tasks matching the canonical format, and maintains an in-memory index of all tasks for quick retrieval.
+-   **Agile Dashboard (View):** A custom Obsidian View that queries the Task Indexer and renders the UI for assigned tasks. It contains its own logic for filtering, sorting, and interacting with tasks.
+-   **Templating Engine:** A service that registers slash commands and manages the lifecycle of inserting and editing template "chips" in Markdown.
+-   **Settings Root Module:** Manages the loading, saving, and UI for the plugin's settings tab.
 
-Example Markdown (simple):
-- [ ] 🎖️ Initiative: Launch v1
-  - [ ] 🏆 Epic: Authentication
-    - [ ] Story: As a user, I can reset my password
-      - [ ] Task: Implement reset email @alex
+#### Data flow and major sequences
+*   **User Assigns a Task:**
+    1.  User triggers the `Agile Obsidian: Set Assignee` command on a task line.
+    2.  The Command Service handles the action, opening a modal to select a user.
+    3.  On selection, the service modifies the text of the task line in the `.md` file to add the assignee chip.
+    4.  The Obsidian `workspace.on('modify', ...)` event fires.
+    5.  The Task Indexer service catches the event, re-parses the changed file, and updates its in-memory index.
+    6.  The Agile Dashboard view, if open, is notified of the change and re-renders to display the newly assigned task.
 
-### Using the Agile Dashboard
-Your inbox-zero hub for everything assigned to you across teams.
+#### Storage schemas/models
+-   **Settings:** Stored in `[VAULT]/.obsidian/plugins/agile-obsidian/data.json`.
+-   **Task Data:** Stored directly in `.md` files as single lines of text. The plugin relies on its "Canonical Format" to structure metadata within the line itself, rather than using frontmatter.
+    -   **Format:** `[status] {parent-link} {artifact-type} {task text} {state} {tags} {assignee → delegate} {metadata} {ordered date tokens} {block ID}`
+    -   **Example:** `- [ ] 🎖️ [[Initiative-Note]] Initiative: Launch v1 @alex {due:2025-10-17} ^abcdef`
 
-#### Overview
-- Aggregates all explicitly assigned items from selected organizations/teams/subteams.
-- Sections are rendered in this order: Objectives > Responsibilities > Tasks > Stories > Epics > Initiatives > Priorities.
-- Sections auto-hide if there’s nothing to show or if you’ve turned them off in settings.
+### Feature Catalog
 
-#### Initialization and Data Flow
-- On Obsidian open, file add/delete, or clicking “Update Teams” in settings, Agile Obsidian rebuilds organizations/teams.
-- The Teams selector defaults to “All teams” selected on first open.
-- The Dashboard re-renders using a double-buffered approach for in-dashboard actions; full re-render on external note changes.
+#### Feature: Agile Dashboard
 
-#### Controls Bar
-- Teams selector: Choose orgs/teams/subteams to include.
-- Member filter: Shows members from the currently selected teams.
-- Active/Inactive toggle:
-  - Active: Shows your active assignments.
-  - Inactive: Shows your inactive assignments (deferred ownership).
-- View switcher:
-  - Projects: The main dashboard view (current).
-  - Completed: Placeholder (coming soon).
-  - Deadlines: Planned.
-- State persistence: Team/member selections persist across Obsidian restarts.
+-   **What you can do:**
+    -   See every task assigned to you from across your entire vault in one place.
+    -   Filter the view to focus on specific teams or organizations.
+    -   Quickly change a task's status, snooze it for later, or reassign it to someone else.
+    -   Understand your priorities at a glance with sections for Objectives, Responsibilities, and different task types.
+    -   Drill down into project context by expanding parent Initiatives and Epics.
 
-#### Team and Member Selection
-- Teams popup lists organizations → teams → subteams with multi-select.
-- The members dropdown is the flattened set of all members from selected teams.
-- If no teams are selected, the Dashboard shows a “no teams selected” empty state.
-- Selections are saved and restored on restart.
+-   **When to use this feature:**
+    -   Use this as your primary daily driver to decide what to work on next. It's designed for an "inbox zero" workflow where you process every item by completing, snoozing, or delegating it.
 
-#### Sections and What You’ll See
-- Objectives (OKRs):
-  - Shows the first incomplete objective per team for the selected member.
-  - “Linked Items” lists tasks/items linked to that OKR via /linktoartifact.
-- Responsibilities:
-  - Recurring duties that often unblock others (e.g., weekly review).
-- Tasks → Stories → Epics:
-  - Increasing scope by level. Items assigned to you that typically belong to someone else’s larger work.
-- Initiatives:
-  - Your own projects. Expanded like other sections, but only direct Epics are shown under Initiatives to reduce clutter.
-- Priorities:
-  - High-level focus/backlog pointers across teams for “what’s next.”
+-   **Use Cases and Guided Workflows:**
+    -   **Use Case U1: Daily Stand-up / Triage**
+        -   **Prerequisites:** You have tasks assigned to you across various notes.
+        -   **Step-by-step:**
+            1.  Open the Command Palette (`Ctrl/Cmd+P`).
+            2.  Run the command `Agile Obsidian: Open Agile Dashboard`.
+            3.  In the "Teams selector" at the top, ensure the teams you're working on are selected.
+            4.  Review the "Objectives" and "Responsibilities" sections first to address any high-level goals or blockers for your team.
+            5.  Work through the "Tasks," "Stories," and "Epics" sections. For each item:
+                -   If it's done, click the checkbox to mark it complete (`x`).
+                -   If you can't do it today, click the "Snooze" button to hide it until tomorrow. Long-press the button to pick a specific date.
+                -   If it's not your task, click the assignee chip (`@yourname`) to reassign it.
+        -   **Verification:** Your dashboard should be empty or contain only items you are actively working on. The source `.md` files will be updated automatically with the new statuses and metadata.
 
-Note:
-- Sections can be toggled on/off from Settings. Even if enabled, a section hides itself if no data.
+-   **Configuration you’re likely to touch:**
+    -   **Teams Selector:** Controls which teams' tasks are visible. Your selection is saved automatically.
+    -   **Member Filter:** Narrows the view to tasks assigned to a specific member of the selected teams.
+    -   **Section Toggles (in Settings):** You can hide entire sections (e.g., "Priorities") from the dashboard if you don't use them.
 
-#### Interactions
-- Checkboxes:
-  - Click cycles status ( “ ” → “/” → “x” → “-” ).
-  - Long-press cancels to “-”.
-- Open source note:
-  - Long-press the task text to open the task in its source note.
-- Snooze buttons:
-  - Shown on tasks explicitly assigned to you and on unfolded children.
-  - If multiple direct children are assigned, the parent shows “Snooze all subtasks”.
-  - Click to snooze until tomorrow; long-press to pick a date.
-- Assignment chips:
-  - Click to open reassignment UI. Cascading conventions are preserved by the assignment cascade feature.
-- Template params:
-  - Clicking template parameter spans opens the edit modal for that template.
-- Mobile:
-  - Same behaviors as desktop (tap-and-hold for long-press actions).
+#### Feature: Templating Engine
 
-#### Folding and Tree Behavior
-- Trees are pruned to show only relevant branches (your assignments + their parent chains).
-- Expand/collapse via chevrons.
-- Folding state persists across sessions.
-- Initiatives show only direct Epics on expand to avoid clutter from early, non-actionable content.
+-   **What you can do:**
+    -   Insert complex, structured Agile artifacts like Initiatives, Epics, User Stories, and OKRs with a simple command.
+    -   Link tasks to other items in your vault, creating a web of dependencies.
+    -   Add metadata like version numbers, PR links, or status tags (e.g., "Blocked," "Review").
+    -   Ensure consistent formatting for all metadata.
 
-Performance tips:
-- Large vaults with 1000+ tasks are supported. Use team filters to keep the UI snappy.
+-   **When to use this feature:**
+    -   Use this whenever you are creating a new piece of work that fits an Agile concept. Instead of typing out a title manually, use a template to get the correct formatting and icon automatically.
 
-#### Objectives (OKRs) Details
-- One active OKR per team is shown (the first incomplete OKR in that team’s Objectives note for the selected member).
-- Link tasks to an OKR via /linktoartifact, then select the OKR.
-- Linked Items appear under the OKR to provide context for progress and dependencies.
+-   **Use Cases and Guided Workflows:**
+    -   **Use Case U1: Create a New Project Initiative**
+        -   **Prerequisites:** A note where you track projects.
+        -   **Step-by-step:**
+            1.  Create a new task line: `- [ ]`
+            2.  With the cursor on that line, type `/initiative` and press Enter, or run `Agile Obsidian: Insert Template` from the Command Palette and select "Initiative".
+            3.  A modal will appear asking for the "Initiative Title." Enter your project name (e.g., "Q4 Website Redesign") and submit.
+            4.  A formatted chip `🎖️ Initiative: Q4 Website Redesign` will be inserted.
+            5.  To create a child Epic, create a new indented task below it.
+            6.  On the new line, type `/epic`, provide a title, and submit.
+        -   **Verification:** Your note will contain a nested structure of tasks with formatted, clickable chips. Clicking a chip re-opens the modal to edit its parameters.
 
-#### What’s Included vs. Implicit
-- The Dashboard displays explicitly assigned items.
-- Implicit assignments exist in notes by convention (inheritance up the parent chain) and are handled during reassignment cascades, but they are not used as the source for Dashboard inclusion.
+-   **Configuration you’re likely to touch:**
+    -   This feature is not directly configurable. The list of available templates is predefined within the plugin.
 
-#### Example: Daily Inbox-Zero Sweep
-1. Objectives: Review your single visible OKR per team; view team’s progress through any linked items assigned to other members.
-2. Responsibilities: Clear routine tasks to unblock others.
-3. Tasks/Stories/Epics: Work through these components of other team member’s initiatives assigned to you; complete or snooze.
-4. Initiatives: Make progress on your own projects once blockers are cleared.
-5. Priorities: If you reach zero, look here to decide what’s next.
+#### Feature: Organization & Team Management
 
-Screenshot placeholders:
-- Controls bar with Teams selector and Active toggle.
-- An Initiative expanded to one Epic, with a Story and assigned Task visible.
+-   **What you can do:**
+    -   Create a clear hierarchy of organizations, teams, and sub-teams.
+    -   Add members to each team to build your personnel directory.
+    -   Define members as active or inactive to manage who is available for assignment.
 
-### Task Assignment and Delegation
-- Use /assign to set a single assignee and optionally a delegate per task.
-- Special “everyone” assignment is supported for team-wide responsibilities.
-- Reassign by clicking the assignee chip in Dashboard; cascades preserve implicit assignment conventions in notes.
+-   **When to use this feature:**
+    -   This is the first thing you should set up after installing the plugin. A well-defined organization is essential for task assignment and for filtering the Agile Dashboard effectively.
 
-### Templating Engine
-- Insert artifacts via commands (e.g., /initiative, /epic, /story, /okr).
-- Templates support parameters (titles, details, colors) with modals for editing.
-- Use /linktoartifact to link tasks to OKRs and other artifacts.
+-   **Use Cases and Guided Workflows:**
+    -   **Use Case U1: Set Up a New Company Structure**
+        -   **Prerequisites:** Agile Obsidian is installed and enabled.
+        -   **Step-by-step:**
+            1.  Go to **Settings > Agile Obsidian**.
+            2.  Under the "Organizations" section, click **Add Organization** and name it (e.g., "MyCompany").
+            3.  Click the gear icon next to your new organization and select **Add Team**. Name it "Engineering".
+            4.  Click the gear icon next to "Engineering" and select **Add Subteam**. Name it "Frontend".
+            5.  To add a person, you can either add them directly in settings or, more practically, assign them a task. Go to a note, create a task, and run `Agile Obsidian: Set Assignee`. Choose "New Member," enter their name, and assign them. They will now appear in the settings under the relevant team.
+        -   **Verification:** Your new team structure is visible in the settings tab. The members you add will be available in the assignee list for new tasks and in the member filter on the Agile Dashboard.
 
-### Advanced Features
-- Snooze All Subtasks: Appears on parents with multiple assigned children visible.
-- Canonical Formatting: Enforces consistent metadata ordering automatically.
-- Close Cascade: Completing a parent can complete children.
-- Status Sequencer: Custom checkbox cycle and long-press cancel.
+-   **Configuration you’re likely to touch:**
+    -   The entire feature is managed within the "Organizations" section of the plugin's settings tab. There are no other configuration points.
 
-## Configuration and Settings
-- Sections visibility: Toggle Objectives, Responsibilities, Tasks, Stories, Epics, Initiatives, Priorities.
-- Organizations & Teams:
-  - Create orgs/teams/subteams, add members.
-  - “Update Teams” rebuilds the hierarchy used by the Dashboard.
-- Persistence:
-  - Team/member selections in the Dashboard persist across restarts.
-- Recommended defaults:
-  - Keep Objectives and Responsibilities on for founders and leads.
-  - Start in Active view; check Inactive when you reach inbox zero.
+#### Feature: Task Assignment & Delegation
 
-## Troubleshooting
-- Dashboard is empty:
-  - Ensure you have at least one team selected in the Teams selector.
-  - Confirm items are explicitly assigned to you; implicit-only items won’t appear.
-- Snooze buttons missing:
-  - Only appear on tasks explicitly assigned to you and on unfolded child items; “Snooze all” appears when multiple visible children are assigned.
-- Initiatives show no children:
-  - Only Epics are displayed under Initiatives to reduce clutter.
-- Relay/Git conflicts:
-  - Editing from the Dashboard and notes simultaneously can cause merge conflicts. Best practice: have both the Dashboard and the relevant note open. A broader fix is in progress in collaboration with Relay devs.
+-   **What you can do:**
+    -   Clearly define who is responsible for completing a task using the **Assignee** field.
+    -   Optionally, specify a **Delegate** who may be responsible for reviewing or contributing to the task.
+    -   Assign tasks to the special member "everyone" for team-wide announcements or responsibilities.
+    -   Quickly reassign tasks directly from the assignee chip in the Agile Dashboard.
 
-## Roadmap and Limitations
-Highlights relevant to the Dashboard and workflows:
-- Planned Views: Completed overhaul; Deadlines; Inactive view improvements (show snoozed then inactive).
-- Dashboard UX:
-  - Remove snooze buttons from unfolded non-target tasks (only on filtered targets).
-  - Click-to-edit task text and add dates/templates inline.
-  - Remember folding state for notes on external changes.
-  - Persistent drag-to-reorder items and sections.
-- Features:
-  - Blocker cascade (bubble up blockers/waiting states).
-  - Date picker commands (/due, /scheduled, /start, /target).
-  - Responsibilities counters (e.g., 3/10 this month).
-  - Delegated section and Chat section.
-- Limitations:
-  - Dashboard uses explicit assignments; implicit assignments remain a note convention.
-  - Real-time collaboration best with Relay; be mindful of potential conflicts when editing from multiple surfaces.
+-   **When to use this feature:**
+    -   Use this on any task that requires action from a specific person or group. Explicit assignment is the only way tasks will appear on a user's Agile Dashboard.
 
-## Extending the Plugin
-- Templating & Automation SDK (planned): Create custom templates and automations.
-- Hot-folder (planned): Auto-generate commands from a designated folder.
+-   **Use Cases and Guided Workflows:**
+    -   **Use Case U1: Assign a Bug Fix and Request a Review**
+        -   **Prerequisites:** An "Engineering" team with members "Alex" (Developer) and "Casey" (PM) has been configured.
+        -   **Step-by-step:**
+            1.  In a note, create the task: `- [ ] Fix login button alignment issue`.
+            2.  With the cursor on the line, run the command `Agile Obsidian: Set Assignee`. Select "Alex". The chip `@Alex` appears.
+            3.  Run the command `Agile Obsidian: Set Delegate`. Select "Casey". The chip `→ @Casey` appears next to the assignee.
+        -   **Verification:** The task line in your note now reads: `- [ ] Fix login button alignment issue @Alex → @Casey`. The task will appear on Alex's Agile Dashboard.
 
-## API Reference
-TBD after core docs are finalized.
+-   **Configuration you’re likely to touch:**
+    -   The list of available members for assignment and delegation is drawn directly from your **Organization & Team Management** settings.
 
-## Changelog
-See versions.json and Git tags for history.
+#### Feature: Task Management & Canonical Formatting
 
-## Contributing
-- Issues and feature requests are welcome.
-- Please include reproduction steps and sample Markdown when reporting bugs related to parsing or indexing.
+-   **What you can do:**
+    -   Manage the full lifecycle of a task using a custom, multi-stage status system.
+    -   Temporarily hide tasks from your view using the "Snooze" function to maintain focus.
+    -   Trust the plugin to automatically organize all metadata on a task line into a clean, consistent, and parseable order.
 
-## Glossary
-- Explicit Assignment: Directly assigned item to a member (shown in Dashboard).
-- Implicit Assignment: Inferred assignment via parent chain in notes (not used for Dashboard inclusion).
-- OKR: Objective and Key Results, shown one active per team for the selected member.
-- Snooze: Temporarily hide an item until a date; long-press to pick a date; “snooze all” for parents with multiple visible assigned children.
-- Responsibilities: Recurring duties that often unblock others.
-- Priorities: High-level “what’s next” across teams.
+-   **When to use this feature:**
+    -   This is the core of your daily workflow. You will use these features on every task you interact with, either in a note or in the Agile Dashboard.
+
+-   **Use Cases and Guided Workflows:**
+    -   **Use Case U1: Work on and Complete a Task**
+        -   **Prerequisites:** A task is assigned to you on your dashboard.
+        -   **Step-by-step:**
+            1.  When you begin work, find the task and click its checkbox. The status changes from `[ ]` (Unstarted) to `[/]` (In Progress).
+            2.  If you get blocked, you can use the Templating Engine to add a `[Blocked]` chip.
+            3.  Once the work is complete, click the checkbox again. The status changes to `[x]` (Done).
+            4.  If you need to cancel the task at any point, long-press (or tap-and-hold on mobile) the checkbox. The status will change to `[-]` (Cancelled).
+        -   **Verification:** The task's status symbol updates in both the dashboard and the source `.md` file. The Canonical Formatter automatically ensures any new chips (like `[Blocked]`) are placed in the correct order on the line.
+
+-   **Configuration you’re likely to touch:**
+    -   The status sequence (` ` -> `/` -> `x`) and the long-press to cancel (`-`) are core behaviors and are not configurable.
+
+### Configuration/Settings Reference
+
+The Agile Obsidian settings are accessible via **Settings > Agile Obsidian**.
+
+| Key | Type | Default | Scope | Effect |
+| :--- | :--- | :--- | :--- | :--- |
+| **Organizations** | `object[]` | `[]` | Global | Defines the hierarchy of teams, subteams, and members used for task assignment and dashboard filtering. |
+| **Dashboard Sections** | `object` | All `true` | Global | A series of toggles (e.g., `showObjectives`, `showResponsibilities`) that control which sections are visible in the Agile Dashboard. |
+| **Load Sample Team** | `button` | N/A | Global | Creates a new folder in the vault with sample notes to demonstrate plugin features. |
+| **Update Teams** | `button` | N/A | Global | Forces a rebuild of the internal team/member index. Use this if the dashboard seems out of sync with your settings. |
+
+### API Surfaces (Obsidian)
+
+#### Commands
+-   **`Agile Obsidian: Open Agile Dashboard`**
+    -   **Description:** Opens the main dashboard view in a new workspace leaf.
+-   **`Agile Obsidian: Insert Template`**
+    -   **Description:** Opens a modal to select from a list of all available templates (e.g., Initiative, Epic, OKR) for insertion at the cursor's location.
+-   **`Agile Obsidian: Set Assignee`**
+    -   **Description:** Opens a modal to assign the current task to a team member. Also provides an option to create a new member.
+-   **`Agile Obsidian: Set Delegate`**
+    -   **Description:** Opens a modal to set a delegate for the current task.
+
+#### Views
+-   **`agile-dashboard-view`** (Internal ID, not user-facing)
+    -   **How to open:** Via the `Agile Obsidian: Open Agile Dashboard` command.
+    -   **State Persistence:** The view persists the user's selections for the Team and Member filters across Obsidian restarts. The folding state of items in the view is also persisted.
+
+### Security, Privacy, Compliance
+
+#### Data storage locations
+-   All of your task and project data is stored as plain text in Markdown (`.md`) files within your own vault.
+-   Plugin settings are stored locally in your vault's configuration directory at `[Your Vault]/.obsidian/plugins/agile-obsidian/data.json`.
+-   This plugin does not send your data to any external servers. You fully own and control your information.
+
+#### Permissions and data access
+-   The plugin requires permission to read and write to files within your vault to update tasks.
+-   It does not access the network or require any permissions outside of the Obsidian sandbox.
+
+### Compatibility, Versioning, and Deprecations
+
+#### Supported Obsidian versions
+-   Requires Obsidian version `0.15.0` or higher.
+-   The plugin is tested and maintained against the latest stable version of Obsidian.
+
+#### Versioning
+-   The current version is **1.0.0**.
+-   The plugin aims to follow Semantic Versioning (SemVer). Breaking changes will be indicated by a major version increase and detailed in the release notes.
+
+### Contributing Guide
+
+#### Repo layout (inferred)
+-   `main.ts`: Plugin entry point.
+-   `manifest.json`: Plugin metadata for Obsidian.
+-   `src/composition/`: Modules for wiring up the plugin's features (DI container, command registration, etc.).
+-   `src/features/`: Likely location for feature-specific logic (e.g., Dashboard UI, Templating engine).
+-   `src/settings/`: Logic and UI for the settings tab.
+-   `src/types/`: TypeScript type definitions.
+
+#### Build/test
+-   [Needs confirmation: The build and test commands (e.g., `npm run build`, `npm run test`) need to be documented].
+
+### Change Log (Docs)
+-   Documentation updated to version 1.0.0.
+-   Rewrote documentation in full to align with a standardized, comprehensive structure.
+-   Corrected and expanded feature descriptions based on an analysis of the plugin's architecture and existing README.
+-   Added new sections for Architecture, API Surfaces, Security, and a detailed User-Centric Feature Catalog.
+-   Incorporated maintainer feedback to correct command names and provide a complete feature breakdown.
