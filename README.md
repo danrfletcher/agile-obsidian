@@ -60,22 +60,22 @@ Agile Obsidian is a plugin that transforms your Obsidian vault into a powerful, 
 
 | Feature | Primary Value | Entry Surface | Stability |
 | :--- | :--- | :--- | :--- |
-| Agile Dashboard | Centralized, "inbox zero" view of all your assigned tasks. | Command, Status Bar | Beta |
-| Advanced Templating Engine | Insert structured Agile artifacts and metadata with slash commands. Edit template parameters with modals & run complex template workflows. | Command | Beta |
-| Org & Team Mgmt | Organize work and permissions across multiple teams. | Settings | Beta |
-| Task Assignment | Assign tasks to team members with optional delegation. | Command, Agile Dashboard, UI Menu | Beta |
-| Canonical Formatting | Automatically keeps task metadata consistent and parseable. | Automatic (on task edit) | Beta |
+| Agile Dashboard | Centralized, "inbox zero" view of all your assigned tasks. | Command, Status Bar | Stable |
+| Advanced Templating Engine | Insert structured Agile artifacts and metadata with slash commands. Edit template parameters with modals & run complex template workflows. | Command | Stable |
+| Org & Team Mgmt | Organize work and permissions across multiple teams. | Settings | Stable |
+| Task Assignment | Assign tasks to team members with optional delegation. | Command, Agile Dashboard, UI Menu | Stable |
+| Canonical Formatting | Automatically keeps task metadata consistent and parseable. | Automatic (on task edit) | Stable |
 
 #### Other Capabilities Table
 
 | Feature | Primary Value | Entry Surface | Stability |
 | :--- | :--- | :--- | :--- |
-| Inbox Zero Task Snooze | Inbox zero functionality; delay tasks (hide from dashboard) until a specified date | Agile Dashboard, task metadata | Beta |
-| Task Assignment Cascade | Tasks may be implicitly assigned e.g., epic under assigned initiative. Maintains consistency when assignments are changed. | Automatic (on assignment change) | Beta |
-| Task Close Cascade | Completed or cancels nested & deeply nested subtasks when the parent is cancelled | Automatic (on task close) | Beta |
+| Inbox Zero Task Snooze | Inbox zero functionality; delay tasks (hide from dashboard) until a specified date | Agile Dashboard, task metadata | Stable |
+| Task Assignment Cascade | Tasks may be implicitly assigned e.g., epic under assigned initiative. Maintains consistency when assignments are changed. | Automatic (on assignment change) | Stable |
+| Task Close Cascade | Completed or cancels nested & deeply nested subtasks when the parent is cancelled | Automatic (on task close) | Stable |
 | Task Close Dates | Adds completed & cancelled data metadata on task close (complete or cancel) | Automatic (on task close) | Stable |
 | Agile Task Date Manager | Adds UI menu with date picker to manage start, scheduled, due & target dates | Command, Agile Dashboard, UI Menu | Experimental |
-| Task Metadata Cleanup | Automated metadata cleanup e.g., removing expired snooze dates from tasks | Automatic (on Obsidian start, Agile Dashboard open) | Beta |
+| Task Metadata Cleanup | Automated metadata cleanup e.g., removing expired snooze dates from tasks | Automatic (on Obsidian start, Agile Dashboard open) | Stable |
 | Agile Task Statuses | Additional preset task statuses & custom task checkboxes [ ] → [/] → [x] → [-] | Automatic (click to advance status, long-click to cancel) | Stable |
 | Quick Insert Multiple Agile Artifacts | Press enter on a task line with an existing agile atifact e.g., Epic to insert another agile artifact e.g., Epic on the next line | Automatic (on enter click on task line with Agile artifact) | Stable
 
