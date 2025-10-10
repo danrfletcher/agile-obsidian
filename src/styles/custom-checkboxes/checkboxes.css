@@ -6,19 +6,29 @@
 	--task-offset-y: 0.1em; /* vertical nudging */
 }
 
-/* Base hook for both editor tokens and preview checkboxes
-   Apply ONLY to custom tokens (not [ ], [x], [X]) */
+/* Make rendered checkboxes visible regardless of container/theme */
+li > input[type="checkbox"],
+li > p > input[type="checkbox"] {
+	opacity: 1 !important;
+	visibility: visible !important;
+	display: inline-block !important;
+}
+
+/* Base hook for editor tokens and rendered checkboxes
+   Apply ONLY to custom tokens (not [ ], [x], [X], [""]) */
 .markdown-source-view.mod-cm6
 	.task-list-item-checkbox[data-task]:not([data-task=" "]):not(
 		[data-task="x"]
-	):not([data-task="X"])::before,
+	):not([data-task="X"]):not([data-task=""])::before,
 .cm-s-obsidian
 	span.hmd-hidden-token.cm-formatting-task[data-task]:not(
 		[data-task=" "]
-	):not([data-task="x"]):not([data-task="X"])::before,
-.markdown-preview-view
-	li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"])
-	> input[type="checkbox"]::before {
+	):not([data-task="x"]):not([data-task="X"]):not([data-task=""])::before,
+/* Rendered/reading/preview/custom views – support both li > input and li > p > input */
+li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]):not([data-task=""])
+	> input[type="checkbox"]::before,
+li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]):not([data-task=""])
+	> p > input[type="checkbox"]::before {
 	content: var(--task-icon);
 	display: inline-block;
 	color: var(--task-fg);
@@ -33,10 +43,11 @@
 .markdown-source-view.mod-cm6
 	.task-list-item-checkbox[data-task]:not([data-task=" "]):not(
 		[data-task="x"]
-	):not([data-task="X"]),
-.markdown-preview-view
-	li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"])
-	> input[type="checkbox"] {
+	):not([data-task="X"]):not([data-task=""]),
+li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]):not([data-task=""])
+	> input[type="checkbox"],
+li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]):not([data-task=""])
+	> p > input[type="checkbox"] {
 	background: transparent !important;
 	box-shadow: none !important;
 }
@@ -293,13 +304,18 @@ body:not(.chkbx-strike) .task-list-item.is-checked:not([data-task="x"]):not([dat
 }
 
 /* Make sure the native checkbox mark doesn't overlay our icon
-   Apply ONLY to custom tokens (not [ ], [x], [X]) */
+   Apply ONLY to custom tokens (not [ ], [x], [X], [""]) */
 
-/* Preview – input baseline for custom tokens:
-   remove box completely so only emoji shows */
-.markdown-preview-view li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]) > input[type="checkbox"],
+/* Rendered/reading/preview/custom views – remove the native box so only the emoji shows */
+li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]):not([data-task=""])
+	> input[type="checkbox"],
+li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]):not([data-task=""])
+	> p > input[type="checkbox"],
 /* Editor – same for the source checkbox */
-.markdown-source-view.mod-cm6 .task-list-item-checkbox[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]) {
+.markdown-source-view.mod-cm6
+	.task-list-item-checkbox[data-task]:not([data-task=" "]):not(
+		[data-task="x"]
+	):not([data-task="X"]):not([data-task=""]) {
 	appearance: none;
 	-webkit-appearance: none;
 	width: 1em;
@@ -315,27 +331,29 @@ body:not(.chkbx-strike) .task-list-item.is-checked:not([data-task="x"]):not([dat
 }
 
 /* Ensure no box reappears on interactive states */
-.markdown-preview-view
-	li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"])
+li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]):not([data-task=""])
 	> input[type="checkbox"]:is(:hover, :focus, :active, :checked),
+li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]):not([data-task=""])
+	> p > input[type="checkbox"]:is(:hover, :focus, :active, :checked),
 .markdown-source-view.mod-cm6
 	.task-list-item-checkbox[data-task]:not([data-task=" "]):not(
 		[data-task="x"]
-	):not([data-task="X"]):is(:hover, :focus, :active, :checked) {
+	):not([data-task="X"]):not([data-task=""]):is(:hover, :focus, :active, :checked) {
 	border: none !important;
 	background: transparent !important;
 	box-shadow: none !important;
 	outline: none !important;
 }
 
-/* Center the emoji for custom tokens */
-.markdown-preview-view
-	li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"])
+/* Center the emoji for custom tokens (rendered + editor) */
+li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]):not([data-task=""])
 	> input[type="checkbox"]::before,
+li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]):not([data-task=""])
+	> p > input[type="checkbox"]::before,
 .markdown-source-view.mod-cm6
 	.task-list-item-checkbox[data-task]:not([data-task=" "]):not(
 		[data-task="x"]
-	):not([data-task="X"])::before {
+	):not([data-task="X"]):not([data-task=""])::before {
 	position: absolute;
 	left: 50%;
 	top: 50%;
@@ -344,14 +362,18 @@ body:not(.chkbx-strike) .task-list-item.is-checked:not([data-task="x"]):not([dat
 }
 
 /* Hide the theme’s masked check layer ONLY for custom tokens */
-.markdown-preview-view
-	li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"])
+li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]):not([data-task=""])
 	> input[type="checkbox"]:checked::after,
+li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]):not([data-task=""])
+	> p > input[type="checkbox"]:checked::after,
 .markdown-source-view.mod-cm6
 	.task-list-item-checkbox[data-task]:not([data-task=" "]):not(
 		[data-task="x"]
-	):not([data-task="X"]):checked::after {
+	):not([data-task="X"]):not([data-task=""]):checked::after {
 	content: none !important;
 	-webkit-mask-image: none !important;
 	background: none !important;
 }
+
+/* Strict isolation mode: NEVER alter defaults [ ], [x], [X] (including data-task="")
+   Remove any baseline or safety reset rules for defaults to let Obsidian/theme handle them */
