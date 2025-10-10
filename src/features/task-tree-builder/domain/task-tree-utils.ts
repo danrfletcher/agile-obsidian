@@ -1,4 +1,4 @@
-import { TaskItem } from "@features/tasks";
+import { TaskItem } from "@features/task-index";
 
 /**
  * Strips non-task list items from a tree of nodes, flattening by attaching their children directly to the parent.

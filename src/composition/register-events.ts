@@ -186,6 +186,8 @@ export async function registerEvents(container: Container) {
 		taskIndex: {
 			getItemAtCursor: (cursor) =>
 				taskIndexService.getItemAtCursor(cursor),
+			getTaskByBlockRef: (ref) =>
+				taskIndexService.getTaskByBlockRef(ref) as any,
 		},
 	};
 	(container as any).templatingPorts = templatingPorts;

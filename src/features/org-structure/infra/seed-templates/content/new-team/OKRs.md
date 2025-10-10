@@ -1,0 +1,33 @@
+---
+cssclasses:
+  - full-width-edit
+  - full-width-preview
+---
+# OKRs
+
+**Purpose**
+- Central source of quarterly Objectives and measurable Key Results (OKRs).
+- The Agile Dashboard parses OKRs for each user and links them to work items across the vault.
+
+**Use in Plugin & PM System**
+- OKRs assigned via assignee chips & are shown in the Objectives section in the dashboard.
+- Per-team limiting: the dashboard shows at most one active OKR for each member in their dashboard.
+
+**How it Works**
+- Each OKR is a markdown task with a block ID (e.g., ^blockId) and templated links in other notes refer back to it.
+- The dashboard detects linked items through templating attributes (data-tpl-attr-var-...="blockRef").
+- Status changes (checkbox) and assignee changes are handled in-place with optimistic UI updates.
+___
+
+- [ ] <span data-template-wrapper="tpl-6vqzncfmggjcbto" data-template-key="agile.okr" data-order-tag="artifact-item-type"><mark style="background: linear-gradient(to left, #38ADAE, #CD395A);"><strong>🎯 <span data-tpl-var="title">Enhance Predictive Analytics Capabilities</span></strong></mark></span> <span data-template-wrapper="tpl-rpa8qkpmggjcncj" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="alex-rivera-58h2bf" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Alex Rivera</strong></mark></span> ^69pe5iya
+	- [E] Develop and deploy at least two new machine learning models for customer behavior analysis, achieving a predictive accuracy improvement of 20% over current benchmarks by quarter-end.
+	- [E] Reduce model training time by 30% through optimization techniques, enabling faster iterations and testing.
+	- [E] Integrate models into the production dashboard, resulting in 50% of team reports utilizing these predictions for decision-making.
+- [ ] <span data-template-wrapper="tpl-d458qagmggjd4cs" data-template-key="agile.okr" data-order-tag="artifact-item-type"><mark style="background: linear-gradient(to left, #38ADAE, #CD395A);"><strong>🎯 <span data-tpl-var="title">Streamline Data Infrastructure to Support Real-time Analytics</span></strong></mark></span> <span data-template-wrapper="tpl-92lpc8bmggjdd92" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="jordan-patel-97c96r" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Jordan Patel</strong></mark></span> ^2kh3dqff
+	- [E] Successfully integrate data pipelines from three key sources (e.g., CRM, web analytics, and IoT), reducing overall processing latency to under 5 seconds for 95% of queries.
+	- [E] Achieve 99.9% uptime for the data flow system, minimizing disruptions and ensuring reliable access for the team.
+	- [E] Conduct two cross-team training sessions on the new pipelines, leading to a 25% increase in adoption rate among non-technical stakeholders.
+- [ ] <span data-template-wrapper="tpl-m9shfahmggjdv0w" data-template-key="agile.okr" data-order-tag="artifact-item-type"><mark style="background: linear-gradient(to left, #38ADAE, #CD395A);"><strong>🎯 <span data-tpl-var="title">Uncover Actionable Market Insights through Rigorous Data Exploration</span></strong></mark></span> <span data-template-wrapper="tpl-inasob6mggje37z" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="taylor-kim-8sj62i" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Taylor Kim</strong></mark></span> 
+	- [E] Complete exploratory analysis on at least five major market trend datasets, identifying and documenting three high-impact opportunities in a quarterly report.
+	- [E] Increase the use of insights in company-wide decisions by 40%, tracked via feedback from at least 10 stakeholders.
+	- [E] Automate 50% of the data cleaning and visualization processes in the analysis workflow, cutting report generation time by 25%.

@@ -28,6 +28,12 @@ export type ParamsSchemaTitles = {
 	edit?: string;
 };
 
+// Dropdown options: simplified (index signature removed)
+export type ParamsSchemaOptions = Array<{
+	label: string;
+	value: string;
+}>;
+
 export type ParamsSchemaField = {
 	name: string;
 	label?: string;
@@ -41,7 +47,7 @@ export type ParamsSchemaField = {
 	 - Provide an array of options. "label" is the user-facing string, "value" is returned to the template.
 	 - If defaultValue is provided and matches an option's value, that option will be preselected.
 	*/
-	options?: Array<{ label: string; value: string }>;
+	options?: ParamsSchemaOptions;
 };
 
 // Params schema used to render input modals; fields are required for clarity downstream
@@ -62,6 +68,9 @@ export interface TemplateDefinition<TParams = unknown> {
 	rules?: Rule; // typed rules instead of unknown Record
 	// New: each template can declare its orderTag at the definition level
 	orderTag?: string;
+	// Optional insertion workflows (run before insertion)
+	// Each string references a workflow or composed workflow registered in template-workflows.ts
+	insertWorkflows?: string[];
 	render?: (params?: TParams) => string;
 	parseParamsFromDom?: (
 		el: HTMLElement

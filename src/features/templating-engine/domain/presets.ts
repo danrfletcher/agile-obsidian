@@ -6,6 +6,8 @@ import {
 	extractParamsFromWrapperEl,
 	attrVar,
 } from "./template-parameter-helpers";
+import { currencyDropdownOptions } from "../app/constants";
+import type { AgileArtifactType } from "@features/task-filter";
 
 // Derive from JSON
 const colors = tokensData.colors as Record<string, string>;
@@ -176,16 +178,37 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 		orderTag: "artifact-item-type",
 		id: "agile.product",
 		label: "Agile - Product",
+		hasParams: true,
+		paramsSchema: {
+			title: "Create Product",
+			titles: { create: "Create Product", edit: "Edit Product" },
+			description:
+				"Provide a title and optional details for the product.",
+			fields: [
+				{
+					name: "title",
+					label: "Title",
+					required: true,
+					placeholder: "e.g., AI Chatbot Platform",
+				},
+				{
+					name: "details",
+					label: "Details",
+					type: "textarea",
+					placeholder: "Optional details...",
+				},
+			],
+		},
 		rules: { allowedOn: ["task"] },
-		render(params?: { title?: string; details?: string }) {
+		render(params: { title: string; details?: string }) {
 			const title = params?.title?.trim() ?? "";
 			const details = params?.details?.trim() ?? "";
 			const main = title
-				? `<strong>${emojis.product} ${title}${
+				? `<strong>${emojis.product} ${wrapVar("title",title)}${
 						details ? ":" : ""
 				  }</strong>`
 				: `<strong>${emojis.product} </strong>`;
-			const tail = details ? ` ${details}` : "";
+			const tail = details ? ` ${wrapVar("details", details)}` : "";
 			const inner = chip({
 				id: "agile-product",
 				text: `${main}${tail}`,
@@ -482,22 +505,6 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 };
-
-// Reusable dropdown options for currency selectors
-export const currencyDropdownOptions: Array<{ label: string; value: string }> =
-	[
-		{ label: "USD $", value: "$" },
-		{ label: "EUR €", value: "€" },
-		{ label: "GBP £", value: "£" },
-		{ label: "AUD A$", value: "A$ " },
-		{ label: "CAD C$", value: "C$ " },
-		{ label: "JPY ¥", value: "JPY ¥" },
-		{ label: "INR ₹", value: "INR ₹" },
-		{ label: "CHF ₣", value: "CHF " },
-		{ label: "CNY ¥", value: "CNY ¥" },
-		{ label: "SEK kr", value: "SEK" },
-		{ label: "NZD NZ$", value: "NZ$ " },
-	];
 
 /**
  * CRM
@@ -1099,11 +1106,7 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		label: "NALAp - Adhoc",
 		rules: { allowedOn: ["list"] },
 		render() {
-			const inner = chip({
-				id: "nalap-adhoc",
-				text: `📂 <strong>Adhoc</strong>`,
-				bg: colors.kanoBasic,
-			});
+			const inner = `📂 <strong>Adhoc</strong>`;
 			return wrapTemplate("prio.nalap.adhoc", inner, {
 				orderTag: this.orderTag,
 			});
@@ -1114,11 +1117,7 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		label: "NALAp - Always",
 		rules: { allowedOn: ["list"] },
 		render() {
-			const inner = chip({
-				id: "nalap-always",
-				text: `📍 <strong>Always</strong>`,
-				bg: colors.kanoPerformant,
-			});
+			const inner = `📍 <strong>Always</strong>`;
 			return wrapTemplate("prio.nalap.always", inner, {
 				orderTag: this.orderTag,
 			});
@@ -1129,11 +1128,7 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		label: "NALAp - Done",
 		rules: { allowedOn: ["list"] },
 		render() {
-			const inner = chip({
-				id: "nalap-done",
-				text: `✅ <strong>Done</strong>`,
-				bg: colors.crmPaidFull,
-			});
+			const inner = `✅ <strong>Done</strong>`;
 			return wrapTemplate("prio.nalap.done", inner, {
 				orderTag: this.orderTag,
 			});
@@ -1144,11 +1139,7 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		label: "NALAp - Dropped",
 		rules: { allowedOn: ["list"] },
 		render() {
-			const inner = chip({
-				id: "nalap-dropped",
-				text: `❌ <strong>Dropped</strong>`,
-				bg: colors.moscowWont,
-			});
+			const inner = `❌ <strong>Dropped</strong>`;
 			return wrapTemplate("prio.nalap.dropped", inner, {
 				orderTag: this.orderTag,
 			});
@@ -1159,11 +1150,7 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		label: "NALAp - Later",
 		rules: { allowedOn: ["list"] },
 		render() {
-			const inner = chip({
-				id: "nalap-later",
-				text: `🛠️ <strong>Later</strong>`,
-				bg: colors.moscowShould,
-			});
+			const inner = `🛠️ <strong>Later</strong>`;
 			return wrapTemplate("prio.nalap.later", inner, {
 				orderTag: this.orderTag,
 			});
@@ -1174,11 +1161,7 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		label: "NALAp - Now",
 		rules: { allowedOn: ["list"] },
 		render() {
-			const inner = chip({
-				id: "nalap-now",
-				text: `🚀 <strong>Now</strong>`,
-				bg: colors.moscowMust,
-			});
+			const inner = `🚀 <strong>Now</strong>`;
 			return wrapTemplate("prio.nalap.now", inner, {
 				orderTag: this.orderTag,
 			});
@@ -1233,20 +1216,74 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 		orderTag: "metadata",
 		id: "workflows.metadata.linkToArtifact",
 		label: "Workflow - Link to Artifact",
+		hasParams: true,
+		// Run inference workflow during insertion
+		insertWorkflows: ["resolveArtifactTypeFromBlockRef"],
+		paramsSchema: {
+			title: "Link Artifact",
+			titles: {
+				create: "Link Artifact",
+				edit: "Edit Linked Artifact",
+			},
+			fields: [
+				{
+					name: "blockRef",
+					label: "Linked Artifact",
+					required: true,
+					type: "blockSelect",
+					placeholder: "Start typing...",
+				},
+			],
+		},
 		rules: { allowedOn: ["task"] },
-		render(params?: { href?: string; text?: string }) {
-			const href = (
-				params?.href ?? "Artifact-block-link-with-no-square-brackets"
-			).trim();
-			const text = (params?.text ?? "🔗").trim();
+		render(params: {
+			blockRef: string;
+			linkedArtifactType?: AgileArtifactType;
+		}) {
+			const blockRef = params.blockRef?.trim?.() ?? "";
+			const type = params.linkedArtifactType;
+
+			const emojiForType = (t?: AgileArtifactType | null): string => {
+				switch (t) {
+					case "initiative":
+						return emojis.initiative;
+					case "learning-initiative":
+						return emojis.learningGrad;
+					case "epic":
+						return emojis.epic;
+					case "learning-epic":
+						return emojis.learningBook;
+					case "story":
+						return emojis.story;
+					case "okr":
+						return emojis.okr;
+					case "recurring-responsibility":
+						return emojis.kpi;
+					case "task":
+						return ""; // keep plain link icon for generic task
+					default:
+						return "";
+				}
+			};
+
+			const artifactEmoji = emojiForType(type);
+			const linkText = artifactEmoji ? `🔗${artifactEmoji}` : `🔗`;
+
 			const inner = chip({
 				id: "wf-link-to-artifact",
-				text: `<strong><a class="internal-link" href="${href}">${text}</a></strong>`,
+				text: `<strong><a class="internal-link" ${attrVar(
+					"href",
+					"blockRef",
+					blockRef
+				)}>${linkText}</a></strong>`,
 				bg: colors.black,
 				color: colors.textGrey,
 			});
+
 			return wrapTemplate("workflows.metadata.linkToArtifact", inner, {
 				orderTag: this.orderTag,
+				// Emit only if present (wrapTemplate skips null/undefined)
+				linkedArtifactType: type ?? undefined,
 			});
 		},
 	},

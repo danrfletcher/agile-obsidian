@@ -1,4 +1,4 @@
-import { TaskItem } from "@features/tasks";
+import { TaskItem } from "@features/task-index";
 import { attachFilteredChildren } from "./top-down-builder";
 import { stripListItems } from "./task-tree-utils";
 

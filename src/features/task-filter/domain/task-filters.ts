@@ -1,4 +1,4 @@
-import { TaskItem } from "@features/tasks";
+import { TaskItem } from "@features/task-index";
 import { Tokens } from "./types";
 import { escapeRegExp } from "@utils";
 import {
@@ -294,5 +294,3 @@ export const isBlankTask = (task: TaskItem): boolean => {
 	if (typeof txt !== "string") return true;
 	return txt.trim().length === 0;
 };
-
-

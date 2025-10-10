@@ -1,4 +1,4 @@
-import { TaskItem } from "@features/tasks";
+import { TaskItem } from "@features/task-index";
 
 /**
  * Extract all data-template-key values from the task HTML.

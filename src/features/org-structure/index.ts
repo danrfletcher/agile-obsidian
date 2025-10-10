@@ -16,3 +16,9 @@ export {
 	buildTeamNode,
 	computeDirectChildrenMap,
 } from "./app/org-structure-service";
+
+export {
+	parseTeamFolderName,
+	isTeamFolderName,
+	inferTeamSlugFromPath,
+} from "./domain/org-slugs";

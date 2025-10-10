@@ -1,0 +1,184 @@
+---
+cssclasses:
+  - full-width-edit
+  - full-width-preview
+---
+# Initiatives
+**Purpose**
+- Program-level view of initiatives that bundle multiple epics and stories.
+
+**Use in Plugin & PM System**
+- Powers the “🎖️ Initiatives” section in the Agile Dashboard.
+- Lets you open an initiative and reveal its direct epics without auto-expanding the entire tree.
+
+**How it Works**
+- The dashboard renders initiatives as roots with children hidden by default.
+- Folding controls allow progressive reveal of direct epics, and then deeper levels on demand.
+- Status and assignment are interactive at appropriate levels; completed/cancelled items can be hidden.
+___
+
+- [/] <span data-template-wrapper="tpl-da-init2" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">Predictive Analytics Operationalization &amp; Scale-Up</span></strong></mark></span> <span data-template-wrapper="tpl-px3" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="alex-rivera-58h2bf" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Alex Rivera</strong></mark></span> <span data-template-wrapper="tpl-0blri8ymgi5us0r" data-template-key="workflows.metadata.linkToArtifact" data-order-tag="metadata" data-linked-artifact-type="okr"><mark style="background: #000000; color: #878787;"><strong><a class="internal-link" href="OKRs (okrs-6yc6n9)#^69pe5iya" data-tpl-attr-var-href="blockRef">🔗🎯</a></strong></mark></span> 
+	- [/] <span data-template-wrapper="tpl-da-ep1" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Prod-Grade Feature Pipelines</span></strong></mark></span> 
+		- [x] Baseline audit for data leakage, target leakage, and feature drift across top 5 customer-behavior datasets ✅ 2025-10-05
+		- [ ] Implement a lightweight feature store (e.g., parquet + catalog) with versioned features for training/serving parity 
+		- [ ] Create reusable preprocessing pipelines with data validation checks (nulls, outliers, schema) and document in repo wiki
+		- [ ] Establish data governance for feature usage; track lineage and approval workflows
+	- [/] <span data-template-wrapper="tpl-px6" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Model Development & A/B Deployment</span></strong></mark></span> 
+		- [/] <span data-template-wrapper="tpl-px7" data-template-key="agile.userStory" data-order-tag="artifact-item-type"><mark style="background: linear-gradient(to right, #00B7FF, #A890FE);"><strong>📝 <span data-tpl-var="title">Develop two new ML models</span></strong></mark></span> <span data-template-wrapper="tpl-model-assignee" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="taylor-kim-8sj62i" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Taylor Kim</strong></mark></span> 
+			- [ ] Train/evaluate Model B (LSTM/temporal) with sequence features; compare AUC/PR vs baseline
+			- [ ] Set up champion-challenger A/B in staging; define guardrails and rollback plan
+			- [ ] Conduct model interpretability analysis; generate SHAP/LIME explanations for top features <span data-template-wrapper="tpl-2sgcqe0mgi6731x" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="alex-rivera-58h2bf" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Alex Rivera</strong></mark></span> 
+		- [ ] Integrate model predictions into BI dashboard; enable usage in at least 50% of team reports 
+		- [ ] Establish weekly model review; capture drift, performance, and adoption KPIs
+		- [ ] Create model registry with versioning, metadata, and deployment artifacts
+	- [/] <span data-template-wrapper="tpl-px8" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Training Efficiency Optimization</span></strong></mark></span> <span data-template-wrapper="tpl-31hm7grmgi68225" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="jordan-patel-97c96r" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Jordan Patel</strong></mark></span> 
+		- [x] Profile current training jobs; identify top 3 bottlenecks (I/O, feature gen, model fit) ✅ 2025-10-06
+		- [/] <span data-template-wrapper="tpl-us1" data-template-key="agile.userStory" data-order-tag="artifact-item-type"><mark style="background: linear-gradient(to right, #00B7FF, #A890FE);"><strong>📝 <span data-tpl-var="title">Implement caching and mixed precision for training efficiency</span>:</strong></mark> <strong>As a</strong> <span data-tpl-var="persona">machine learning engineer</span>, <strong>I want to</strong> <span data-tpl-var="desire">introduce caching of datasets</span>, <strong>so that</strong> <span data-tpl-var="outcome">efficiency is improved</span></span> <span data-template-wrapper="tpl-gkhcjm7mgi6822t" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="alex-rivera-58h2bf" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Alex Rivera</strong></mark></span> 
+			- [ ] Profile current training pipeline to identify cacheable intermediate steps (feature engineering outputs, tokenized data, embeddings)
+			- [ ] Implement dataset caching layer (e.g., DVC, MLflow artifacts, or in-memory cache) with versioning and invalidation logic
+			- [ ] Benchmark mixed precision training (FP16/AMP) on GPU/TPU resources; validate accuracy parity with FP32 baseline
+			- [ ] Refactor training scripts to integrate caching hooks and mixed precision flags; add configuration toggles
+			- [ ] Run end-to-end performance tests; measure and document 30%+ reduction in wall-clock training time across 3 representative models
+			- [ ] Update training documentation and add monitoring for cache hit rates and precision-related warnings
+		- [ ] Parallelize cross-validation and hyperparameter search; cap end-to-end training time to target SLA
+		- [ ] Implement distributed training setup for large-scale experiments; test with multi-GPU configuration 
+	- [ ] <span data-template-wrapper="tpl-metrics-epic" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Model Monitoring & MLOps Foundations</span></strong></mark></span> 
+		- [ ] Set up model monitoring pipeline for drift detection (data, concept, prediction)
+		- [ ] Create automated retraining triggers based on performance thresholds
+		- [ ] Document MLOps playbook including CI/CD for models and compliance requirements
+- [/] <span data-template-wrapper="tpl-jr2" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">Real-time Data Platform Modernization</span></strong></mark></span> <span data-template-wrapper="tpl-jr3" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="jordan-patel-97c96r" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Jordan Patel</strong></mark></span> 
+	- [/] <span data-template-wrapper="tpl-jr5" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Source Integrations (CRM, Web, IoT)</span></strong></mark></span> 
+		- [ ] Implement CDC ingestion for CRM; validate schemas and PII handling <span data-template-wrapper="tpl-crm-cdc-assignee" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="alex-rivera-58h2bf" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Alex Rivera</strong></mark></span> 
+		- [ ] Stand up web analytics stream (e.g., GA4 export) into events topic with &lt;5s p95 latency <span data-template-wrapper="tpl-571cpntmgi6l17h" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="alex-rivera-58h2bf" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Alex Rivera</strong></mark></span> 
+		- [ ] Connect IoT via MQTT/HTTP gateway; normalize payloads and register schemas 
+		- [ ] Backfill 12 months of historical data and reconcile counts with source-of-truth
+		- [ ] Implement data quality gates at ingestion layer; reject malformed records
+	- [/] <span data-template-wrapper="tpl-jr6" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Streaming & Storage Foundations</span></strong></mark></span> 
+		- [x] Provision streaming cluster + schema registry; create data contracts for 3 key topics ✅ 2025-10-04
+		- [ ] Implement structured streaming jobs for 3 real-time views (customers, sessions, device-events) with SLAs 
+		- [ ] Optimize storage tiering (hot/warm) and retention; document cost model
+		- [ ] Set up data lakehouse architecture with query federation across sources
+	- [/] <span data-template-wrapper="tpl-jr7" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Reliability, Observability & Uptime</span></strong></mark></span> 
+		- [ ] Define SLOs (latency, availability) to support 99.9% uptime; wire alerts to on-call 
+		- [ ] Add end-to-end synthetic tests and chaos drills (broker restart, partial outage) monthly
+		- [ ] Create incident runbook v1 and postmortem template; share in team drive 
+		- [ ] Implement comprehensive logging and tracing across the pipeline
+	- [/] <span data-template-wrapper="tpl-jr8" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Enablement & Adoption</span></strong></mark></span> 
+		- [ ] Deliver 2 cross-team training sessions; measure +25% adoption via dashboard usage metrics
+		- [ ] Publish self-serve docs and quick-start notebooks; gather feedback from 10 stakeholders
+		- [ ] Create data catalog with business glossary and lineage visualization 
+		- [ ] Set up self-service query patterns and governance for ad-hoc analysis
+	- [ ] <span data-template-wrapper="tpl-security-epic" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Data Security & Compliance</span></strong></mark></span> 
+		- [ ] Implement RBAC and column-level encryption for sensitive PII fields
+		- [ ] Conduct privacy impact assessment and data classification
+		- [ ] Set up audit logging for data access and modifications 
+		- [ ] Create compliance reporting dashboard for regulatory requirements
+- [/] <span data-template-wrapper="tpl-tk2" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">Market Insight Program</span></strong></mark></span> <span data-template-wrapper="tpl-tk3" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="taylor-kim-8sj62i" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Taylor Kim</strong></mark></span> <span data-template-wrapper="tpl-tk4" data-template-key="workflows.metadata.linkToArtifact" data-order-tag="metadata"><mark style="background: #000000; color: #878787;"><strong><a class="internal-link" href="Sample Team OKRs#^okr-taylor">🔗🎯</a></strong></mark></span> 
+	- [/] <span data-template-wrapper="tpl-tk5" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Data Acquisition & EDA</span></strong></mark></span> 
+		- [x] Identify and secure access to 5 market trend datasets (public + paid) ✅ 2025-10-03
+		- [ ] Build EDA notebooks; standardize profiling (missingness, seasonality, anomalies) 
+		- [ ] Document 3 high-impact opportunities with quantified potential and confidence levels
+		- [ ] Create data quality scorecard for external datasets
+	- [/] <span data-template-wrapper="tpl-tk6" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Insight Packaging & Adoption</span></strong></mark></span> 
+		- [ ] Produce a quarterly Insights Report; present to 10 stakeholders; capture 40% usage uptick via survey + analytics <span data-template-wrapper="tpl-insights-report-assignee" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="taylor-kim-8sj62i" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Taylor Kim</strong></mark></span> 
+		- [ ] Create dashboard tiles and automated email digest of top weekly insights
+		- [ ] Develop insight validation framework with business impact scoring <span data-template-wrapper="tpl-insight-validation-assignee" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="jordan-patel-97c96r" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Jordan Patel</strong></mark></span> 
+		- [ ] Create executive summary templates for C-suite consumption <span data-template-wrapper="tpl-f6anwg1mgi6mxe8" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="jordan-patel-97c96r" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Jordan Patel</strong></mark></span> 
+	- [ ] <span data-template-wrapper="tpl-tk7" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Workflow Automation</span></strong></mark></span> 
+		- [ ] Automate 50% of cleaning steps (dbt/notebooks) with data quality tests and CI <span data-template-wrapper="tpl-cleaning-automation-assignee" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="jordan-patel-97c96r" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Jordan Patel</strong></mark></span> <span data-template-wrapper="tpl-5l2f99jmgi5vdq7" data-template-key="workflows.metadata.linkToArtifact" data-order-tag="metadata" data-linked-artifact-type="okr"><mark style="background: #000000; color: #878787;"><strong><a class="internal-link" href="OKRs (okrs-6yc6n9)#^2kh3dqff" data-tpl-attr-var-href="blockRef">🔗🎯</a></strong></mark></span> 
+		- [ ] Create visualization templates and narrative snippets; cut report assembly time by 25% 
+		- [ ] Implement automated anomaly detection in analysis workflows
+		- [ ] Create reusable analysis patterns for common market research questions 
+	- [ ] <span data-template-wrapper="tpl-storytelling-epic" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Data Storytelling & Visualization Excellence</span></strong></mark></span> 
+		- [ ] Develop design system for insights visualizations and reports 
+		- [ ] Create interactive storytelling templates for complex analyses
+		- [ ] Train team on data visualization best practices and accessibility 
+		- [ ] Establish review process for insight quality and presentation
+- [ ] <span data-template-wrapper="tpl-cross1" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">Cross-Team Data Governance Initiative</span></strong></mark></span> <span data-template-wrapper="tpl-cross-assignee" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="jordan-patel-97c96r" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Jordan Patel</strong></mark></span> 
+	- [ ] <span data-template-wrapper="tpl-gov-framework" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Data Governance Framework</span></strong></mark></span> <span data-template-wrapper="tpl-cross-link" data-template-key="workflows.metadata.linkToArtifact" data-order-tag="metadata" data-linked-artifact-type="okr"><mark style="background: #000000; color: #878787;"><strong><a class="internal-link" href="OKRs (okrs-6yc6n9)#^69pe5iya" data-tpl-attr-var-href="blockRef">🔗🎯</a></strong></mark></span> 
+		- [ ] Create data classification policy and tagging standards 
+		- [ ] Implement data ownership model across business units
+		- [ ] Establish data stewardship council with rotating membership 
+		- [ ] Document data lifecycle management policies
+	- [ ] <span data-template-wrapper="tpl-gov-tools" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Governance Tooling</span></strong></mark></span> 
+		- [ ] Deploy data catalog with automated metadata collection 
+		- [ ] Implement data lineage tracking across ETL and ML pipelines
+		- [ ] Create self-service data access request portal 
+		- [ ] Set up governance dashboards for compliance monitoring
+- [ ] <span data-template-wrapper="tpl-ai1" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">AI/ML Platform Development</span></strong></mark></span> <span data-template-wrapper="tpl-ai-assignee" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="alex-rivera-58h2bf" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Alex Rivera</strong></mark></span> <span data-template-wrapper="tpl-ai-link" data-template-key="workflows.metadata.linkToArtifact" data-order-tag="metadata" data-linked-artifact-type="okr"><mark style="background: #000000; color: #878787;"><strong><a class="internal-link" href="OKRs (okrs-6yc6n9)#^69pe5iya" data-tpl-attr-var-href="blockRef">🔗🎯</a></strong></mark></span> 
+	- [ ] <span data-template-wrapper="tpl-mlops" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">MLOps Platform</span></strong></mark></span> 
+		- [ ] Set up experiment tracking and model registry 
+		- [ ] Implement automated model deployment pipelines
+		- [ ] Create model serving infrastructure with A/B testing 
+		- [ ] Establish model performance monitoring and alerting
+	- [ ] <span data-template-wrapper="tpl-ai-infra" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">AI Infrastructure</span></strong></mark></span> 
+		- [ ] Provision GPU/TPU resources for training and inference 
+		- [ ] Set up distributed training infrastructure
+		- [ ] Implement cost optimization for AI workloads 
+		- [ ] Create resource allocation policies for AI projects
+- [ ] <span data-template-wrapper="tpl-analyt1" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">Advanced Analytics Capability</span></strong></mark></span> <span data-template-wrapper="tpl-analyt-assignee" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="taylor-kim-8sj62i" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Taylor Kim</strong></mark></span> <span data-template-wrapper="tpl-analyt-link" data-template-key="workflows.metadata.linkToArtifact" data-order-tag="metadata" data-linked-artifact-type="okr"><mark style="background: #000000; color: #878787;"><strong><a class="internal-link" href="OKRs (okrs-6yc6n9)#^2kh3dqff" data-tpl-attr-var-href="blockRef">🔗🎯</a></strong></mark></span> 
+	- [ ] <span data-template-wrapper="tpl-gov-ep1" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Framework</span></strong></mark></span> 
+		- [ ] Migrate legacy reports to modern BI platform 
+		- [ ] Implement semantic layer for consistent metrics
+		- [ ] Create self-service analytics environment 
+		- [ ] Establish BI governance and standards
+	- [ ] <span data-template-wrapper="tpl-pred-analyt" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Predictive Analytics Enablement</span></strong></mark></span> 
+		- [ ] Create predictive analytics library of reusable models 
+		- [ ] Enable no-code predictive modeling for business users
+		- [ ] Integrate predictions into operational workflows 
+		- [ ] Establish model governance for business-critical predictions
+- [ ] <span data-template-wrapper="tpl-dataops1" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">DataOps Transformation</span></strong></mark></span> <span data-template-wrapper="tpl-dataops-assignee" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="jordan-patel-97c96r" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Jordan Patel</strong></mark></span> 
+	- [ ] <span data-template-wrapper="tpl-ci-cd" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">CI/CD for Data Pipelines</span></strong></mark></span> 
+		- [ ] Implement automated testing for data pipelines 
+		- [ ] Set up CI/CD pipelines for ETL transformations
+		- [ ] Create deployment strategies for data infrastructure 
+		- [ ] Establish rollback procedures for data deployments
+	- [ ] <span data-template-wrapper="tpl-data-quality" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Data Quality Engineering</span></strong></mark></span> 
+		- [ ] Implement comprehensive data quality framework 
+		- [ ] Create automated data quality monitoring
+		- [ ] Establish data quality SLAs and accountability 
+		- [ ] Develop data quality remediation workflows
+- [ ] <span data-template-wrapper="tpl-knowledge1" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">Data Knowledge Management</span></strong></mark></span> <span data-template-wrapper="tpl-knowledge-assignee" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="taylor-kim-8sj62i" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Taylor Kim</strong></mark></span> 
+	- [ ] <span data-template-wrapper="tpl-knowledge-base" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Knowledge Base Development</span></strong></mark></span> 
+		- [ ] Create comprehensive data dictionary and business glossary 
+		- [ ] Document key data flows and transformation logic
+		- [ ] Develop use case documentation for critical datasets 
+		- [ ] Create knowledge sharing platform and templates
+	- [ ] <span data-template-wrapper="tpl-training" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Data Literacy Training</span></strong></mark></span> 
+		- [ ] Develop data literacy curriculum for different roles 
+		- [ ] Create hands-on training labs and exercises
+		- [ ] Establish data community of practice 
+		- [ ] Measure and improve data literacy across organization
+- [ ] <span data-template-wrapper="tpl-experiment1" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">Experimentation Platform</span></strong></mark></span> <span data-template-wrapper="tpl-experiment-assignee" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="alex-rivera-58h2bf" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Alex Rivera</strong></mark></span> <span data-template-wrapper="tpl-experiment-link" data-template-key="workflows.metadata.linkToArtifact" data-order-tag="metadata" data-linked-artifact-type="okr"><mark style="background: #000000; color: #878787;"><strong><a class="internal-link" href="OKRs (okrs-6yc6n9)#^69pe5iya" data-tpl-attr-var-href="blockRef">🔗🎯</a></strong></mark></span> 
+	- [ ] <span data-template-wrapper="tpl-a-b-testing" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">A/B Testing Infrastructure</span></strong></mark></span> 
+		- [ ] Implement experimentation platform with statistical rigor 
+		- [ ] Create self-service A/B testing capabilities
+		- [ ] Establish experiment governance and review process 
+		- [ ] Develop experiment result analysis and reporting
+	- [ ] <span data-template-wrapper="tpl-ml-experiment" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">ML Experiment Tracking</span></strong></mark></span> 
+		- [ ] Set up comprehensive experiment tracking system 
+		- [ ] Implement hyperparameter optimization workflows
+		- [ ] Create experiment reproducibility infrastructure 
+		- [ ] Establish experiment prioritization framework
+- [ ] <span data-template-wrapper="tpl-cost1" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">Data Cost Optimization</span></strong></mark></span> <span data-template-wrapper="tpl-cost-assignee" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="jordan-patel-97c96r" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Jordan Patel</strong></mark></span> 
+	- [ ] <span data-template-wrapper="tpl-storage-opt" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Storage Cost Optimization</span></strong></mark></span> 
+		- [ ] Implement intelligent data lifecycle management 
+		- [ ] Optimize data compression and format selection
+		- [ ] Create automated storage tiering policies 
+		- [ ] Establish storage cost monitoring and alerting
+	- [ ] <span data-template-wrapper="tpl-compute-opt" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Compute Cost Optimization</span></strong></mark></span> 
+		- [ ] Implement auto-scaling for compute resources 
+		- [ ] Optimize query performance to reduce compute costs
+		- [ ] Create workload classification and resource allocation 
+		- [ ] Establish cost allocation and chargeback mechanisms
+- [ ] <span data-template-wrapper="tpl-innovation1" data-template-key="agile.initiative" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🎖️ <span data-tpl-var="title">Data Innovation Lab</span></strong></mark></span> <span data-template-wrapper="tpl-innovation-assignee" data-template-key="members.assignee" data-order-tag="assignment" data-assignment-state="active" data-member-slug="taylor-kim-8sj62i" data-member-type="teamMember" data-assign-type="assignee"><mark style="background: #BBFABBA6; color: #000000;"><strong>👋 Taylor Kim</strong></mark></span> 
+	- [ ] <span data-template-wrapper="tpl-emerging-tech" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Emerging Technology Exploration</span></strong></mark></span> 
+		- [ ] Research and prototype generative AI use cases
+		- [ ] Explore federated learning for privacy-preserving ML
+		- [ ] Investigate graph analytics for relationship discovery
+		- [ ] Experiment with real-time ML inference patterns
+	- [ ] <span data-template-wrapper="tpl-innovation-projects" data-template-key="agile.epic" data-order-tag="artifact-item-type"><mark style="background: #CACFD9A6;"><strong>🏆 <span data-tpl-var="title">Innovation Projects</span></strong></mark></span> 
+		- [ ] Launch 3 innovation hackathons per year
+		- [ ] Create innovation project incubation process
+		- [ ] Establish success metrics for innovation initiatives
+		- [ ] Create knowledge transfer from innovation to production

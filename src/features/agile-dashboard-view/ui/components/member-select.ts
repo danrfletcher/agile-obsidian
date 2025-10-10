@@ -1,32 +1,51 @@
 import type { SettingsService } from "@settings";
 
-export function buildGroupedMemberSelect(
-	settingsService: SettingsService,
-	initialAlias: string | null
-): HTMLSelectElement {
-	const select = document.createElement("select");
+type MemberSelectFilter = {
+	selectedTeamSlugs?: Set<string> | null;
+	implicitAllSelected?: boolean;
+};
 
-	type Entry = {
-		alias: string;
-		name: string;
-		role: "member" | "internal-team-member" | "team" | "external";
-		label: string;
-	};
+type Entry = {
+	alias: string;
+	name: string;
+	role: "member" | "internal-team-member" | "team" | "external";
+	label: string;
+};
+
+const normalizeAlias = (input: string): string => {
+	if (!input) return "";
+	let s = String(input).trim();
+	if (s.startsWith("@")) s = s.slice(1);
+	return s.toLowerCase();
+};
+
+function computeEntries(
+	settingsService: SettingsService,
+	filter?: MemberSelectFilter
+): Entry[] {
+	const settings = settingsService.getRaw();
+	const teams = settings.teams || [];
+
+	// Determine which teams to include
+	const selectedSet = filter?.selectedTeamSlugs ?? null;
+	const implicitAll = !!filter?.implicitAllSelected;
+	const includeAllTeams =
+		implicitAll || !selectedSet || selectedSet.size === 0;
+
+	const includedTeams = includeAllTeams
+		? teams
+		: teams.filter((t: any) => {
+				const slug = (t?.slug ?? t?.teamSlug ?? "")
+					.toString()
+					.toLowerCase()
+					.trim();
+				return slug && selectedSet!.has(slug);
+		  });
 
 	const entries: Entry[] = [];
 	const seen = new Set<string>();
 
-	const normalizeAlias = (input: string): string => {
-		if (!input) return "";
-		let s = String(input).trim();
-		if (s.startsWith("@")) s = s.slice(1);
-		return s.toLowerCase();
-	};
-
-	const settings = settingsService.getRaw();
-	const teams = settings.teams || [];
-
-	for (const t of teams) {
+	for (const t of includedTeams) {
 		for (const m of t.members || []) {
 			const aliasRaw =
 				typeof m === "string"
@@ -60,6 +79,12 @@ export function buildGroupedMemberSelect(
 		}
 	}
 
+	return entries;
+}
+
+function groupAndAppendOptions(select: HTMLSelectElement, entries: Entry[]) {
+	select.innerHTML = "";
+
 	const groupTeamMembers = entries
 		.filter((e) => e.role === "member" || e.role === "internal-team-member")
 		.sort((a, b) => a.name.localeCompare(b.name));
@@ -86,22 +111,71 @@ export function buildGroupedMemberSelect(
 	addGroup("Team Members", groupTeamMembers);
 	addGroup("Delegates – Internal Teams", groupDelegatesInternalTeams);
 	addGroup("Delegates – External", groupDelegatesExternal);
+}
 
-	const defRaw = settings.currentUserAlias || "";
+function resolveAppliedAlias(
+	settingsService: SettingsService,
+	availableAliases: string[],
+	preferredAlias: string | null
+): string | null {
+	const defRaw = settingsService.getRaw().currentUserAlias || "";
 	const def = normalizeAlias(defRaw);
-	const all = [
-		...groupTeamMembers,
-		...groupDelegatesInternalTeams,
-		...groupDelegatesExternal,
-	];
+	const all = new Set(availableAliases);
 
-	const preferred =
-		initialAlias && all.some((e) => e.alias === initialAlias)
-			? initialAlias
-			: def && all.some((e) => e.alias === def)
-			? def
-			: all[0]?.alias ?? "";
-	if (preferred) select.value = preferred;
+	if (preferredAlias && all.has(preferredAlias)) return preferredAlias;
+	if (def && all.has(def)) return def;
+	return availableAliases[0] || null;
+}
+
+/**
+ * Create the grouped member select element and populate it.
+ * If filter is provided, only members from the selected teams are included.
+ */
+export function buildGroupedMemberSelect(
+	settingsService: SettingsService,
+	initialAlias: string | null,
+	filter?: MemberSelectFilter
+): HTMLSelectElement {
+	const select = document.createElement("select");
+
+	const entries = computeEntries(settingsService, filter);
+	groupAndAppendOptions(select, entries);
+
+	const applied = resolveAppliedAlias(
+		settingsService,
+		entries.map((e) => e.alias),
+		initialAlias ? normalizeAlias(initialAlias) : null
+	);
+	if (applied) select.value = applied;
 
 	return select;
+}
+
+/**
+ * Repopulate an existing grouped member select element based on filter and a preferred alias.
+ * Returns the applied alias after the refresh (may differ from the preferred if not present).
+ */
+export function refreshGroupedMemberSelect(
+	select: HTMLSelectElement,
+	settingsService: SettingsService,
+	preferredAlias: string | null,
+	filter?: MemberSelectFilter
+): string | null {
+	const entries = computeEntries(settingsService, filter);
+	groupAndAppendOptions(select, entries);
+
+	const applied = resolveAppliedAlias(
+		settingsService,
+		entries.map((e) => e.alias),
+		preferredAlias ? normalizeAlias(preferredAlias) : null
+	);
+
+	if (applied) {
+		select.value = applied;
+	} else {
+		// No options available
+		select.value = "";
+	}
+
+	return applied;
 }

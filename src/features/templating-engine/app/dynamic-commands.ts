@@ -28,6 +28,10 @@ import {
 	type ParamsTemplatingPorts,
 } from "@features/templating-params-editor";
 
+// New: insertion workflows
+import { runTemplateWorkflows } from "../domain/template-workflows";
+import type { TaskIndexPort } from "./templating-ports";
+
 function collectTemplates(): Array<{ id: string; def: TemplateDefinition }> {
 	const out: Array<{ id: string; def: TemplateDefinition }> = [];
 	const groups = presetTemplates as unknown as Record<
@@ -49,10 +53,22 @@ function makeCommandId(manifestId: string, templateId: string): string {
 	return `${manifestId}:tpl:${slug}`;
 }
 
+export type TemplatingDynamicCommandPorts = {
+	taskIndex?: TaskIndexPort;
+};
+
+/**
+ * Register templating dynamic commands.
+ * @param app Obsidian app
+ * @param plugin Plugin instance
+ * @param manifestId Plugin manifest id
+ * @param ports Optional ports (e.g., taskIndex) for insertion workflows
+ */
 export async function registerTemplatingDynamicCommands(
 	app: App,
 	plugin: Plugin,
-	manifestId: string
+	manifestId: string,
+	ports?: TemplatingDynamicCommandPorts
 ): Promise<void> {
 	const templates = collectTemplates();
 
@@ -196,7 +212,7 @@ export async function registerTemplatingDynamicCommands(
 
 						if (def.hasParams) {
 							// Delegate to templating-params-editor for param collection
-							const ports: ParamsTemplatingPorts = {
+							const paramPorts: ParamsTemplatingPorts = {
 								findTemplateById: (tid) =>
 									findTemplateById(tid) as any,
 								showSchemaModal: (tid, schema, isEdit) =>
@@ -219,13 +235,22 @@ export async function registerTemplatingDynamicCommands(
 							};
 
 							params = await requestTemplateParams(
-								ports,
+								paramPorts,
 								id,
 								{}, // no prefill for 'create'
 								false,
-								undefined // let the underlying modals handle notices
+								undefined
 							);
 							if (!params) return;
+						}
+
+						// Run optional insertion workflows (before insertion)
+						if (def.insertWorkflows && def.insertWorkflows.length) {
+							params = await runTemplateWorkflows(
+								def,
+								params ?? {},
+								{ taskIndex: ports?.taskIndex }
+							);
 						}
 
 						const ctx = await getCursorContext(app, view, editor);

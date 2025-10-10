@@ -1,5 +1,5 @@
 import { App, TFile } from "obsidian";
-import { TaskItem } from "@features/tasks";
+import { TaskItem } from "@features/task-index";
 import { slugifyName } from "@shared/identity";
 import { escapeRegExp } from "@utils";
 

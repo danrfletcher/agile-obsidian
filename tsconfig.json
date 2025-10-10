@@ -30,5 +30,5 @@
 		"tsBuildInfoFile": ".tsbuildinfo",
 		"noEmit": true
 	},
-	"include": ["**/*.ts"]
+	"include": ["**/*.ts", "src/types//*.d.ts"]
 }

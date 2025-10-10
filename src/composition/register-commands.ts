@@ -8,10 +8,25 @@ export async function registerAllCommands(container: Container) {
 	await registerAgileDashboardView(container);
 
 	// Feature: Dynamic template commands based on cursor context
+	// IMPORTANT: Wire task index into templating so insertion workflows can resolve blockRef -> TaskItem
 	await registerTemplatingDynamicCommands(
 		container.app,
 		container.plugin as any,
-		container.manifestId
+		container.manifestId,
+		container.taskIndexService
+			? {
+					taskIndex: {
+						getItemAtCursor: (cursor) =>
+							container.taskIndexService!.getItemAtCursor(
+								cursor
+							) as any,
+						getTaskByBlockRef: (ref) =>
+							container.taskIndexService!.getTaskByBlockRef(
+								ref
+							) as any,
+					},
+			  }
+			: undefined
 	);
 
 	// Feature: Task assignment commands (members + special "Everyone")

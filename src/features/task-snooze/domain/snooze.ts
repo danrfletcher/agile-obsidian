@@ -1,5 +1,5 @@
 import { App, TFile } from "obsidian";
-import { TaskItem } from "@features/tasks";
+import { TaskItem } from "@features/task-index";
 import { escapeRegExp } from "@utils";
 
 // Update one exact line in a note to add/replace a snooze marker for the given user
