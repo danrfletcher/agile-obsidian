@@ -77,7 +77,8 @@ Agile Obsidian is a plugin that transforms your Obsidian vault into a powerful, 
 | Agile Task Date Manager | Adds UI menu with date picker to manage start, scheduled, due & target dates | Command, Agile Dashboard, UI Menu | Experimental |
 | Task Metadata Cleanup | Automated metadata cleanup e.g., removing expired snooze dates from tasks | Automatic (on Obsidian start, Agile Dashboard open) | Stable |
 | Agile Task Statuses | Additional preset task statuses & custom task checkboxes [ ] → [/] → [x] → [-] | Automatic (click to advance status, long-click to cancel) | Stable |
-| Quick Insert Multiple Agile Artifacts | Press enter on a task line with an existing agile atifact e.g., Epic to insert another agile artifact e.g., Epic on the next line | Automatic (on enter click on task line with Agile artifact) | Stable
+| Custom Task Status Styles | Extended set of custom, parseable status tokens for richer workflows (Blocked, Waiting, Review, Recurring, Prioritize, One-off, Outline, etc.) | Automatic (click to advance status, status chips, stylesheet-driven) | Stable |
+| Quick Insert Multiple Agile Artifacts | Press enter on a task line with an existing agile atifact e.g., Epic to insert another agile artifact e.g., Epic on the next line | Automatic (on enter click on task line with Agile artifact) | Stable |
 
 ### Quickstart
 
@@ -265,6 +266,53 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
 -   **Configuration you’re likely to touch:**
     -   The status sequence (` ` -> `/` -> `x`) and the long-press to cancel (`-`) are core behaviors and are not configurable.
 
+#### Feature: Custom Task Status Styles
+
+- **What you can do:**
+  - Use an extended set of custom, parseable status tokens to express richer task states directly in your Markdown task lines.
+  - Click a task's checkbox/status in the Agile Dashboard or in the editor to advance or change status where applicable.
+  - Use status tokens in filters and on the Agile Dashboard to focus on work by explicit states (e.g., show only [b] Blocked items or only [r] Recurring tasks).
+  - Rely on the Canonical Formatter to keep status tokens and other metadata ordered and parseable.
+
+- **Included statuses (1.0.1):**
+  - [ ] Unchecked — `[ ]` (unstarted)
+  - [/] In Progress — `[/]`
+  - [b] Blocked — `[b]`
+  - [w] Waiting — `[w]`
+  - [R] Review — `[R]`
+  - [x] Regular — `[x]` (regular done state)
+  - [X] Checked — `[X]` (alternate checked/done state)
+  - [-] Dropped — `[-]` (cancelled/dropped)
+  - [r] Recurring — `[r]`
+  - [p] Prioritize — `[p]`
+  - [d] One-off — `[d]`
+  - [O] Outline — `[O]`
+
+  Note: The plugin stylesheet also contains many non-essential emoji-based statuses. These are intentionally not enumerated in this documentation because they are optional visual variants and are not required for the plugin’s core behavior.
+
+- **When to use this feature:**
+  - Use custom status styles when you need more nuance than simple todo/done (for example: blocking issues, items waiting on external input, items that recur, review-required tasks, or prioritization flags).
+  - Use the status tokens in project triage, stand-ups, or when building filtered views on the Agile Dashboard.
+
+- **Use Cases and Guided Workflows:**
+  - **Use Case U1: Mark a task as blocked and surface it in triage**
+    1. From the Agile Dashboard or the editor, set the task status to `[b]` (Blocked) using the status control or by editing the line.
+    2. Filter the Dashboard to show Blocked items to prioritize unblock actions during triage.
+    3. When unblocked, click the status to advance it back to `[/]` (In Progress) or to the desired state.
+    - **Verification:** The source `.md` line contains `[b]` and the Dashboard filter surfaces the task under Blocked items.
+  - **Use Case U2: Schedule recurring work**
+    1. Create a task and tag its status as `[r]` (Recurring).
+    2. Use the Agile Task Date Manager (experimental) to control recurrence dates and the plugin’s metadata cleanup to maintain timestamps.
+    - **Verification:** Recurring tasks appear in recurrence-aware views and are preserved as recurring rather than being permanently closed after completion.
+
+- **Configuration you’re likely to touch:**
+  - Status-related behavior is mostly automatic. You may adjust Dashboard filters and Section Toggles in the settings to include/exclude custom statuses from specific views.
+  - The Canonical Formatter enforces the parseable order of status tokens and other chips; you generally won't need to edit status order manually.
+
+- **Implementation notes for maintainers:**
+  - Status tokens are parsed as part of the Task Indexer’s canonical line parser. When adding new tokens, ensure the parser’s token map and the Canonical Formatter are updated.
+  - The Dashboard and status UI should treat status tokens as first-class filters and allow click-to-advance behavior consistent with the plugin's configured status sequence behavior.
+
 ### Configuration/Settings Reference
 
 The Agile Obsidian settings are accessible via **Settings > Agile Obsidian**.
@@ -328,8 +376,13 @@ The Agile Obsidian settings are accessible via **Settings > Agile Obsidian**.
 -   [Needs confirmation: The build and test commands (e.g., `npm run build`, `npm run test`) need to be documented].
 
 ### Change Log (Docs)
--   Documentation updated to version 1.0.0.
--   Rewrote documentation in full to align with a standardized, comprehensive structure.
--   Corrected and expanded feature descriptions based on an analysis of the plugin's architecture and existing README.
--   Added new sections for Architecture, API Surfaces, Security, and a detailed User-Centric Feature Catalog.
--   Incorporated maintainer feedback to correct command names and provide a complete feature breakdown.
+- Documentation updated to version 1.0.1.
+  - Added support and documentation for new & revised custom task status styles (see "Feature: Custom Task Status Styles").
+  - Added "Custom Task Status Styles" to the Other Capabilities Table.
+  - Clarified behavior and examples for blocked, waiting, recurring, review, prioritize, one-off, and outline statuses.
+- Previous (1.0.0) changes:
+  - Documentation updated to version 1.0.0.
+  - Rewrote documentation in full to align with a standardized, comprehensive structure.
+  - Corrected and expanded feature descriptions based on an analysis of the plugin's architecture and existing README.
+  - Added new sections for Architecture, API Surfaces, Security, and a detailed User-Centric Feature Catalog.
+  - Incorporated maintainer feedback to correct command names and provide a complete feature breakdown.
