@@ -1,9 +1,9 @@
 {
-	"id": "agile-obsidian",
-	"name": "Agile Obsidian",
+	"id": "agile-project-management",
+	"name": "Agile Project Management",
 	"version": "1.0.1",
 	"minAppVersion": "0.15.0",
-	"description": "Turns Obsidian into a powerful collaborative Agile productivity hub inspired by ClickUp, Jira, and Notion.",
+	"description": "Turns your vault into a powerful collaborative Agile productivity hub inspired by ClickUp, Jira, and Notion.",
 	"author": "danrfletcher",
 	"authorUrl": "https://github.com/danrfletcher/",
 	"fundingUrl": "https://buymeacoffee.com/danrfletcher",
