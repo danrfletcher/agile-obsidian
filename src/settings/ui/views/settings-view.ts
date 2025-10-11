@@ -67,7 +67,6 @@ export class AgileSettingTab extends PluginSettingTab {
 				await this.saveSettings();
 			}
 		);
-
 		this.renderOrgStructureSection(org.contentEl);
 
 		// AGILE DASHBOARD SECTION (foldable)
@@ -81,8 +80,20 @@ export class AgileSettingTab extends PluginSettingTab {
 				await this.saveSettings();
 			}
 		);
-
 		this.renderAgileDashboardSection(dash.contentEl);
+
+		// UX SHORTCUTS SECTION (foldable)
+		const ux = this.createFoldableSection(
+			containerEl,
+			"UX Shortcuts",
+			"Turn ease of use features on/off.",
+			this.settings.uiFoldUxShortcuts ?? true,
+			async (folded) => {
+				this.settings.uiFoldUxShortcuts = folded;
+				await this.saveSettings();
+			}
+		);
+		this.renderUxShortcutsSection(ux.contentEl);
 	}
 
 	private getTeamsCount(): number {
@@ -111,7 +122,6 @@ export class AgileSettingTab extends PluginSettingTab {
 		teamsButtons.addButton((btn) => {
 			btn.setButtonText("Add Sample Team")
 				.setDisabled(hasSampleTeam)
-				// intentionally NOT setCta or setWarning to keep it non-primary/non-secondary
 				.onClick(() => {
 					new AddTeamModal(
 						this.app,
@@ -279,6 +289,36 @@ export class AgileSettingTab extends PluginSettingTab {
 					await this.saveSettings();
 				})
 		);
+	}
+
+	/**
+	 * Renders the UX Shortcuts content into the provided container.
+	 */
+	private renderUxShortcutsSection(containerEl: HTMLElement): void {
+		containerEl.empty();
+
+		// Subheader + description
+		new Setting(containerEl)
+			.setName("Agile Artifact Templates")
+			.setDesc(
+				"Applies to tasks containing Initiatives, Epics, User Stories & other agile templates"
+			);
+
+		// Toggle: Multiple Agile Template Easy Insertion
+		new Setting(containerEl)
+			.setName("Multiple Agile Template Easy Insertion")
+			.setDesc(
+				"With your cursor at the end of a task line containing an agile artifact template (Initiative, Epic, User Story etc), double press enter to quickly create the same artifact on the next line."
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.settings.enableUxRepeatAgileTemplates)
+					.onChange(async (value) => {
+						this.settings.enableUxRepeatAgileTemplates = value;
+						// Persist and take effect immediately; the handler checks this flag live.
+						await this.saveSettings();
+					})
+			);
 	}
 
 	/**

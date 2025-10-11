@@ -7,6 +7,7 @@ import { processEnter } from "../app/enter-repeat-agile-template";
  *
  * We listen on keydown with capture=true and forward the event to processEnter
  * so it can decide if and when to preventDefault (only on the second Enter within window).
+ * Gated by settings.enableUxRepeatAgileTemplates for immediate on/off effect.
  */
 export function wireTemplatingUxShortcutsDomHandlers(
 	app: App,
@@ -24,6 +25,12 @@ export function wireTemplatingUxShortcutsDomHandlers(
 
 	const onKeyDown = (evt: KeyboardEvent) => {
 		if (evt.key !== "Enter") return;
+
+		// Gate on setting (checked live for immediate effect)
+		const enabled = !!(plugin as any)?.settings
+			?.enableUxRepeatAgileTemplates;
+		if (!enabled) return;
+
 		// Pass the event so processEnter can preventDefault on the second press (when applicable)
 		void processEnter(app, view, evt);
 	};

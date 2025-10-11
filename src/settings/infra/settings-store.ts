@@ -20,4 +20,8 @@ export const DEFAULT_SETTINGS: AgileObsidianSettings = {
 	// Settings sections minimized by default
 	uiFoldOrgStructure: true,
 	uiFoldAgileDashboard: true,
+	uiFoldUxShortcuts: true,
+
+	// UX Shortcuts
+	enableUxRepeatAgileTemplates: true,
 };

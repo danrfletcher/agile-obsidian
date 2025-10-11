@@ -19,4 +19,17 @@ export interface AgileObsidianSettings {
 	 */
 	uiFoldOrgStructure: boolean;
 	uiFoldAgileDashboard: boolean;
+
+	/**
+	 * UI fold state for UX Shortcuts section (persisted).
+	 * Default: true (minimized)
+	 */
+	uiFoldUxShortcuts: boolean;
+
+	/**
+	 * UX Shortcuts: Enables double-Enter to quickly repeat the same agile artifact
+	 * template on the next task line.
+	 * Default: true
+	 */
+	enableUxRepeatAgileTemplates: boolean;
 }
