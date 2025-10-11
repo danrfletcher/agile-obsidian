@@ -29,7 +29,11 @@ export function createCanonicalFormatterOrchestrator(
 
 	// Serialize runs and coalesce triggers while a run is in flight.
 	let isRunning = false;
-	let queued: { reason: TriggerReason; scope: TriggerScope } | null = null;
+	let queued: {
+		reason: TriggerReason;
+		scope: TriggerScope;
+		targetLineNumber?: number | null;
+	} | null = null;
 
 	const clearTimer = () => {
 		if (timer !== null) {
@@ -38,12 +42,15 @@ export function createCanonicalFormatterOrchestrator(
 		}
 	};
 
-	const runOnce = async (reason: TriggerReason, scope: TriggerScope) => {
+	const runOnce = async (
+		reason: TriggerReason,
+		scope: TriggerScope,
+		targetLineNumber?: number | null
+	) => {
 		if (disposed) return;
 
 		// Scope handling:
 		// - "file": normalize whole file atomically
-		// - "line" or "cursor": normalize current line
 		if (scope === "file") {
 			const all =
 				typeof port?.getAllLines === "function"
@@ -54,9 +61,16 @@ export function createCanonicalFormatterOrchestrator(
 			return;
 		}
 
-		// For 'line' and 'cursor' scopes, normalize the current line.
-		// We intentionally do NOT guard out if the caret is on the same line;
-		// the service handles selection and caret mapping.
+		// - Specific line requested (e.g., leaving a line)
+		if (
+			typeof targetLineNumber === "number" &&
+			typeof svc.normalizeLineNumber === "function"
+		) {
+			svc.normalizeLineNumber(targetLineNumber);
+			return;
+		}
+
+		// - "line" or "cursor": normalize current line
 		try {
 			svc.normalizeCurrentLine();
 		} catch {
@@ -64,16 +78,20 @@ export function createCanonicalFormatterOrchestrator(
 		}
 	};
 
-	const dispatch = async (reason: TriggerReason, scope: TriggerScope) => {
+	const dispatch = async (
+		reason: TriggerReason,
+		scope: TriggerScope,
+		targetLineNumber?: number | null
+	) => {
 		// If a run is already in progress, just coalesce to the latest request.
 		if (isRunning) {
-			queued = { reason, scope };
+			queued = { reason, scope, targetLineNumber };
 			return;
 		}
 
 		isRunning = true;
 		try {
-			await runOnce(reason, scope);
+			await runOnce(reason, scope, targetLineNumber ?? null);
 		} finally {
 			isRunning = false;
 		}
@@ -83,39 +101,44 @@ export function createCanonicalFormatterOrchestrator(
 			const next = queued;
 			queued = null;
 			// Fire and forget; serialize via isRunning
-			void dispatch(next.reason, next.scope);
+			void dispatch(next.reason, next.scope, next.targetLineNumber);
 		}
 	};
 
-	const schedule = (reason: TriggerReason, scope: TriggerScope) => {
+	const schedule = (
+		reason: TriggerReason,
+		scope: TriggerScope,
+		targetLineNumber?: number | null
+	) => {
 		if (disposed) return;
 		clearTimer();
 		timer = setTimeout(() => {
 			timer = null;
-			void dispatch(reason, scope);
+			void dispatch(reason, scope, targetLineNumber ?? null);
 		}, debounceMs) as unknown as number;
 	};
 
-	// Cursor line changed -> line only (used to be whole file; reduced to prevent duplication/races)
+	// Cursor line changed -> normalize the PREVIOUS line (line user just left)
 	if (port?.onCursorLineChanged) {
-		const off = port.onCursorLineChanged(() => {
-			schedule("cursor-move", "line");
+		const off = port.onCursorLineChanged(({ prevLine }) => {
+			// Normalize the line that was left
+			schedule("cursor-move", "line", prevLine);
 		});
 		unsubs.push(off);
 	}
 
-	// Enter / commit -> line only (used to be whole file; reduced)
+	// Enter / commit -> normalize current line at time of event
 	if (port?.onLineCommitted) {
 		const off = port.onLineCommitted(() => {
-			schedule("commit", "line");
+			schedule("commit", "line", null);
 		});
 		unsubs.push(off);
 	}
 
-	// Leaf or file change -> whole file (keep)
+	// Leaf or file change -> whole file
 	if (port?.onLeafOrFileChanged) {
 		const off = port.onLeafOrFileChanged(() => {
-			schedule("leaf-or-file", "file");
+			schedule("leaf-or-file", "file", null);
 		});
 		unsubs.push(off);
 	}
@@ -126,7 +149,7 @@ export function createCanonicalFormatterOrchestrator(
 		!port?.onCursorLineChanged &&
 		!port?.onLeafOrFileChanged
 	) {
-		setTimeout(() => schedule("manual", "line"), debounceMs);
+		setTimeout(() => schedule("manual", "line", null), debounceMs);
 	}
 
 	return {
@@ -134,7 +157,7 @@ export function createCanonicalFormatterOrchestrator(
 			const r = reason ?? "manual";
 			const s = scope ?? "line";
 			clearTimer();
-			void dispatch(r, s);
+			void dispatch(r, s, null);
 		},
 		dispose() {
 			disposed = true;

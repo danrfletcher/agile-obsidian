@@ -7,6 +7,9 @@ export type CanonicalFormatterPort = {
 		selection?: { start: number; end: number };
 	} | null;
 
+	// Retrieve arbitrary line content by its number (no selection context).
+	getLineAt?: (lineNumber: number) => string | null;
+
 	// Replace the line and set the new selection (caret or range) within that line.
 	replaceLineWithSelection?: (
 		lineNumber: number,
@@ -41,9 +44,11 @@ export type CanonicalFormatterPort = {
 	// Event hooks from the host/editor — the orchestrator will subscribe to these.
 	// Implement these to call the callback when:
 	// - onLineCommitted: user presses Enter, or a line edit is “committed”.
-	// - onCursorLineChanged: the caret moves to a different line.
+	// - onCursorLineChanged: the caret moves to a different line (report prev and next).
 	// - onLeafOrFileChanged: file switches, pane/leaf changes, etc.
 	onLineCommitted?: (cb: () => void) => () => void; // returns unsubscribe
-	onCursorLineChanged?: (cb: () => void) => () => void; // returns unsubscribe
+	onCursorLineChanged?: (
+		cb: (e: { prevLine: number; nextLine: number }) => void
+	) => () => void; // returns unsubscribe
 	onLeafOrFileChanged?: (cb: () => void) => () => void; // returns unsubscribe
 };

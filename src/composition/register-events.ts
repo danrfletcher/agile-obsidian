@@ -232,6 +232,17 @@ export async function registerEvents(container: Container) {
 					}
 					return { line, lineNumber, selection };
 				},
+				getLineAt: (lineNumber: number) => {
+					if (
+						typeof lineNumber !== "number" ||
+						lineNumber < 0 ||
+						lineNumber >= editor.lineCount()
+					) {
+						return null;
+					}
+					const line = editor.getLine(lineNumber);
+					return typeof line === "string" ? line : null;
+				},
 				replaceLineWithSelection: (lineNumber, newLine, newSel) => {
 					const oldLine = editor.getLine(lineNumber);
 					if (oldLine === newLine) return;
@@ -321,22 +332,29 @@ export async function registerEvents(container: Container) {
 				onProgressEnd: () => progress.end(),
 				onLineCommitted: (cb) => {
 					let detachDom: (() => void) | null = null;
-					// @ts-ignore
-					const cm = (editor as any).cm;
-					const cmHasWrapper =
-						!!cm && typeof cm.getWrapperElement === "function";
-					const el: HTMLElement | null = cmHasWrapper
-						? cm.getWrapperElement()
-						: (view as any).contentEl || null;
+
+					// Prefer CM6 contentDOM; fallback to querying the view for ".cm-content"
+					const cmContent: HTMLElement | undefined = (editor as any)
+						?.cm?.contentDOM;
+					const queriedContent = view.containerEl.querySelector(
+						".cm-content"
+					) as HTMLElement | null;
+					const el: HTMLElement | null =
+						(cmContent ?? queriedContent) || null;
+
 					const keyHandler = (ev: KeyboardEvent) => {
 						if (isMutating) return;
+						// Treat Enter as "commit" of current line
 						if (ev.key === "Enter" && !ev.isComposing) cb();
 					};
+
 					if (el && typeof el.addEventListener === "function") {
-						el.addEventListener("keydown", keyHandler);
+						el.addEventListener("keydown", keyHandler, true); // capture=true for reliability
 						detachDom = () =>
-							el.removeEventListener("keydown", keyHandler);
+							el.removeEventListener("keydown", keyHandler, true);
 					}
+
+					// Also detect commits that increase total line count (e.g., paste/newline insert)
 					const off = app.workspace.on("editor-change", (mdView) => {
 						if (isMutating) return;
 						if (!(mdView instanceof MarkdownView)) return;
@@ -345,71 +363,159 @@ export async function registerEvents(container: Container) {
 						if (currentCount > lastDocLineCount) cb();
 						lastDocLineCount = currentCount;
 					});
+
 					return () => {
-						if (detachDom) detachDom();
+						if (detachDom) {
+							try {
+								detachDom();
+							} catch {}
+						}
 						app.workspace.offref(off);
 					};
 				},
 				onCursorLineChanged: (cb) => {
-					const handler = () => {
+					let detachFns: Array<() => void> = [];
+
+					// Prefer CM6 contentDOM; fallback to querying the view for ".cm-content"
+					const cmContent: HTMLElement | undefined = (editor as any)
+						?.cm?.contentDOM;
+					const queriedContent = view.containerEl.querySelector(
+						".cm-content"
+					) as HTMLElement | null;
+					const targetEl: HTMLElement | null =
+						(cmContent ?? queriedContent) || null;
+
+					// Frame-coalesced notifier to avoid multiple callbacks in the same frame
+					let rafId: number | null = null;
+					const scheduleNotify = () => {
+						if (rafId != null) return;
+						rafId = requestAnimationFrame(() => {
+							rafId = null;
+							notifyIfChanged();
+						});
+					};
+
+					const notifyIfChanged = () => {
 						if (isMutating) return;
-						const cl = editor.getCursor().line;
-						if (cl !== lastCursorLine) {
-							lastCursorLine = cl;
-							cb();
+						// Only react for this view
+						const active =
+							app.workspace.getActiveViewOfType(MarkdownView);
+						if (active !== view) return;
+
+						const nextLine = editor.getCursor().line;
+						if (nextLine !== lastCursorLine) {
+							const prevLine = lastCursorLine;
+							lastCursorLine = nextLine;
+							try {
+								cb({ prevLine, nextLine });
+							} catch {}
 						}
 					};
-					let detachFns: Array<() => void> = [];
-					// @ts-ignore
-					const cm = (editor as any).cm;
-					const hasCM =
-						!!cm &&
-						typeof cm.on === "function" &&
-						typeof cm.off === "function";
-					if (hasCM) {
+
+					// 1) Document-level selectionchange is the most reliable for caret moves
+					const selectionHandler = () => {
 						try {
-							const cmHandler = () => handler();
-							cm.on("cursorActivity", cmHandler);
-							detachFns.push(() =>
-								cm.off("cursorActivity", cmHandler)
-							);
-						} catch {}
+							const sel = document.getSelection();
+							if (!sel || !sel.anchorNode) return;
+
+							// Only consider selection changes occurring inside this editor's content
+							if (targetEl && targetEl.contains(sel.anchorNode)) {
+								scheduleNotify();
+							} else if (!targetEl) {
+								// Fallback: if we cannot resolve contentDOM, constrain to active view
+								const active =
+									app.workspace.getActiveViewOfType(
+										MarkdownView
+									);
+								if (active === view) scheduleNotify();
+							}
+						} catch {
+							// ignore
+						}
+					};
+					document.addEventListener(
+						"selectionchange",
+						selectionHandler,
+						true
+					);
+					detachFns.push(() =>
+						document.removeEventListener(
+							"selectionchange",
+							selectionHandler,
+							true
+						)
+					);
+
+					// 2) Pointer/mouse interactions that change caret placement
+					if (targetEl) {
+						const pointerUp = () => scheduleNotify();
+						const click = () => scheduleNotify();
+						targetEl.addEventListener("pointerup", pointerUp, true);
+						targetEl.addEventListener("click", click, true);
+						detachFns.push(() =>
+							targetEl.removeEventListener(
+								"pointerup",
+								pointerUp,
+								true
+							)
+						);
+						detachFns.push(() =>
+							targetEl.removeEventListener("click", click, true)
+						);
 					}
+
+					// 3) Keyboard navigation keys that often move between lines
+					if (targetEl) {
+						const navKeyHandler = (ev: KeyboardEvent) => {
+							if (isMutating) return;
+							switch (ev.key) {
+								case "ArrowUp":
+								case "ArrowDown":
+								case "PageUp":
+								case "PageDown":
+								case "Home":
+								case "End":
+									// Caret likely moves lines; schedule a post-key event check
+									scheduleNotify();
+									break;
+							}
+						};
+						targetEl.addEventListener(
+							"keydown",
+							navKeyHandler,
+							true
+						);
+						detachFns.push(() =>
+							targetEl.removeEventListener(
+								"keydown",
+								navKeyHandler,
+								true
+							)
+						);
+					}
+
+					// 4) As a final safety, mirror with workspace editor-change (content edits may move caret)
 					const offEdit = app.workspace.on(
 						"editor-change",
 						(mdView) => {
 							if (!(mdView instanceof MarkdownView)) return;
 							if (mdView !== view) return;
-							handler();
+							scheduleNotify();
 						}
 					);
 					detachFns.push(() => app.workspace.offref(offEdit));
-					let el: HTMLElement | null = null;
-					try {
-						el =
-							cm && typeof cm.getWrapperElement === "function"
-								? cm.getWrapperElement()
-								: (view as any).contentEl || null;
-					} catch {
-						el = (view as any).contentEl || null;
-					}
-					if (el && typeof el.addEventListener === "function") {
-						const domKeyup = () => handler();
-						const domMouseup = () => handler();
-						el.addEventListener("keyup", domKeyup);
-						el.addEventListener("mouseup", domMouseup);
-						detachFns.push(() =>
-							el?.removeEventListener("keyup", domKeyup)
-						);
-						detachFns.push(() =>
-							el?.removeEventListener("mouseup", domMouseup)
-						);
-					}
+
 					return () => {
 						for (const off of detachFns) {
 							try {
 								off();
 							} catch {}
+						}
+						if (rafId != null) {
+							try {
+								cancelAnimationFrame(rafId);
+							} catch {}
+							rafId = null;
 						}
 						detachFns = [];
 					};

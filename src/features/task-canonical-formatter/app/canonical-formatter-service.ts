@@ -7,6 +7,7 @@ import { computeNewCaretAfterNormalize } from "../domain/caret-mapping";
 
 export type CanonicalFormatterService = {
 	normalizeCurrentLine: (opts?: NormalizeOptions) => void;
+	normalizeLineNumber: (lineNumber: number, opts?: NormalizeOptions) => void;
 	normalizeWholeFile: (lines: string[], opts?: NormalizeOptions) => void;
 };
 
@@ -22,52 +23,65 @@ export function createCanonicalFormatterService(
 	const PROGRESS_SHOW_AFTER_MS = 1000; // only show notice if work exceeds this time
 	const PROGRESS_UPDATE_MIN_INTERVAL_MS = 250; // update cadence once visible
 
-	return {
-		normalizeCurrentLine(opts?: NormalizeOptions) {
-			const ctx = port.getCurrentLine();
-			if (!ctx) return;
+	function normalizeSingleLineCore(
+		lineNumber: number,
+		oldLine: string,
+		opts?: NormalizeOptions,
+		selection?: { start: number; end: number }
+	) {
+		// Preserve original indentation (leading whitespace)
+		const indentMatch = oldLine.match(/^\s*/);
+		const indent = indentMatch ? indentMatch[0] : "";
 
-			const oldLine = ctx.line;
+		// Normalize without indentation, then re-apply it
+		const lineSansIndent = oldLine.slice(indent.length);
+		const normalizedSansIndent = normalizeTaskLine(
+			lineSansIndent,
+			opts ?? {}
+		);
+		const newLine = indent + normalizedSansIndent;
 
-			// Preserve original indentation (leading whitespace)
-			const indentMatch = oldLine.match(/^\s*/);
-			const indent = indentMatch ? indentMatch[0] : "";
+		if (newLine === oldLine) return;
 
-			// Normalize without indentation, then re-apply it
-			const lineSansIndent = oldLine.slice(indent.length);
-			const normalizedSansIndent = normalizeTaskLine(
-				lineSansIndent,
-				opts ?? {}
-			);
-			const newLine = indent + normalizedSansIndent;
-
-			if (newLine === oldLine) return;
-
-			// Default selection if host hasn't provided one:
-			const fallbackSel = { start: oldLine.length, end: oldLine.length };
-			const inputSel = ctx.selection ?? fallbackSel;
-
+		if (selection && typeof port.replaceLineWithSelection === "function") {
 			// Compute desired new selection relative to sans-indent strings,
 			// then map back with indent offset.
 			const mappedSelSansIndent = computeNewCaretAfterNormalize(
 				lineSansIndent,
 				normalizedSansIndent,
 				{
-					start: Math.max(0, inputSel.start - indent.length),
-					end: Math.max(0, inputSel.end - indent.length),
+					start: Math.max(0, selection.start - indent.length),
+					end: Math.max(0, selection.end - indent.length),
 				}
 			);
 			const start = mappedSelSansIndent.start + indent.length;
 			const end = mappedSelSansIndent.end + indent.length;
 
-			if (typeof port.replaceLineWithSelection === "function") {
-				port.replaceLineWithSelection(ctx.lineNumber, newLine, {
-					start,
-					end,
-				});
-			} else if (typeof port.replaceLine === "function") {
-				port.replaceLine(ctx.lineNumber, newLine);
-			}
+			port.replaceLineWithSelection(lineNumber, newLine, { start, end });
+		} else if (typeof port.replaceLine === "function") {
+			port.replaceLine(lineNumber, newLine);
+		}
+	}
+
+	return {
+		normalizeCurrentLine(opts?: NormalizeOptions) {
+			const ctx = port.getCurrentLine();
+			if (!ctx) return;
+			const { line: oldLine, lineNumber } = ctx;
+
+			// Default selection if host hasn't provided one:
+			const fallbackSel = { start: oldLine.length, end: oldLine.length };
+			const inputSel = ctx.selection ?? fallbackSel;
+
+			normalizeSingleLineCore(lineNumber, ctx.line, opts, inputSel);
+		},
+
+		normalizeLineNumber(lineNumber: number, opts?: NormalizeOptions) {
+			if (typeof port.getLineAt !== "function") return;
+			const oldLine = port.getLineAt(lineNumber);
+			if (oldLine == null) return;
+			// No selection mapping when normalizing a non-current line
+			normalizeSingleLineCore(lineNumber, oldLine, opts, undefined);
 		},
 
 		async normalizeWholeFile(lines: string[], opts?: NormalizeOptions) {
