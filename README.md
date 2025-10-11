@@ -245,26 +245,90 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
 
 #### Feature: Task Management & Canonical Formatting
 
--   **What you can do:**
+-   What you can do:
     -   Manage the full lifecycle of a task using a custom, multi-stage status system.
     -   Temporarily hide tasks from your view using the "Snooze" function to maintain focus.
     -   Trust the plugin to automatically organize all metadata on a task line into a clean, consistent, and parseable order.
 
--   **When to use this feature:**
+-   When to use this feature:
     -   This is the core of your daily workflow. You will use these features on every task you interact with, either in a note or in the Agile Dashboard.
 
--   **Use Cases and Guided Workflows:**
-    -   **Use Case U1: Work on and Complete a Task**
-        -   **Prerequisites:** A task is assigned to you on your dashboard.
-        -   **Step-by-step:**
+-   Use Cases and Guided Workflows:
+    -   Use Case U1: Work on and Complete a Task
+        -   Prerequisites: A task is assigned to you on your dashboard.
+        -   Step-by-step:
             1.  When you begin work, find the task and click its checkbox. The status changes from `[ ]` (Unstarted) to `[/]` (In Progress).
-            2.  If you get blocked, you can use the Templating Engine to add a `[Blocked]` chip.
+            2.  If you get blocked, you can use the Templating Engine to add a `[Blocked]` chip `/blocked` command.
             3.  Once the work is complete, click the checkbox again. The status changes to `[x]` (Done).
             4.  If you need to cancel the task at any point, long-press (or tap-and-hold on mobile) the checkbox. The status will change to `[-]` (Cancelled).
-        -   **Verification:** The task's status symbol updates in both the dashboard and the source `.md` file. The Canonical Formatter automatically ensures any new chips (like `[Blocked]`) are placed in the correct order on the line.
+        -   Verification: The task's status symbol updates in both the dashboard and the source `.md` file. The Canonical Formatter automatically ensures any new chips (like `[Blocked]`) are placed in the correct order on the line.
 
--   **Configuration you’re likely to touch:**
+-   Configuration you’re likely to touch:
     -   The status sequence (` ` -> `/` -> `x`) and the long-press to cancel (`-`) are core behaviors and are not configurable.
+
+##### Canonical Formatter: What it does
+
+The Canonical Formatter restructures each task line into a consistent, parseable order while preserving indentation and your caret/selection position. Given a valid task line (e.g., `- [ ] ...`), it:
+
+-   Extracts and reorders semantic pieces into this order:
+    1.  Status prefix (`- [ ]`, `- [/]`, `- [x]`, etc.)
+    2.  Parent link tag (order-tag: `parent-link`) — at most one
+    3.  Artifact item type tag (order-tag: `artifact-item-type`) — at most one
+    4.  Plain task text (wrappers, date tokens, arrows removed during extraction)
+    5.  State chips (order-tag: `state`) — can be multiple, preserved and grouped
+    6.  Other tags — sorted alphabetically by their `data-order-tag` (tags without an order-tag are placed last in this group)
+    7.  Assignment:
+        -   If both assignee and delegate exist: rendered as `assignee → delegate`
+        -   If only delegate exists and assignee is missing: delegate is dropped
+        -   “special” assignee type counts as an assignee
+    8.  Metadata tags (order-tag: `metadata`) — appended after assignments
+    9.  Date tokens — extracted and ordered by priority:
+        -   🛫 (start) > ⏳ (hold) > 📅 (due) > 🎯 (target) > 💤 (snooze) > 💤⬇️ (snooze all) > ✅ (done) > ❌ (cancelled)
+        -   Supports individual snoozes with hidden spans, folder/global snoozes, and “snooze all”
+    10. Block ID (`^id`) — deduped and placed once at the end (the last standalone `^id` in the line wins)
+
+-   Preserves indentation:
+    -   Leading whitespace is preserved exactly. Normalization is applied to the content after the indentation and then indentation is re-applied.
+
+-   Produces clean spacing:
+    -   Collapses internal whitespace but preserves trailing space if it was present.
+    -   Ensures a single trailing space if the line ends with a closing HTML tag (to keep the caret placement safe for further typing).
+
+-   Keeps your caret where you expect:
+    -   If you were editing in the task text, the formatter attempts to map your caret or selection to the equivalent place in the new line.
+    -   Falls back to keeping the caret at the end of the line when a precise mapping isn’t possible.
+
+##### When it runs
+
+Formatting is orchestrated per active editor view and coalesced/debounced for performance and stability.
+
+-   On Enter / committing a line:
+    -   Triggered when you press Enter (IME-safe) or when an edit increases the document’s line count (e.g., paste with newline).
+    -   Scope: current line.
+
+-   On cursor moving to a different line:
+    -   Triggered when the caret leaves a line (arrow keys, Home/End/PageUp/PageDown, mouse click, pointer up, or any selection change).
+    -   Scope: the line you just left (previous line).
+
+-   On file/leaf activation:
+    -   Triggered when a Markdown file becomes the active view (file open or active-leaf change).
+    -   Scope: the entire file for that view.
+    -   Note: This does not run across the entire vault; only the currently active file is formatted on activation/startup.
+
+-   Manual (developer utility):
+    -   A probe exists on the view for diagnostics: `view.__canonicalProbe()` formats the current line immediately.
+
+##### Performance and safety
+
+-   Debounce: 300 ms for all triggers to avoid redundant work while you type or navigate quickly.
+-   Coalescing: If a run is already in progress, newer triggers are queued and only the latest one runs afterward.
+-   Re-entrancy guard: Edits made by the formatter don’t retrigger the formatter.
+-   Whole-file progress UI: If a whole-file format takes longer than ~1s, a progress notice appears and updates until completion. Large files are processed in small batches with cooperative yielding to keep the UI responsive.
+
+##### What it does not do
+
+-   It does not automatically format every file in the vault on startup. Only the currently active Markdown file is formatted when it opens or becomes active.
+-   It does not change non-task lines (lines without a `- [ ]`-style prefix are left as-is).
 
 #### Feature: Custom Task Status Styles
 
