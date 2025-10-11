@@ -3,7 +3,10 @@ import { processEnter } from "../app/enter-repeat-agile-template";
 
 /**
  * Wires editor-level UX shortcuts related to templating.
- * Currently: Enter-to-repeat-last-template-of-same-type on the next task line.
+ * Double-Enter-to-repeat-last-template-of-same-type on the next task line.
+ *
+ * We listen on keydown with capture=true and forward the event to processEnter
+ * so it can decide if and when to preventDefault (only on the second Enter within window).
  */
 export function wireTemplatingUxShortcutsDomHandlers(
 	app: App,
@@ -19,17 +22,10 @@ export function wireTemplatingUxShortcutsDomHandlers(
 		view.containerEl.querySelector(".cm-content")) as HTMLElement | null;
 	const targetEl: HTMLElement = contentRoot ?? view.containerEl;
 
-	// Keydown: Enter -> invoke UX shortcut orchestration (capture=true to precede defaults)
 	const onKeyDown = (evt: KeyboardEvent) => {
 		if (evt.key !== "Enter") return;
-		// Allow CodeMirror to apply the line split first
-		setTimeout(async () => {
-			try {
-				await processEnter(app, view);
-			} catch {
-				// Notice is handled in orchestration when needed
-			}
-		}, 24);
+		// Pass the event so processEnter can preventDefault on the second press (when applicable)
+		void processEnter(app, view, evt);
 	};
 
 	plugin.registerDomEvent(targetEl, "keydown", onKeyDown, { capture: true });
