@@ -20,12 +20,16 @@ export function createCanonicalFormatterOrchestrator(
 		debounceMs?: number;
 	}
 ): CanonicalFormatterOrchestrator {
-	const debounceMs = opts?.debounceMs ?? 120;
+	const debounceMs = opts?.debounceMs ?? 300;
 	const port = opts?.port;
 
 	let timer: number | null = null;
 	let unsubs: Array<() => void> = [];
 	let disposed = false;
+
+	// Serialize runs and coalesce triggers while a run is in flight.
+	let isRunning = false;
+	let queued: { reason: TriggerReason; scope: TriggerScope } | null = null;
 
 	const clearTimer = () => {
 		if (timer !== null) {
@@ -34,59 +38,81 @@ export function createCanonicalFormatterOrchestrator(
 		}
 	};
 
-	const guardedRun = (reason: TriggerReason, scope: TriggerScope) => {
+	const runOnce = async (reason: TriggerReason, scope: TriggerScope) => {
 		if (disposed) return;
 
+		// Scope handling:
+		// - "file": normalize whole file atomically
+		// - "line" or "cursor": normalize current line
 		if (scope === "file") {
 			const all =
 				typeof port?.getAllLines === "function"
 					? port.getAllLines()
 					: null;
 			if (!all) return;
-			svc.normalizeWholeFile(all);
+			await svc.normalizeWholeFile(all);
 			return;
 		}
 
-		const applyActiveLineGuard = scope === "line";
-		const cursorLine = port?.getCursorLine?.() ?? null;
-		const ctx = port?.getCurrentLine?.() ?? null;
+		// For 'line' and 'cursor' scopes, normalize the current line.
+		// We intentionally do NOT guard out if the caret is on the same line;
+		// the service handles selection and caret mapping.
+		try {
+			svc.normalizeCurrentLine();
+		} catch {
+			// swallow
+		}
+	};
 
-		if (
-			applyActiveLineGuard &&
-			cursorLine != null &&
-			ctx?.lineNumber === cursorLine
-		) {
+	const dispatch = async (reason: TriggerReason, scope: TriggerScope) => {
+		// If a run is already in progress, just coalesce to the latest request.
+		if (isRunning) {
+			queued = { reason, scope };
 			return;
 		}
 
-		svc.normalizeCurrentLine();
+		isRunning = true;
+		try {
+			await runOnce(reason, scope);
+		} finally {
+			isRunning = false;
+		}
+
+		// If something queued while running, execute the latest one now.
+		if (queued) {
+			const next = queued;
+			queued = null;
+			// Fire and forget; serialize via isRunning
+			void dispatch(next.reason, next.scope);
+		}
 	};
 
 	const schedule = (reason: TriggerReason, scope: TriggerScope) => {
+		if (disposed) return;
 		clearTimer();
 		timer = setTimeout(() => {
 			timer = null;
-			guardedRun(reason, scope);
+			void dispatch(reason, scope);
 		}, debounceMs) as unknown as number;
 	};
 
-	// Cursor line changed -> whole file
+	// Cursor line changed -> line only (used to be whole file; reduced to prevent duplication/races)
 	if (port?.onCursorLineChanged) {
 		const off = port.onCursorLineChanged(() => {
-			schedule("cursor-move", "file");
+			schedule("cursor-move", "line");
 		});
 		unsubs.push(off);
 	}
 
-	// Enter / commit -> whole file
+	// Enter / commit -> line only (used to be whole file; reduced)
 	if (port?.onLineCommitted) {
 		const off = port.onLineCommitted(() => {
-			schedule("commit", "file");
+			schedule("commit", "line");
 		});
 		unsubs.push(off);
 	}
 
-	// Leaf or file change -> whole file
+	// Leaf or file change -> whole file (keep)
 	if (port?.onLeafOrFileChanged) {
 		const off = port.onLeafOrFileChanged(() => {
 			schedule("leaf-or-file", "file");
@@ -94,7 +120,7 @@ export function createCanonicalFormatterOrchestrator(
 		unsubs.push(off);
 	}
 
-	// Safety: no hooks -> single microtask tick
+	// Safety: no hooks -> single microtask tick as a one-off line format
 	if (
 		!port?.onLineCommitted &&
 		!port?.onCursorLineChanged &&
@@ -108,7 +134,7 @@ export function createCanonicalFormatterOrchestrator(
 			const r = reason ?? "manual";
 			const s = scope ?? "line";
 			clearTimer();
-			guardedRun(r, s);
+			void dispatch(r, s);
 		},
 		dispose() {
 			disposed = true;

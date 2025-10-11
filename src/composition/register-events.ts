@@ -204,6 +204,10 @@ export async function registerEvents(container: Container) {
 		try {
 			const editor = view.editor;
 			if (!editor) return;
+
+			// Mutation barrier to avoid re-entrancy from our own writes.
+			let isMutating = false;
+
 			let lastDocLineCount = editor.lineCount();
 			let lastCursorLine = editor.getCursor().line;
 			const progress = ProgressNotice.getOrCreateForView(view);
@@ -231,24 +235,77 @@ export async function registerEvents(container: Container) {
 				replaceLineWithSelection: (lineNumber, newLine, newSel) => {
 					const oldLine = editor.getLine(lineNumber);
 					if (oldLine === newLine) return;
-					editor.replaceRange(
-						newLine,
-						{ line: lineNumber, ch: 0 },
-						{ line: lineNumber, ch: oldLine.length }
-					);
-					editor.setSelection(
-						{ line: lineNumber, ch: newSel.start },
-						{ line: lineNumber, ch: newSel.end }
-					);
+					isMutating = true;
+					try {
+						editor.replaceRange(
+							newLine,
+							{ line: lineNumber, ch: 0 },
+							{ line: lineNumber, ch: oldLine.length }
+						);
+						editor.setSelection(
+							{ line: lineNumber, ch: newSel.start },
+							{ line: lineNumber, ch: newSel.end }
+						);
+					} finally {
+						isMutating = false;
+					}
 				},
 				replaceLine: (lineNumber, newLine) => {
 					const oldLine = editor.getLine(lineNumber);
 					if (oldLine === newLine) return;
-					editor.replaceRange(
-						newLine,
-						{ line: lineNumber, ch: 0 },
-						{ line: lineNumber, ch: oldLine.length }
-					);
+					isMutating = true;
+					try {
+						editor.replaceRange(
+							newLine,
+							{ line: lineNumber, ch: 0 },
+							{ line: lineNumber, ch: oldLine.length }
+						);
+					} finally {
+						isMutating = false;
+					}
+				},
+				replaceAllLines: (newLines: string[]) => {
+					// Atomic-ish update of the entire doc to avoid line-by-line interleaving.
+					try {
+						const current = editor.getValue();
+						const eol = current.includes("\r\n") ? "\r\n" : "\n";
+						const next = newLines.join(eol);
+						if (next === current) return;
+
+						const cur = editor.getCursor();
+						isMutating = true;
+						try {
+							if (
+								typeof (editor as any).setValue === "function"
+							) {
+								(editor as any).setValue(next);
+							} else {
+								// Fallback: replace the entire range
+								const lineCount = editor.lineCount();
+								const lastLineLen =
+									editor.getLine(lineCount - 1)?.length ?? 0;
+								editor.replaceRange(
+									next,
+									{ line: 0, ch: 0 },
+									{ line: lineCount - 1, ch: lastLineLen }
+								);
+							}
+							// Restore cursor as best-effort (clamped)
+							const maxLine = Math.max(0, editor.lineCount() - 1);
+							const line = Math.min(cur.line, maxLine);
+							const lineLen = editor.getLine(line)?.length ?? 0;
+							const ch = Math.max(0, Math.min(cur.ch, lineLen));
+							if (
+								typeof (editor as any).setCursor === "function"
+							) {
+								(editor as any).setCursor({ line, ch });
+							}
+						} finally {
+							isMutating = false;
+						}
+					} catch {
+						// swallow
+					}
 				},
 				getCursorLine: () => editor.getCursor().line,
 				getAllLines: () => {
@@ -272,6 +329,7 @@ export async function registerEvents(container: Container) {
 						? cm.getWrapperElement()
 						: (view as any).contentEl || null;
 					const keyHandler = (ev: KeyboardEvent) => {
+						if (isMutating) return;
 						if (ev.key === "Enter" && !ev.isComposing) cb();
 					};
 					if (el && typeof el.addEventListener === "function") {
@@ -280,6 +338,7 @@ export async function registerEvents(container: Container) {
 							el.removeEventListener("keydown", keyHandler);
 					}
 					const off = app.workspace.on("editor-change", (mdView) => {
+						if (isMutating) return;
 						if (!(mdView instanceof MarkdownView)) return;
 						if (mdView !== view) return;
 						const currentCount = editor.lineCount();
@@ -293,6 +352,7 @@ export async function registerEvents(container: Container) {
 				},
 				onCursorLineChanged: (cb) => {
 					const handler = () => {
+						if (isMutating) return;
 						const cl = editor.getCursor().line;
 						if (cl !== lastCursorLine) {
 							lastCursorLine = cl;
@@ -358,12 +418,14 @@ export async function registerEvents(container: Container) {
 					const off1 = app.workspace.on(
 						"active-leaf-change",
 						(_leaf) => {
+							if (isMutating) return;
 							const active =
 								app.workspace.getActiveViewOfType(MarkdownView);
 							if (active === view) cb();
 						}
 					);
 					const off2 = app.workspace.on("file-open", (_file) => {
+						if (isMutating) return;
 						const active =
 							app.workspace.getActiveViewOfType(MarkdownView);
 						if (active === view) cb();
@@ -377,7 +439,7 @@ export async function registerEvents(container: Container) {
 			const svc = createCanonicalFormatterService(port);
 			const orchestrator = createCanonicalFormatterOrchestrator(svc, {
 				port,
-				debounceMs: 250,
+				debounceMs: 300,
 			});
 			(view as any).__canonicalProbe = () => {
 				orchestrator.triggerOnceNow("manual", "line");
