@@ -88,7 +88,7 @@ module.exports = [
 						"@styles/*",
 						"@types/*",
 						"src/features/*/**", // allow same-feature internal imports via absolute paths
-						"src/composition/**", // allow composition modules
+						"src/composition/**", // allow composition modules (absolute)
 					],
 				},
 			],
@@ -139,7 +139,7 @@ module.exports = [
 		},
 	},
 
-	// Composition (wiring) is allowed to import feature public APIs only; enforce allow-list here
+	// Composition (wiring) is allowed to import its own internals.
 	{
 		files: ["src/composition/**", "src/main.ts"],
 		rules: {
@@ -149,11 +149,13 @@ module.exports = [
 					allow: [
 						"@features/*",
 						"@features/*/index",
-						"@composition/*",
+						"@composition/**", // allow deeper @composition/ui/*, @composition/wire/*, etc.
 						"@platform/*",
 						"@styles/*",
 						"@types/*",
-						"src/composition/**",
+						"src/composition/**", // allow absolute path into composition
+						"./**", // allow relative internal imports within composition (./wire/*)
+						"../**", // allow relative parent within composition (../ui/*)
 					],
 				},
 			],

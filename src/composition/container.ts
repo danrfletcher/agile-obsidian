@@ -7,14 +7,19 @@ import type { TeamInfo } from "@features/org-structure";
 import type { OrgStructureResult } from "@features/org-structure";
 import type { TaskIndexService } from "@features/task-index";
 
+/**
+ * The composition container provides access to the Obsidian plugin runtime,
+ * live settings, and feature ports/services that are wired at boot.
+ *
+ * Important: `settings` is a "live-view" getter so consumers never read stale
+ * snapshots if the settings object is replaced by the settings module.
+ */
 export interface Container {
 	plugin: Plugin;
 	app: App;
 
 	/**
-	 * Live view of plugin settings. This is a getter-backed property that always
-	 * returns the current plugin.settings so readers don't see stale snapshots
-	 * if the settings module replaces the object.
+	 * Live view of plugin settings. Getter-backed to always reflect current settings.
 	 */
 	settings: AgileObsidianSettings;
 
@@ -35,24 +40,23 @@ export interface Container {
 	orgStructurePorts?: { orgStructure: OrgStructurePort };
 }
 
+/**
+ * Create the composition container for the plugin.
+ */
 export function createContainer(
 	plugin: Plugin & { settings: AgileObsidianSettings }
 ): Container {
 	const app = (plugin as any).app as App;
 
-	// Settings service: provide a function that returns the current settings object.
-	// If your settings module replaces plugin.settings, this will still pick up the new object.
 	const settingsService = createSettingsService(
 		() => (plugin as any).settings
 	);
 
-	// Build a base container and then define a getter-backed "settings" property
-	// so consumers always see the latest plugin.settings object.
 	const container: any = {
 		plugin,
 		app,
 		settingsService,
-		manifestId: (plugin as any).manifest?.id ?? "",
+		manifestId: sanitizeScopeId((plugin as any).manifest?.id ?? ""),
 	};
 
 	Object.defineProperty(container, "settings", {
@@ -60,12 +64,16 @@ export function createContainer(
 			return (plugin as any).settings as AgileObsidianSettings;
 		},
 		set(_v: AgileObsidianSettings) {
-			// Ignore external sets to avoid desync; settings are owned by the plugin.
-			// This keeps "container.settings" as a live view only.
+			// No-op to prevent external mutation; settings are plugin-owned.
 		},
 		enumerable: true,
 		configurable: false,
 	});
 
 	return container as Container;
+}
+
+/** Defensive sanitize for any DOM/CSS scoping usage (e.g., style injection). */
+function sanitizeScopeId(id: string): string {
+	return (id ?? "").replace(/[^a-zA-Z0-9._:-]+/g, "-");
 }

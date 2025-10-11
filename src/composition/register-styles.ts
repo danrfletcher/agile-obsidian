@@ -4,17 +4,19 @@ import {
 } from "@styles/custom-checkboxes";
 import type { Container } from "./container";
 
+/** Applies/removes checkbox styles based on settings. */
 export function applyCheckboxStylesSetting(container: Container) {
+	// Defensive sanitize for scope (already sanitized manifestId in container).
+	const scopeId = container.manifestId;
 	if ((container.settings as any)?.useBundledCheckboxes) {
-		injectCheckboxStyles(container.manifestId);
+		injectCheckboxStyles(scopeId);
 	} else {
-		removeCheckboxStyles(container.manifestId);
+		removeCheckboxStyles(scopeId);
 	}
 }
 
+/** Registers style application on load and ensures removal on unload. */
 export function registerStyles(container: Container) {
-	// Apply current setting
 	applyCheckboxStylesSetting(container);
-	// Ensure styles are removed on plugin unload
 	container.plugin.register(() => removeCheckboxStyles(container.manifestId));
 }
