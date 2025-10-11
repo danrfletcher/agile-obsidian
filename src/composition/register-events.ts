@@ -21,14 +21,12 @@ import {
 import {
 	createCanonicalFormatterService,
 	createCanonicalFormatterOrchestrator,
+	normalizeTaskLine,
 } from "@features/task-canonical-formatter";
 import type { CanonicalFormatterPort } from "@features/task-canonical-formatter";
 
 import { wireTaskAssignmentCascade } from "@features/task-assignment-cascade";
-import {
-	wireTaskClosedCascade,
-	// wireTaskClosedCascadeObserver, // removed: superseded by task-close-manager
-} from "@features/task-close-cascade";
+import { wireTaskClosedCascade } from "@features/task-close-cascade";
 import { registerTaskMetadataCleanup } from "@features/task-metadata-cleanup";
 import { wireTaskCloseManager } from "@features/task-close-manager";
 import { wireTaskStatusSequence } from "@features/task-status-sequencer";
@@ -140,7 +138,7 @@ class ProgressNotice {
 }
 
 export async function registerEvents(container: Container) {
-	const { plugin, app, settings } = container;
+	const { plugin, app } = container;
 	const appAdapter = createObsidianAppAdapter(app);
 
 	// Task index setup
@@ -197,10 +195,33 @@ export async function registerEvents(container: Container) {
 		MarkdownView,
 		ReturnType<typeof createCanonicalFormatterOrchestrator>
 	>();
-	const editorUnsubs = new WeakMap<MarkdownView, Array<() => void>>();
+
+	let currentView: MarkdownView | null = null;
+
+	const unwireCanonicalFormatter = (view: MarkdownView | null) => {
+		if (!view) return;
+		const orch = canonicalOrchestrators.get(view);
+		if (orch) {
+			try {
+				orch.dispose();
+			} catch {}
+			canonicalOrchestrators.delete(view);
+		}
+		const lingering = (ProgressNotice as any).activeForView?.get?.(view);
+		if (lingering) {
+			try {
+				(lingering as any).end?.();
+			} catch {}
+		}
+	};
 
 	const wireCanonicalFormatter = (view: MarkdownView | null) => {
 		if (!view) return;
+		// Prevent duplicate subscriptions: always unwire existing for this view first
+		if (canonicalOrchestrators.has(view)) {
+			unwireCanonicalFormatter(view);
+		}
+
 		try {
 			const editor = view.editor;
 			if (!editor) return;
@@ -211,6 +232,30 @@ export async function registerEvents(container: Container) {
 			let lastDocLineCount = editor.lineCount();
 			let lastCursorLine = editor.getCursor().line;
 			const progress = ProgressNotice.getOrCreateForView(view);
+
+			// Always fetch the freshest settings snapshot
+			const getSettings = () => {
+				try {
+					const svc: any = container.settingsService as any;
+					if (svc && typeof svc.getRaw === "function") {
+						return svc.getRaw() as typeof container.settings;
+					}
+					if (svc && typeof svc.get === "function") {
+						return svc.get() as typeof container.settings;
+					}
+				} catch {}
+				return container.settings;
+			};
+
+			const getFlags = () => {
+				const s: any = getSettings();
+				return {
+					master: !!s.enableTaskCanonicalFormatter,
+					onLineCommit: !!s.enableCanonicalOnLineCommit,
+					onLeafChange: !!s.enableCanonicalOnLeafChange,
+				};
+			};
+
 			const port: CanonicalFormatterPort = {
 				getCurrentLine: () => {
 					const cursor = editor.getCursor();
@@ -330,6 +375,7 @@ export async function registerEvents(container: Container) {
 				onProgressUpdate: ({ current, total, message }) =>
 					progress.update(current, total, message),
 				onProgressEnd: () => progress.end(),
+
 				onLineCommitted: (cb) => {
 					let detachDom: (() => void) | null = null;
 
@@ -345,11 +391,15 @@ export async function registerEvents(container: Container) {
 					const keyHandler = (ev: KeyboardEvent) => {
 						if (isMutating) return;
 						// Treat Enter as "commit" of current line
-						if (ev.key === "Enter" && !ev.isComposing) cb();
+						if (ev.key === "Enter" && !ev.isComposing) {
+							const flags = getFlags();
+							if (!flags.master || !flags.onLineCommit) return;
+							cb();
+						}
 					};
 
 					if (el && typeof el.addEventListener === "function") {
-						el.addEventListener("keydown", keyHandler, true); // capture=true for reliability
+						el.addEventListener("keydown", keyHandler, true);
 						detachDom = () =>
 							el.removeEventListener("keydown", keyHandler, true);
 					}
@@ -360,7 +410,14 @@ export async function registerEvents(container: Container) {
 						if (!(mdView instanceof MarkdownView)) return;
 						if (mdView !== view) return;
 						const currentCount = editor.lineCount();
-						if (currentCount > lastDocLineCount) cb();
+						if (currentCount > lastDocLineCount) {
+							const flags = getFlags();
+							if (!flags.master || !flags.onLineCommit) {
+								lastDocLineCount = currentCount;
+								return;
+							}
+							cb();
+						}
 						lastDocLineCount = currentCount;
 					});
 
@@ -373,6 +430,7 @@ export async function registerEvents(container: Container) {
 						app.workspace.offref(off);
 					};
 				},
+
 				onCursorLineChanged: (cb) => {
 					let detachFns: Array<() => void> = [];
 
@@ -397,7 +455,6 @@ export async function registerEvents(container: Container) {
 
 					const notifyIfChanged = () => {
 						if (isMutating) return;
-						// Only react for this view
 						const active =
 							app.workspace.getActiveViewOfType(MarkdownView);
 						if (active !== view) return;
@@ -406,32 +463,30 @@ export async function registerEvents(container: Container) {
 						if (nextLine !== lastCursorLine) {
 							const prevLine = lastCursorLine;
 							lastCursorLine = nextLine;
+							const flags = getFlags();
+							if (!flags.master || !flags.onLineCommit) return;
 							try {
 								cb({ prevLine, nextLine });
 							} catch {}
 						}
 					};
 
-					// 1) Document-level selectionchange is the most reliable for caret moves
+					// 1) Document-level selectionchange is reliable for caret moves
 					const selectionHandler = () => {
 						try {
 							const sel = document.getSelection();
 							if (!sel || !sel.anchorNode) return;
 
-							// Only consider selection changes occurring inside this editor's content
 							if (targetEl && targetEl.contains(sel.anchorNode)) {
 								scheduleNotify();
 							} else if (!targetEl) {
-								// Fallback: if we cannot resolve contentDOM, constrain to active view
 								const active =
 									app.workspace.getActiveViewOfType(
 										MarkdownView
 									);
 								if (active === view) scheduleNotify();
 							}
-						} catch {
-							// ignore
-						}
+						} catch {}
 					};
 					document.addEventListener(
 						"selectionchange",
@@ -475,7 +530,6 @@ export async function registerEvents(container: Container) {
 								case "PageDown":
 								case "Home":
 								case "End":
-									// Caret likely moves lines; schedule a post-key event check
 									scheduleNotify();
 									break;
 							}
@@ -494,7 +548,7 @@ export async function registerEvents(container: Container) {
 						);
 					}
 
-					// 4) As a final safety, mirror with workspace editor-change (content edits may move caret)
+					// 4) Mirror with workspace editor-change (content edits may move caret)
 					const offEdit = app.workspace.on(
 						"editor-change",
 						(mdView) => {
@@ -520,6 +574,7 @@ export async function registerEvents(container: Container) {
 						detachFns = [];
 					};
 				},
+
 				onLeafOrFileChanged: (cb) => {
 					const off1 = app.workspace.on(
 						"active-leaf-change",
@@ -527,14 +582,23 @@ export async function registerEvents(container: Container) {
 							if (isMutating) return;
 							const active =
 								app.workspace.getActiveViewOfType(MarkdownView);
-							if (active === view) cb();
+							if (active === view) {
+								const flags = getFlags();
+								if (!flags.master || !flags.onLeafChange)
+									return;
+								cb();
+							}
 						}
 					);
 					const off2 = app.workspace.on("file-open", (_file) => {
 						if (isMutating) return;
 						const active =
 							app.workspace.getActiveViewOfType(MarkdownView);
-						if (active === view) cb();
+						if (active === view) {
+							const flags = getFlags();
+							if (!flags.master || !flags.onLeafChange) return;
+							cb();
+						}
 					});
 					return () => {
 						app.workspace.offref(off1);
@@ -542,92 +606,155 @@ export async function registerEvents(container: Container) {
 					};
 				},
 			};
+
 			const svc = createCanonicalFormatterService(port);
 			const orchestrator = createCanonicalFormatterOrchestrator(svc, {
 				port,
 				debounceMs: 300,
+				// Live gating based on current settings
+				shouldRun: () => getFlags(),
 			});
 			(view as any).__canonicalProbe = () => {
 				orchestrator.triggerOnceNow("manual", "line");
 			};
 			canonicalOrchestrators.set(view, orchestrator);
-			editorUnsubs.set(view, []);
-		} catch {}
-	};
 
-	const unwireCanonicalFormatter = (view: MarkdownView | null) => {
-		if (!view) return;
-		const orch = canonicalOrchestrators.get(view);
-		if (orch) {
-			try {
-				orch.dispose();
-			} catch {}
-			canonicalOrchestrators.delete(view);
-		}
-		const unsubs = editorUnsubs.get(view);
-		if (unsubs) {
-			for (const off of unsubs) {
-				try {
-					off();
-				} catch {}
+			// NEW: Ensure an initial whole-file format after wiring this view,
+			// so leaf/file change formatting happens even for the change that caused this wire.
+			const flagsAtWire = getFlags();
+			if (flagsAtWire.master && flagsAtWire.onLeafChange) {
+				// Defer to next tick to allow Obsidian to fully settle the new view state.
+				setTimeout(() => {
+					const stillActive =
+						app.workspace.getActiveViewOfType(MarkdownView) ===
+						view;
+					if (!stillActive) return;
+					orchestrator.triggerOnceNow("leaf-or-file", "file");
+				}, 0);
 			}
-			editorUnsubs.delete(view);
+		} catch (e) {
+			// Keep a warning on failure to wire; no verbose debug logs elsewhere.
+			console.warn(
+				"Failed to wire canonical formatter for the current view",
+				e
+			);
 		}
-		const lingering = (ProgressNotice as any).activeForView?.get?.(view);
-		if (lingering) {
+	};
+
+	const rewireForActiveView = () => {
+		const active = app.workspace.getActiveViewOfType(MarkdownView) ?? null;
+		if (currentView) {
+			unwireCanonicalFormatter(currentView);
+		}
+		currentView = active;
+		if (currentView) {
 			try {
-				(lingering as any).end?.();
+				wireTemplatingDomHandlers(
+					app,
+					currentView,
+					plugin,
+					templatingPorts
+				);
 			} catch {}
+			try {
+				// UX Shortcuts (Enter-to-repeat template)
+				wireTemplatingUxShortcutsDomHandlers(app, currentView, plugin);
+			} catch {}
+			try {
+				const orgPorts = (container as any).orgStructurePorts as
+					| { orgStructure: OrgStructurePort }
+					| undefined;
+				if (orgPorts?.orgStructure) {
+					wireTaskAssignmentDomHandlers(app, currentView, plugin, {
+						orgStructure: orgPorts.orgStructure,
+					});
+				}
+			} catch {}
+			wireCanonicalFormatter(currentView);
 		}
 	};
 
-	const tryWireView = (view: MarkdownView | null) => {
-		if (!view) return;
-		try {
-			wireTemplatingDomHandlers(app, view, plugin, templatingPorts);
-		} catch {}
-		try {
-			// UX Shortcuts (Enter-to-repeat template)
-			wireTemplatingUxShortcutsDomHandlers(app, view, plugin);
-		} catch {}
-		try {
-			const orgPorts = (container as any).orgStructurePorts as
-				| { orgStructure: OrgStructurePort }
-				| undefined;
-			if (orgPorts?.orgStructure) {
-				wireTaskAssignmentDomHandlers(app, view, plugin, {
-					orgStructure: orgPorts.orgStructure,
-				});
-			}
-		} catch {}
-		wireCanonicalFormatter(view);
-	};
-
-	tryWireView(app.workspace.getActiveViewOfType(MarkdownView) ?? null);
+	// Initial wire
+	rewireForActiveView();
 
 	plugin.registerEvent(
-		app.workspace.on("active-leaf-change", (leaf) => {
-			const prevActive = app.workspace.getActiveViewOfType(MarkdownView);
-			if (prevActive) {
-				unwireCanonicalFormatter(prevActive);
-			}
-			if (!leaf) return;
-			const newView =
-				(leaf.view instanceof MarkdownView
-					? (leaf.view as MarkdownView)
-					: app.workspace.getActiveViewOfType(MarkdownView)) ?? null;
-			tryWireView(newView);
+		app.workspace.on("active-leaf-change", (_leaf) => {
+			rewireForActiveView();
 		})
 	);
 
 	plugin.registerEvent(
 		app.workspace.on("file-open", (_file) => {
-			const view = app.workspace.getActiveViewOfType(MarkdownView);
-			tryWireView(view ?? null);
+			rewireForActiveView();
 		})
 	);
 
-	const orgStructureService = createOrgStructureService({ app, settings });
+	// Vault-wide "Format All Files" wiring (triggered from Settings UI)
+	plugin.registerEvent(
+		// @ts-ignore - custom workspace events supported
+		app.workspace.on("agile-canonical-format-all", async () => {
+			try {
+				const mdFiles = app.vault.getMarkdownFiles();
+				let changedFiles = 0;
+				let changedLines = 0;
+
+				for (const f of mdFiles) {
+					const content = await app.vault.read(f);
+
+					// Preserve EOL style and terminal newline
+					const useCRLF = content.includes("\r\n");
+					const eol = useCRLF ? "\r\n" : "\n";
+					const hasTerminalEOL = content.endsWith(eol);
+
+					const lines = content.split(/\r?\n/);
+					let fileChanged = false;
+					const out: string[] = new Array(lines.length);
+
+					for (let i = 0; i < lines.length; i++) {
+						const oldLine = lines[i] ?? "";
+						const indentMatch = oldLine.match(/^\s*/);
+						const indent = indentMatch ? indentMatch[0] : "";
+						const sansIndent = oldLine.slice(indent.length);
+						const normalizedSansIndent =
+							normalizeTaskLine(sansIndent);
+						const newLine = indent + normalizedSansIndent;
+						out[i] = newLine;
+						if (newLine !== oldLine) {
+							fileChanged = true;
+							changedLines++;
+						}
+					}
+
+					if (fileChanged) {
+						let next = out.join(eol);
+						// Restore terminal newline exactly as in original
+						if (hasTerminalEOL && !next.endsWith(eol)) {
+							next += eol;
+						} else if (!hasTerminalEOL && next.endsWith(eol)) {
+							next = next.slice(0, -eol.length);
+						}
+						await app.vault.modify(f, next);
+						changedFiles++;
+					}
+				}
+
+				new ObsidianNotice(
+					`Canonical formatting complete: ${changedFiles} file(s), ${changedLines} line(s) updated.`
+				);
+			} catch (e) {
+				new ObsidianNotice(
+					`Canonical formatting failed: ${
+						e instanceof Error ? e.message : String(e)
+					}`
+				);
+			}
+		})
+	);
+
+	const orgStructureService = createOrgStructureService({
+		app,
+		settings: container.settings,
+	});
 	await orgStructureService.buildAll();
 	plugin.registerEvent(
 		app.vault.on("create", (_f) => orgStructureService["buildAll"]())
@@ -676,14 +803,9 @@ export async function registerEvents(container: Container) {
 
 		// 2) Then date manager: reacts to closed/reopen transitions immediately and via events
 		wireTaskCloseManager(app, plugin);
-
-		// Note: Removed passive observer so cascade runs AFTER manager adds dates
-		// wireTaskClosedCascadeObserver(app, plugin);
 	} catch (e) {
 		console.error("[boot] closed cascade wiring failed", e);
 	}
-
-	tryWireView(app.workspace.getActiveViewOfType(MarkdownView) ?? null);
 
 	try {
 		registerTaskMetadataCleanup(container);

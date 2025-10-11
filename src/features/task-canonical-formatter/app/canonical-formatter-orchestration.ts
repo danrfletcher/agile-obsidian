@@ -18,10 +18,47 @@ export function createCanonicalFormatterOrchestrator(
 	opts?: {
 		port?: CanonicalFormatterPort;
 		debounceMs?: number;
+		/**
+		 * Live settings snapshot provider. Used to gate triggers in real-time.
+		 * Defaults: master=true, onLineCommit=true, onLeafChange=true
+		 */
+		shouldRun?: () => {
+			master: boolean;
+			onLineCommit: boolean;
+			onLeafChange: boolean;
+		};
 	}
 ): CanonicalFormatterOrchestrator {
 	const debounceMs = opts?.debounceMs ?? 300;
 	const port = opts?.port;
+
+	const getFlags = () =>
+		opts?.shouldRun?.() ?? {
+			master: true,
+			onLineCommit: true,
+			onLeafChange: true,
+		};
+
+	// Centralized, reason-scoped gating logic.
+	const reasonAllows = (
+		reason: TriggerReason,
+		flags = getFlags()
+	): boolean => {
+		// Master must be on for any automation
+		if (!flags.master) return false;
+
+		switch (reason) {
+			case "commit":
+			case "cursor-move":
+				return !!flags.onLineCommit;
+			case "leaf-or-file":
+				return !!flags.onLeafChange;
+			case "manual":
+			default:
+				// Manual runs require only master=true
+				return true;
+		}
+	};
 
 	let timer: number | null = null;
 	let unsubs: Array<() => void> = [];
@@ -43,11 +80,16 @@ export function createCanonicalFormatterOrchestrator(
 	};
 
 	const runOnce = async (
-		reason: TriggerReason,
+		_reason: TriggerReason,
 		scope: TriggerScope,
 		targetLineNumber?: number | null
 	) => {
 		if (disposed) return;
+
+		// At this point we assume gating has been checked by caller (schedule or triggerOnceNow).
+		// We still defensively ensure master=true to avoid any accidental runs.
+		const flags = getFlags();
+		if (!flags.master) return;
 
 		// Scope handling:
 		// - "file": normalize whole file atomically
@@ -83,7 +125,6 @@ export function createCanonicalFormatterOrchestrator(
 		scope: TriggerScope,
 		targetLineNumber?: number | null
 	) => {
-		// If a run is already in progress, just coalesce to the latest request.
 		if (isRunning) {
 			queued = { reason, scope, targetLineNumber };
 			return;
@@ -96,11 +137,9 @@ export function createCanonicalFormatterOrchestrator(
 			isRunning = false;
 		}
 
-		// If something queued while running, execute the latest one now.
 		if (queued) {
 			const next = queued;
 			queued = null;
-			// Fire and forget; serialize via isRunning
 			void dispatch(next.reason, next.scope, next.targetLineNumber);
 		}
 	};
@@ -112,6 +151,10 @@ export function createCanonicalFormatterOrchestrator(
 	) => {
 		if (disposed) return;
 		clearTimer();
+
+		// Reason-scoped gating: enforce both master and the appropriate toggle.
+		if (!reasonAllows(reason)) return;
+
 		timer = setTimeout(() => {
 			timer = null;
 			void dispatch(reason, scope, targetLineNumber ?? null);
@@ -121,7 +164,8 @@ export function createCanonicalFormatterOrchestrator(
 	// Cursor line changed -> normalize the PREVIOUS line (line user just left)
 	if (port?.onCursorLineChanged) {
 		const off = port.onCursorLineChanged(({ prevLine }) => {
-			// Normalize the line that was left
+			// We also gate inside schedule; this is just a fast-path
+			if (!reasonAllows("cursor-move")) return;
 			schedule("cursor-move", "line", prevLine);
 		});
 		unsubs.push(off);
@@ -130,6 +174,7 @@ export function createCanonicalFormatterOrchestrator(
 	// Enter / commit -> normalize current line at time of event
 	if (port?.onLineCommitted) {
 		const off = port.onLineCommitted(() => {
+			if (!reasonAllows("commit")) return;
 			schedule("commit", "line", null);
 		});
 		unsubs.push(off);
@@ -138,6 +183,7 @@ export function createCanonicalFormatterOrchestrator(
 	// Leaf or file change -> whole file
 	if (port?.onLeafOrFileChanged) {
 		const off = port.onLeafOrFileChanged(() => {
+			if (!reasonAllows("leaf-or-file")) return;
 			schedule("leaf-or-file", "file", null);
 		});
 		unsubs.push(off);
@@ -149,13 +195,20 @@ export function createCanonicalFormatterOrchestrator(
 		!port?.onCursorLineChanged &&
 		!port?.onLeafOrFileChanged
 	) {
-		setTimeout(() => schedule("manual", "line", null), debounceMs);
+		setTimeout(() => {
+			if (!reasonAllows("manual")) return;
+			schedule("manual", "line", null);
+		}, debounceMs);
 	}
 
 	return {
 		triggerOnceNow(reason?: TriggerReason, scope?: TriggerScope) {
 			const r = reason ?? "manual";
 			const s = scope ?? "line";
+
+			// Reason-scoped gating here too so manual/test callers respect toggles by reason.
+			if (!reasonAllows(r)) return;
+
 			clearTimer();
 			void dispatch(r, s, null);
 		},

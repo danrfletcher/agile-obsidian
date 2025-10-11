@@ -24,4 +24,12 @@ export const DEFAULT_SETTINGS: AgileObsidianSettings = {
 
 	// UX Shortcuts
 	enableUxRepeatAgileTemplates: true,
+
+	// Agile Task Formatting section (folded by default)
+	uiFoldAgileTaskFormatting: true,
+
+	// Canonical formatter defaults
+	enableTaskCanonicalFormatter: true,
+	enableCanonicalOnLineCommit: true,
+	enableCanonicalOnLeafChange: true,
 };

@@ -32,4 +32,17 @@ export interface AgileObsidianSettings {
 	 * Default: true
 	 */
 	enableUxRepeatAgileTemplates: boolean;
+
+	/**
+	 * UI fold state for Agile Task Formatting section (persisted).
+	 * Default: true (minimized)
+	 */
+	uiFoldAgileTaskFormatting: boolean;
+
+	/**
+	 * Canonical formatter controls
+	 */
+	enableTaskCanonicalFormatter: boolean; // Master enable/disable
+	enableCanonicalOnLineCommit: boolean; // Format last line when cursor changes line
+	enableCanonicalOnLeafChange: boolean; // Format entire file on leaf/file change
 }

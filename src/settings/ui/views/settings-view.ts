@@ -28,6 +28,9 @@ export class AgileSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
+		// Ensure our settings-specific styles are present once.
+		this.ensureAgileSettingsStyles();
+
 		// Header row with title + coffee GIF link (fills remaining space)
 		const headerRow = containerEl.createEl("div", {
 			attr: {
@@ -94,6 +97,28 @@ export class AgileSettingTab extends PluginSettingTab {
 			}
 		);
 		this.renderUxShortcutsSection(ux.contentEl);
+
+		// AGILE TASK FORMATTING SECTION (foldable) — 4th section
+		const fmt = this.createFoldableSection(
+			containerEl,
+			"Agile Task Formatting",
+			"Automatically keeps task lines clean and consistent. This section controls the canonical formatter and related task formatting actions.",
+			this.settings.uiFoldAgileTaskFormatting ?? true,
+			async (folded) => {
+				this.settings.uiFoldAgileTaskFormatting = folded;
+				await this.saveSettings();
+			}
+		);
+		this.renderAgileTaskFormattingSection(fmt.contentEl);
+	}
+
+	private logCanonicalFlags(context: string) {
+		try {
+			const s = this.settings;
+			console.debug(
+				`[Agile][CanonicalFmt][Settings] ${context}: master=${!!s.enableTaskCanonicalFormatter}, onLineCommit=${!!s.enableCanonicalOnLineCommit}, onLeafChange=${!!s.enableCanonicalOnLeafChange}`
+			);
+		} catch {}
 	}
 
 	private getTeamsCount(): number {
@@ -138,8 +163,7 @@ export class AgileSettingTab extends PluginSettingTab {
 								teamName,
 								parentPath,
 								teamSlug,
-								code,
-								{ seedWithSampleData: true }
+								code
 							);
 							await this.actions.detectAndUpdateTeams();
 							this.display();
@@ -322,6 +346,116 @@ export class AgileSettingTab extends PluginSettingTab {
 	}
 
 	/**
+	 * Renders the Agile Task Formatting content into the provided container.
+	 * - Adds visual "disabled" styling to subordinate toggles when the master is off.
+	 * - Adds targeted logs when toggles change.
+	 */
+	private renderAgileTaskFormattingSection(containerEl: HTMLElement): void {
+		containerEl.empty();
+
+		// Section subheader inside the fold
+		new Setting(containerEl)
+			.setName("Auto Canonical Formatting")
+			.setDesc(
+				"Settings related to the Canonical Formatter, which keeps each task line in a clean, consistent structure."
+			);
+
+		// Master toggle
+		new Setting(containerEl)
+			.setName("Enable Canonical Task Formatter")
+			.setDesc(
+				"Turns on automatic task canonicalization. Disables all related triggers when off."
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.settings.enableTaskCanonicalFormatter)
+					.onChange(async (value) => {
+						this.settings.enableTaskCanonicalFormatter = value;
+						await this.saveSettings();
+						this.logCanonicalFlags("toggle: master changed");
+						// Re-render to update disabled state + color of child toggles immediately
+						this.display();
+					})
+			);
+
+		const masterEnabled = !!this.settings.enableTaskCanonicalFormatter;
+
+		// Toggle 2: Run on Line Commit
+		const lineCommitSetting = new Setting(containerEl)
+			.setName("Run on Line Commit")
+			.setDesc("Auto format task line when you move to a new task.");
+		lineCommitSetting.addToggle((toggle) => {
+			toggle.setValue(this.settings.enableCanonicalOnLineCommit);
+			toggle.setDisabled(!masterEnabled);
+			toggle.onChange(async (value) => {
+				this.settings.enableCanonicalOnLineCommit = value;
+				await this.saveSettings();
+				this.logCanonicalFlags("toggle: onLineCommit changed");
+			});
+		});
+		this.applySubToggleDisabledStyle(lineCommitSetting, !masterEnabled);
+
+		// Toggle 3: Run on Leaf Change
+		const leafChangeSetting = new Setting(containerEl)
+			.setName("Run on Leaf Change")
+			.setDesc("Auto format file when the active note changes.");
+		leafChangeSetting.addToggle((toggle) => {
+			toggle.setValue(this.settings.enableCanonicalOnLeafChange);
+			toggle.setDisabled(!masterEnabled);
+			toggle.onChange(async (value) => {
+				this.settings.enableCanonicalOnLeafChange = value;
+				await this.saveSettings();
+				this.logCanonicalFlags("toggle: onLeafChange changed");
+			});
+		});
+		this.applySubToggleDisabledStyle(leafChangeSetting, !masterEnabled);
+
+		// Button: Format All Files in Vault
+		new Setting(containerEl)
+			.setName("Format All Files in Vault")
+			.setDesc(
+				"Run the canonical formatter across every Markdown file in your vault now."
+			)
+			.addButton((btn) =>
+				btn
+					.setCta()
+					.setButtonText("Format All Files")
+					.onClick(async () => {
+						try {
+							console.info(
+								`[Agile][CanonicalFmt][Settings] Manual format-all requested`
+							);
+							// @ts-ignore
+							this.app.workspace.trigger(
+								"agile-canonical-format-all"
+							);
+							new Notice("Started formatting all files…");
+						} catch {
+							new Notice(
+								"Could not start formatting. Please try again."
+							);
+						}
+					})
+			);
+	}
+
+	/**
+	 * Adds or removes a CSS class that visually dims the toggle control area when disabled.
+	 * Only affects the right-hand control column, not the name/description text.
+	 */
+	private applySubToggleDisabledStyle(setting: Setting, isDisabled: boolean) {
+		const row = setting.settingEl;
+		if (!row) return;
+		if (isDisabled) {
+			row.classList.add("agile-subtoggle-disabled");
+			row.setAttribute("aria-disabled", "true");
+		} else {
+			row.classList.remove("agile-subtoggle-disabled");
+			row.removeAttribute("aria-disabled");
+		}
+	}
+
+	/**
 	 * Creates a foldable section with a header and description.
 	 * Returns the created elements so the caller can render content into `contentEl`.
 	 * - No explicit toggle button; the caret/title/description header is clickable.
@@ -393,5 +527,27 @@ export class AgileSettingTab extends PluginSettingTab {
 		header.addEventListener("click", () => void toggle());
 
 		return { headerEl: header, contentEl: content };
+	}
+
+	/**
+	 * Injects a one-time style element to dim disabled subordinate toggle controls.
+	 * We specifically target the right-hand control column so the labels/descriptions
+	 * remain fully readable even when disabled.
+	 */
+	private ensureAgileSettingsStyles(): void {
+		const styleId = "agile-settings-toggle-styles";
+		if (document.getElementById(styleId)) return;
+		const style = document.createElement("style");
+		style.id = styleId;
+		style.textContent = `
+/* Dim only the right-hand control (toggle) when the sub-toggle is disabled by the master */
+.agile-subtoggle-disabled .setting-item-control {
+	opacity: 0.5;
+	filter: grayscale(40%);
+}
+/* Keep the row layout intact; ensure no pointer events are hijacked here.
+   Actual click prevention is handled by toggle.setDisabled(true). */
+		`.trim();
+		document.head.appendChild(style);
 	}
 }
