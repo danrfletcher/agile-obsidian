@@ -9,6 +9,9 @@ import { TeamsPresenter, TeamsActions } from "../presenters/teams-presenter";
 import { IdentityPresenter } from "../presenters/identity-presenter";
 import { AddTeamModal } from "../modals/add-team-modal";
 
+// Import the asset so the bundler emits a correct public URL.
+import coffeeGifUrl from "../assets/coffee.gif";
+
 export class AgileSettingTab extends PluginSettingTab {
 	constructor(
 		app: App,
@@ -25,7 +28,33 @@ export class AgileSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl("h1", { text: "Agile Obsidian Settings" });
+		// Header row with title + coffee GIF link (fills remaining space)
+		const headerRow = containerEl.createEl("div", {
+			attr: {
+				style: "display:flex; align-items:center; gap:12px; margin-bottom: 6px;",
+			},
+		});
+		headerRow.createEl("h1", {
+			text: "Agile Obsidian Settings",
+			attr: { style: "margin: 0; flex: 0 0 auto;" },
+		});
+
+		const coffeeLink = headerRow.createEl("a", {
+			href: "https://buymeacoffee.com/danrfletcher",
+			attr: {
+				target: "_blank",
+				rel: "noopener noreferrer",
+				style: "flex: 1 1 auto; display:flex; align-items:center; height: 36px; text-decoration: none;",
+				"aria-label": "Buy me a coffee",
+			},
+		});
+		coffeeLink.createEl("img", {
+			attr: {
+				src: coffeeGifUrl,
+				alt: "Buy Me a Coffee",
+				style: "width: 100%; height: 100%; object-fit: contain; object-position: right center; opacity: 0.95;",
+			},
+		});
 
 		// ORG STRUCTURE SECTION (foldable)
 		const org = this.createFoldableSection(
@@ -93,7 +122,7 @@ export class AgileSettingTab extends PluginSettingTab {
 							parentPath,
 							teamSlug,
 							code,
-							options
+							_options
 						) => {
 							await this.actions.createTeam(
 								teamName,
