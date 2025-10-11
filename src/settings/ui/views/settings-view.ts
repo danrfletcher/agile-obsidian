@@ -27,7 +27,45 @@ export class AgileSettingTab extends PluginSettingTab {
 
 		containerEl.createEl("h1", { text: "Agile Obsidian Settings" });
 
-		containerEl.createEl("h3", { text: "Org Structure" });
+		// ORG STRUCTURE SECTION (foldable)
+		const org = this.createFoldableSection(
+			containerEl,
+			"Org Structure",
+			"Discover and manage teams and organizations found in your vault. Add/update teams, create organizations, and manage subteams. Add Sample Team to see how it works.",
+			this.settings.uiFoldOrgStructure,
+			async (folded) => {
+				this.settings.uiFoldOrgStructure = folded;
+				await this.saveSettings();
+			}
+		);
+
+		this.renderOrgStructureSection(org.contentEl);
+
+		// AGILE DASHBOARD SECTION (foldable)
+		const dash = this.createFoldableSection(
+			containerEl,
+			"Agile Dashboard View",
+			"Choose which sections appear in the agile dashboard. Sections with no tasks are hidden by default.",
+			this.settings.uiFoldAgileDashboard ?? true,
+			async (folded) => {
+				this.settings.uiFoldAgileDashboard = folded;
+				await this.saveSettings();
+			}
+		);
+
+		this.renderAgileDashboardSection(dash.contentEl);
+	}
+
+	private getTeamsCount(): number {
+		return this.settings.teams?.length ?? 0;
+	}
+
+	/**
+	 * Renders the Org Structure content into the provided container.
+	 */
+	private renderOrgStructureSection(containerEl: HTMLElement): void {
+		containerEl.empty();
+
 		const teamsButtons = new Setting(containerEl)
 			.setName("List Members & Teams")
 			.setDesc(
@@ -126,7 +164,19 @@ export class AgileSettingTab extends PluginSettingTab {
 			this.display()
 		);
 
-		containerEl.createEl("h3", { text: "Agile Dashboard View" });
+		const identityPresenter = new IdentityPresenter(
+			this.settings,
+			this.saveSettings
+		);
+		identityPresenter.mount(identityContainer);
+	}
+
+	/**
+	 * Renders the Agile Dashboard content into the provided container.
+	 */
+	private renderAgileDashboardSection(containerEl: HTMLElement): void {
+		containerEl.empty();
+
 		new Setting(containerEl)
 			.setName("Toggle Sections")
 			.setDesc(
@@ -200,15 +250,79 @@ export class AgileSettingTab extends PluginSettingTab {
 					await this.saveSettings();
 				})
 		);
-
-		const identityPresenter = new IdentityPresenter(
-			this.settings,
-			this.saveSettings
-		);
-		identityPresenter.mount(identityContainer);
 	}
 
-	private getTeamsCount(): number {
-		return this.settings.teams?.length ?? 0;
+	/**
+	 * Creates a foldable section with a header and description.
+	 * Returns the created elements so the caller can render content into `contentEl`.
+	 * - No explicit toggle button; the caret/title/description header is clickable.
+	 * - Description expands to fill the space (min-width:0 enables wrapping within flex).
+	 */
+	private createFoldableSection(
+		parent: HTMLElement,
+		title: string,
+		description: string,
+		initialFolded: boolean,
+		onTogglePersist: (folded: boolean) => Promise<void>
+	): { headerEl: HTMLElement; contentEl: HTMLElement } {
+		const section = parent.createEl("div", {
+			attr: {
+				style: "border: 1px solid var(--background-modifier-border); border-radius: 8px; margin: 12px 0; overflow: hidden;",
+			},
+		});
+
+		const header = section.createEl("div", {
+			attr: {
+				style: "display:flex; align-items:flex-start; gap:10px; padding:10px; cursor:pointer; background: var(--background-secondary);",
+			},
+		});
+
+		const caret = header.createEl("div", {
+			text: initialFolded ? "▶" : "▼",
+			attr: {
+				style: "width: 18px; flex: 0 0 18px; line-height:18px; text-align:center; user-select:none;",
+			},
+		});
+
+		// Titles container fills remaining width; min-width:0 ensures text wraps instead of overflowing in flex.
+		const titles = header.createEl("div", {
+			attr: { style: "flex:1 1 auto; min-width:0;" },
+		});
+		titles.createEl("div", {
+			text: title,
+			attr: { style: "font-weight:600; font-size:14px;" },
+		});
+		titles.createEl("div", {
+			text: description,
+			attr: {
+				style: "color: var(--text-muted); margin-top:2px; line-height: 1.4;",
+			},
+		});
+
+		const content = section.createEl("div", {
+			attr: { style: "padding: 10px;" },
+		});
+
+		const applyFold = (folded: boolean) => {
+			content.style.display = folded ? "none" : "block";
+			caret.textContent = folded ? "▶" : "▼";
+		};
+
+		applyFold(initialFolded);
+
+		const toggle = async () => {
+			const folded = content.style.display !== "none" ? true : false;
+			applyFold(folded);
+			try {
+				await onTogglePersist(folded);
+			} catch {
+				// ignore save errors here; UI already reflects the choice
+			}
+		};
+
+		// Entire header toggles (caret, title, description)
+		header.addEventListener("click", () => void toggle());
+
+		return { headerEl: header, contentEl: content };
 	}
 }

@@ -12,4 +12,11 @@ export interface AgileObsidianSettings {
 	currentUserAlias: string | null;
 	teamsFolder: string;
 	teams: TeamInfo[];
+
+	/**
+	 * UI fold state for Settings sections (persisted).
+	 * Default: true (minimized)
+	 */
+	uiFoldOrgStructure: boolean;
+	uiFoldAgileDashboard: boolean;
 }

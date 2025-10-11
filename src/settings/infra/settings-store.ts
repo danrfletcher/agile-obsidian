@@ -16,4 +16,8 @@ export const DEFAULT_SETTINGS: AgileObsidianSettings = {
 	currentUserAlias: null,
 	teamsFolder: "Teams",
 	teams: [],
+
+	// Settings sections minimized by default
+	uiFoldOrgStructure: true,
+	uiFoldAgileDashboard: true,
 };
