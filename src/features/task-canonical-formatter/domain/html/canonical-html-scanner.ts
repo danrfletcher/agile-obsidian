@@ -1,6 +1,9 @@
-// Robust utilities for finding and removing wrapper spans that contain
-// data-template-key="...". These wrappers may contain nested <span> tags,
-// so we cannot rely on a simple non-greedy regex. We scan and balance spans.
+/**
+ * Robust utilities for finding and removing wrapper spans that contain
+ * data-template-key="...". These wrappers may contain nested <span> tags,
+ * so we cannot rely on a simple non-greedy regex. We scan and balance spans.
+ * Pure, framework-agnostic logic (belongs in domain, not UI).
+ */
 
 function tagHasAttr(openTag: string, attrName: string): boolean {
 	// Case-insensitive attribute presence check; assumes standard quoting
@@ -31,21 +34,23 @@ function findTagEnd(html: string, startIdx: number): number {
 
 function isOpeningSpanAt(html: string, idx: number): boolean {
 	// Case-insensitive check for "<span" at idx
+	if (!(idx >= 0 && idx + 5 <= html.length && html[idx] === "<"))
+		return false;
+	const probe = html.slice(idx + 1, idx + 5);
 	return (
-		idx >= 0 &&
-		idx + 5 <= html.length &&
-		html[idx] === "<" &&
-		html.slice(idx + 1, idx + 5).toLowerCase() === "span"
+		probe === "span" || probe === "SPAN" || probe.toLowerCase() === "span"
 	);
 }
 
 function isClosingSpanAt(html: string, idx: number): boolean {
 	// Case-insensitive check for "</span" at idx
+	if (!(idx >= 0 && idx + 6 <= html.length && html[idx] === "<"))
+		return false;
+	const probe = html.slice(idx + 1, idx + 6);
 	return (
-		idx >= 0 &&
-		idx + 6 <= html.length &&
-		html[idx] === "<" &&
-		html.slice(idx + 1, idx + 6).toLowerCase() === "/span"
+		probe === "/span" ||
+		probe === "/SPAN" ||
+		probe.toLowerCase() === "/span"
 	);
 }
 
@@ -57,9 +62,16 @@ function findAllTemplateWrappersRanges(
 	const n = html.length;
 
 	while (i < n) {
-		// Find next "<span"
-		const openIdx = html.toLowerCase().indexOf("<span", i);
+		// Find next '<'
+		const openIdx = html.indexOf("<", i);
 		if (openIdx === -1) break;
+
+		// If it's not an opening span, skip this tag
+		if (!isOpeningSpanAt(html, openIdx)) {
+			const tagEnd = findTagEnd(html, openIdx);
+			i = tagEnd + 1;
+			continue;
+		}
 
 		// Find end of opening tag '>'
 		const openEnd = findTagEnd(html, openIdx);
@@ -79,7 +91,6 @@ function findAllTemplateWrappersRanges(
 		let j = openEnd + 1;
 
 		while (j < n && depth > 0) {
-			// Find next '<'
 			const lt = html.indexOf("<", j);
 			if (lt === -1) {
 				// Unbalanced; take rest of string
@@ -89,12 +100,10 @@ function findAllTemplateWrappersRanges(
 
 			// Opening or closing span?
 			if (isOpeningSpanAt(html, lt)) {
-				// Advance to end of this opening tag
 				const tagEnd = findTagEnd(html, lt);
 				depth += 1;
 				j = tagEnd + 1;
 			} else if (isClosingSpanAt(html, lt)) {
-				// Advance to end of closing tag
 				const tagEnd = findTagEnd(html, lt);
 				depth -= 1;
 				j = tagEnd + 1;

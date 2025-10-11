@@ -1,3 +1,7 @@
+/**
+ * Public entry for the canonical task formatter feature.
+ */
+
 export {
 	normalizeTaskLine,
 	type NormalizeOptions,

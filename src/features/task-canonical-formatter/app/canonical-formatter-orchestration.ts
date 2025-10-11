@@ -1,8 +1,23 @@
+/**
+ * Orchestrates when and how canonical formatting runs.
+ * - Subscribes to host/editor events via a Port.
+ * - Gates triggers by reason (commit, cursor-move, leaf-or-file, manual).
+ * - Debounces/coalesces runs and serializes execution.
+ * - Supports cancellation of in-flight whole-file runs via AbortController.
+ */
+
 import type { CanonicalFormatterService } from "./canonical-formatter-service";
 import type { CanonicalFormatterPort } from "./canonical-formatter-ports";
 
 export type CanonicalFormatterOrchestrator = {
+	/**
+	 * Triggers a single normalization run immediately (subject to gating by reason).
+	 * Defaults to "manual" reason and "line" scope.
+	 */
 	triggerOnceNow: (reason?: TriggerReason, scope?: TriggerScope) => void;
+	/**
+	 * Unsubscribes from events, aborts any in-flight work, clears timers.
+	 */
 	dispose: () => void;
 };
 
@@ -12,6 +27,8 @@ export type TriggerReason =
 	| "leaf-or-file"
 	| "manual";
 export type TriggerScope = "file" | "line" | "cursor";
+
+type TimerHandle = ReturnType<typeof setTimeout> | null;
 
 export function createCanonicalFormatterOrchestrator(
 	svc: CanonicalFormatterService,
@@ -60,7 +77,7 @@ export function createCanonicalFormatterOrchestrator(
 		}
 	};
 
-	let timer: number | null = null;
+	let timer: TimerHandle = null;
 	let unsubs: Array<() => void> = [];
 	let disposed = false;
 
@@ -72,10 +89,23 @@ export function createCanonicalFormatterOrchestrator(
 		targetLineNumber?: number | null;
 	} | null = null;
 
+	// Abort controller for in-flight whole-file runs
+	let currentAbort: AbortController | null = null;
+
 	const clearTimer = () => {
 		if (timer !== null) {
-			clearTimeout(timer as unknown as number);
+			clearTimeout(timer);
 			timer = null;
+		}
+	};
+
+	const abortInFlightIfAny = () => {
+		try {
+			currentAbort?.abort();
+		} catch {
+			// swallow
+		} finally {
+			currentAbort = null;
 		}
 	};
 
@@ -86,24 +116,30 @@ export function createCanonicalFormatterOrchestrator(
 	) => {
 		if (disposed) return;
 
-		// At this point we assume gating has been checked by caller (schedule or triggerOnceNow).
-		// We still defensively ensure master=true to avoid any accidental runs.
+		// At this point gating should have been checked; still defensively gate master.
 		const flags = getFlags();
 		if (!flags.master) return;
 
+		// Prepare abort controller for long operations (file scope).
+		// For line-scope operations, we still create a controller to unify code paths,
+		// but it is only used if normalizeWholeFile is invoked.
+		abortInFlightIfAny();
+		currentAbort = new AbortController();
+
 		// Scope handling:
-		// - "file": normalize whole file atomically
 		if (scope === "file") {
 			const all =
 				typeof port?.getAllLines === "function"
 					? port.getAllLines()
 					: null;
 			if (!all) return;
-			await svc.normalizeWholeFile(all);
+			await svc.normalizeWholeFile(all, {
+				abortSignal: currentAbort.signal,
+			});
 			return;
 		}
 
-		// - Specific line requested (e.g., leaving a line)
+		// Specific line requested (e.g., leaving a line)
 		if (
 			typeof targetLineNumber === "number" &&
 			typeof svc.normalizeLineNumber === "function"
@@ -112,7 +148,7 @@ export function createCanonicalFormatterOrchestrator(
 			return;
 		}
 
-		// - "line" or "cursor": normalize current line
+		// "line" or "cursor": normalize current line
 		try {
 			svc.normalizeCurrentLine();
 		} catch {
@@ -135,6 +171,8 @@ export function createCanonicalFormatterOrchestrator(
 			await runOnce(reason, scope, targetLineNumber ?? null);
 		} finally {
 			isRunning = false;
+			// Clear current abort controller when a run finishes
+			currentAbort = null;
 		}
 
 		if (queued) {
@@ -158,13 +196,12 @@ export function createCanonicalFormatterOrchestrator(
 		timer = setTimeout(() => {
 			timer = null;
 			void dispatch(reason, scope, targetLineNumber ?? null);
-		}, debounceMs) as unknown as number;
+		}, debounceMs);
 	};
 
 	// Cursor line changed -> normalize the PREVIOUS line (line user just left)
 	if (port?.onCursorLineChanged) {
 		const off = port.onCursorLineChanged(({ prevLine }) => {
-			// We also gate inside schedule; this is just a fast-path
 			if (!reasonAllows("cursor-move")) return;
 			schedule("cursor-move", "line", prevLine);
 		});
@@ -206,7 +243,6 @@ export function createCanonicalFormatterOrchestrator(
 			const r = reason ?? "manual";
 			const s = scope ?? "line";
 
-			// Reason-scoped gating here too so manual/test callers respect toggles by reason.
 			if (!reasonAllows(r)) return;
 
 			clearTimer();
@@ -215,12 +251,19 @@ export function createCanonicalFormatterOrchestrator(
 		dispose() {
 			disposed = true;
 			clearTimer();
+			// Abort any in-flight long operation
+			abortInFlightIfAny();
+			// Unsubscribe listeners
 			for (const off of unsubs) {
 				try {
 					off();
-				} catch {}
+				} catch {
+					// swallow
+				}
 			}
 			unsubs = [];
+			// Drop any queued runs
+			queued = null;
 		},
 	};
 }

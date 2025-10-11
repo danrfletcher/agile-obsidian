@@ -1,3 +1,9 @@
+/**
+ * Canonical formatter service. Provides line and whole-file normalization operations.
+ * - Preserves indentation and caret mapping for current line operations.
+ * - Whole-file normalization is async, cancellable via AbortSignal, and reports progress.
+ */
+
 import {
 	normalizeTaskLine,
 	type NormalizeOptions,
@@ -6,9 +12,15 @@ import type { CanonicalFormatterPort } from "./canonical-formatter-ports";
 import { computeNewCaretAfterNormalize } from "../domain/caret-mapping";
 
 export type CanonicalFormatterService = {
+	/** Normalize the current line, preserving caret if possible. */
 	normalizeCurrentLine: (opts?: NormalizeOptions) => void;
+	/** Normalize a specific line by number. */
 	normalizeLineNumber: (lineNumber: number, opts?: NormalizeOptions) => void;
-	normalizeWholeFile: (lines: string[], opts?: NormalizeOptions) => void;
+	/** Normalize an entire file; cancellable with opts.abortSignal. */
+	normalizeWholeFile: (
+		lines: string[],
+		opts?: NormalizeOptions
+	) => Promise<void>;
 };
 
 export function createCanonicalFormatterService(
@@ -90,11 +102,14 @@ export function createCanonicalFormatterService(
 			const total = lines.length;
 			if (total === 0) return;
 
+			const signal = opts?.abortSignal;
+
 			// Deferred-progress controller: only show after 1s
 			const startTs = Date.now();
 			let progressVisible = false;
 			let lastUpdateTs = 0;
 			let progressStarted = false;
+			let cancelled = false;
 
 			const maybeStartProgress = () => {
 				if (progressVisible) return;
@@ -114,28 +129,39 @@ export function createCanonicalFormatterService(
 				}
 			};
 
-			const maybeUpdateProgress = (current: number) => {
+			const maybeUpdateProgress = (current: number, message?: string) => {
 				if (!progressVisible) return;
 				if (typeof port.onProgressUpdate !== "function") return;
 				const now = Date.now();
 				if (now - lastUpdateTs >= PROGRESS_UPDATE_MIN_INTERVAL_MS) {
 					lastUpdateTs = now;
-					port.onProgressUpdate({ current, total });
+					port.onProgressUpdate({ current, total, message });
 				}
 			};
 
-			const endProgress = () => {
-				// No final message; just close if we actually started one
+			const endProgress = (message?: string) => {
 				if (!progressStarted) return;
 				if (typeof port.onProgressEnd === "function") {
-					port.onProgressEnd({});
+					port.onProgressEnd(message ? { message } : undefined);
 				}
+			};
+
+			const checkCancelled = () => {
+				if (signal?.aborted) {
+					cancelled = true;
+				}
+				return cancelled;
 			};
 
 			let changed = false;
 			const out: string[] = new Array(total);
 
 			for (let i = 0; i < total; i++) {
+				if (checkCancelled()) {
+					endProgress("Cancelled");
+					return;
+				}
+
 				const oldLine = lines[i] ?? "";
 
 				// Preserve indentation for each line
@@ -156,10 +182,14 @@ export function createCanonicalFormatterService(
 					maybeStartProgress();
 					maybeUpdateProgress(i);
 				}
+
 				// Cooperative yielding
 				if (i % YIELD_EVERY_N_LINES === 0 && i !== 0) {
-					// eslint-disable-next-line no-await-in-loop
 					await microYield();
+					if (checkCancelled()) {
+						endProgress("Cancelled");
+						return;
+					}
 					maybeStartProgress(); // account for elapsed time during yields
 				}
 			}
@@ -168,24 +198,41 @@ export function createCanonicalFormatterService(
 			maybeStartProgress();
 			maybeUpdateProgress(total);
 
+			if (cancelled) {
+				endProgress("Cancelled");
+				return;
+			}
+
 			if (!changed) {
 				endProgress();
 				return;
 			}
 
-			// Apply changes
+			// Apply changes (respect cancellation once more)
+			if (signal?.aborted) {
+				endProgress("Cancelled");
+				return;
+			}
+
 			if (typeof (port as any).replaceAllLines === "function") {
 				(port as any).replaceAllLines(out);
 			} else {
 				for (let i = 0; i < out.length; i++) {
+					if (signal?.aborted) {
+						endProgress("Cancelled");
+						return;
+					}
 					if (out[i] !== lines[i]) {
 						if (typeof port.replaceLine === "function") {
 							port.replaceLine(i, out[i]);
 						}
 					}
 					if (i % YIELD_EVERY_N_LINES === 0 && i !== 0) {
-						// eslint-disable-next-line no-await-in-loop
 						await microYield();
+						if (signal?.aborted) {
+							endProgress("Cancelled");
+							return;
+						}
 						maybeStartProgress();
 						maybeUpdateProgress(Math.min(i + 1, total));
 					}

@@ -1,3 +1,8 @@
+/**
+ * Canonical normalization rules for task lines.
+ * Reorders extracted pieces into standardized structure, with whitespace polish and HTML safety.
+ */
+
 import type { NormalizeOptions, CanonicalPieces } from "./canonical-types";
 import { extractAll } from "./canonical-extract";
 import {

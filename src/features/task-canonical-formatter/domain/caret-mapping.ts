@@ -1,11 +1,19 @@
-// Lightweight caret mapping that tries hard to keep the caret immediately
-// after the user's freshly typed content when we reorder tags.
-// Strategy:
-// 1) If new text is a reordering that preserves the taskText substring,
-//    we try to map the caret relative to taskText by locating the nearest
-//    anchor around the caret (characters from the user text).
-// 2) Try a stable token map that tracks user-visible words across reorder.
-// 3) FINAL FALLBACK: snap caret to the end of the new line (after trailing space).
+/**
+ * Caret mapping heuristic to keep the caret close to what the user just typed
+ * after reordering/normalizing a line.
+ * Strategy:
+ * 1) Build a map from stable tokens in old line to positions in new line.
+ * 2) If mapping fails, use anchor-based search around the old caret.
+ * 3) Fallback: snap to end of new line.
+ */
+
+// Precompiled sanitation regexes (hot path)
+const WRAPPER_RE =
+	/<span\b[^>]*\bdata-template-key="[^"]+"[^>]*>[\s\S]*?<\/span>/gi;
+const DATE_RE = /(🛫|⏳|📅|🎯|✅|❌)\s+\d{4}-\d{2}-\d{2}/g;
+const SNOOZE_RE =
+	/💤(?:⬇️)?(?:<span style="display: none">[^<]+<\/span>)?(?:\s+\d{4}-\d{2}-\d{2})?/g;
+const BLOCKID_RE = /(^|\s)\^[A-Za-z0-9-]+(?![A-Za-z0-9-])/g;
 
 export function computeNewCaretAfterNormalize(
 	oldLine: string,
@@ -78,17 +86,10 @@ function extractStableTokens(
 	const tokens: Array<{ text: string; start: number; end: number }> = [];
 	// Remove obvious wrappers, date tokens, block ids to focus on task text and arrows
 	const sanitized = s
-		.replace(
-			/<span\b[^>]*\bdata-template-key="[^"]+"[^>]*>[\s\S]*?<\/span>/gi,
-			(m) => " "
-		)
-		.replace(/(🛫|⏳|📅|🎯|✅|❌)\s+\d{4}-\d{2}-\d{2}/g, " ")
-		.replace(
-			/💤(?:⬇️)?(?:<span style="display: none">[^<]+<\/span>)?(?:\s+\d{4}-\d{2}-\d{2})?/g,
-			" "
-		)
-		// Remove standalone block id tokens anywhere in the line
-		.replace(/(^|\s)\^[A-Za-z0-9-]+(?![A-Za-z0-9-])/g, " ")
+		.replace(WRAPPER_RE, (_m) => " ")
+		.replace(DATE_RE, " ")
+		.replace(SNOOZE_RE, " ")
+		.replace(BLOCKID_RE, " ")
 		.replace(/→/g, " ");
 	// Split into words while tracking indices in original string
 	let i = 0;

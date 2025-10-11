@@ -1,3 +1,8 @@
+/**
+ * Abstraction to integrate with the host/editor.
+ * Contains methods to read/replace lines, whole-file operations,
+ * progress notifications, and event subscriptions.
+ */
 export type CanonicalFormatterPort = {
 	// Provides current line content and the absolute cursor offset within that line.
 	// selection is optional; if omitted, we assume caret at end of the line.

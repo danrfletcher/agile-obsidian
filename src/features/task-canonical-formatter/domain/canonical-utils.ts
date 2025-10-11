@@ -1,8 +1,18 @@
+/**
+ * Low-level helpers for parsing and safe whitespace/HTML handling.
+ */
+
+// Precompiled regex constants
+const PREFIX_RE = /^(\s*[-*]\s*\[\s*.\s*\]\s*)([\s\S]*)$/;
+const LEGACY_EOL_BLOCKID_RE = /\s*\^([A-Za-z0-9-]+)\s*$/g;
+// Standalone ^id token anywhere (not followed by [A-Za-z0-9-])
+const STANDALONE_BLOCKID_RE = /(^|\s)\^([A-Za-z0-9-]+)(?![A-Za-z0-9-])/g;
+
 export function extractPrefix(line: string): {
 	prefix: string | null;
 	rest: string;
 } {
-	const m = /^(\s*[-*]\s*\[\s*.\s*\]\s*)([\s\S]*)$/.exec(line);
+	const m = PREFIX_RE.exec(line);
 	if (!m) return { prefix: null, rest: line };
 	return { prefix: m[1], rest: m[2] };
 }
@@ -11,7 +21,6 @@ export function extractBlockId(rest: string): {
 	restSansBlockId: string;
 	blockId: string | null;
 } {
-	// We will:
 	// 1) Find the last standalone "^id" token anywhere in the string (not just at EOL).
 	// 2) Remove ALL standalone "^id" tokens from the string (dedupe/sanitize).
 	// 3) Return that last one as the canonical blockId.
@@ -21,19 +30,18 @@ export function extractBlockId(rest: string): {
 	//   - Followed by a non [A-Za-z0-9-] character or end
 	//
 	// This also handles cases like "^abc123/dan…" where '/dan' follows after the id.
-	const TOKEN_RE = /(^|\s)\^([A-Za-z0-9-]+)(?![A-Za-z0-9-])/g;
 
 	let lastId: string | null = null;
 	let m: RegExpExecArray | null;
-	while ((m = TOKEN_RE.exec(rest)) !== null) {
+	while ((m = STANDALONE_BLOCKID_RE.exec(rest)) !== null) {
 		lastId = m[2];
 	}
 
 	if (!lastId) {
-		// Fall back to legacy behavior: end-of-line "^id" (with optional spaces) just in case.
+		// Fall back to legacy behavior: end-of-line "^id" (with optional spaces).
 		let blockId: string | null = null;
 		const newRest = rest.replace(
-			/\s*\^([A-Za-z0-9-]+)\s*$/g,
+			LEGACY_EOL_BLOCKID_RE,
 			(_full, id: string) => {
 				blockId = `^${id}`;
 				return " ";
@@ -43,10 +51,13 @@ export function extractBlockId(rest: string): {
 	}
 
 	// Remove all standalone ^id tokens, preserving any leading whitespace capture where present.
-	const restSansBlockId = rest.replace(TOKEN_RE, (_full, leading) => {
-		// Keep the leading whitespace (if any), drop the token.
-		return leading ?? "";
-	});
+	const restSansBlockId = rest.replace(
+		STANDALONE_BLOCKID_RE,
+		(_full, leading) => {
+			// Keep the leading whitespace (if any), drop the token.
+			return leading ?? "";
+		}
+	);
 
 	return { restSansBlockId, blockId: `^${lastId}` };
 }
