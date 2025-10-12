@@ -80,6 +80,7 @@ Agile Obsidian is a plugin that transforms your Obsidian vault into a powerful, 
 | Custom Task Status Styles | Extended set of custom, parseable status tokens for richer workflows (Blocked, Waiting, Review, Recurring, Prioritize, One-off, Outline, etc.) | Automatic (click to advance status, status chips, stylesheet-driven) | Stable |
 | Quick Insert Multiple Agile Artifacts | Press enter on a task line with an existing agile atifact e.g., Epic to insert another agile artifact e.g., Epic on the next line | Automatic (on enter click on task line with Agile artifact) | Stable |
 | Right-Click Template Removal | Quickly remove templated artifacts (Initiatives, Epics, OKRs, etc.) from task lines via the native Obsidian context menu without disrupting your editing flow. | Right-click on template wrapper in editor | Stable |
+| Double-Click Template Editing | Edit parameters of inserted templates (e.g., Initiative title, Epic scope) via double-click on the rendered template wrapper, opening a pre-populated modal. | Double-click on template wrapper in editor or dashboard | Stable |
 
 ### Quickstart
 
@@ -186,10 +187,11 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
     -   Link tasks to other items in your vault, creating a web of dependencies.
     -   Add metadata like version numbers, PR links, or status tags (e.g., "Blocked," "Review").
     -   Ensure consistent formatting for all metadata.
+    -   Double-click on an inserted template wrapper to edit its parameters via a pre-populated modal (e.g., update an Initiative title).
     -   Easily remove inserted templates via right-click context menu for quick iteration without disrupting your editing flow.
 
 -   **When to use this feature:**
-    -   Use this whenever you are creating a new piece of work that fits an Agile concept. Instead of typing out a title manually, use a template to get the correct formatting and icon automatically. Use the right-click removal for rapid prototyping or corrections.
+    -   Use this whenever you are creating a new piece of work that fits an Agile concept. Instead of typing out a title manually, use a template to get the correct formatting and icon automatically. Double-click to edit existing templates, and use right-click removal for rapid prototyping or corrections.
 
 -   **Use Cases and Guided Workflows:**
     -   **Use Case U1: Create a New Project Initiative**
@@ -201,8 +203,9 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
             4.  A formatted chip `🎖️ Initiative: Q4 Website Redesign` will be inserted.
             5.  To create a child Epic, create a new indented task below it.
             6.  On the new line, type `/epic`, provide a title, and submit.
-            7.  If you need to remove an incorrectly inserted template (e.g., wrong type), right-click directly on the template chip (the rendered span) and select "Remove Template" from the context menu. Your cursor will remain in place relative to the removal.
-        -   **Verification:** Your note will contain a nested structure of tasks with formatted, clickable chips. Clicking a chip re-opens the modal to edit its parameters. Removed templates leave the task line clean, with preserved indentation and cursor position.
+            7.  To edit the Initiative title later, double-click directly on the template chip to open the edit modal with pre-filled values. Make changes and submit to update the source line.
+            8.  If you need to remove an incorrectly inserted template (e.g., wrong type), right-click directly on the template chip (the rendered span) and select "Remove Template" from the context menu. Your cursor will remain in place relative to the removal.
+        -   **Verification:** Your note will contain a nested structure of tasks with formatted, clickable chips. Double-clicking a chip re-opens the modal to edit its parameters. Removed templates leave the task line clean, with preserved indentation and cursor position.
 
 -   **Configuration you're likely to touch:**
     -   This feature is not directly configurable. The list of available templates is predefined within the plugin.
@@ -388,7 +391,7 @@ Formatting is orchestrated per active editor view and coalesced/debounced for pe
   - Status tokens are parsed as part of the Task Indexer's canonical line parser. When adding new tokens, ensure the parser's token map and the Canonical Formatter are updated.
   - The Dashboard and status UI should treat status tokens as first-class filters and allow click-to-advance behavior consistent with the plugin's configured status sequence behavior.
 
-#### Feature: Right-Click Template Removal
+#### Feature: Template Editing & Removal
 
 - **What you can do:**
   - Right-click on any rendered template wrapper (e.g., Initiative, Epic, OKR chips inserted via the Templating Engine) in the Obsidian editor to access a "Remove Template" option in the native context menu.
@@ -396,10 +399,10 @@ Formatting is orchestrated per active editor view and coalesced/debounced for pe
   - Your cursor position is preserved relative to the removed template—e.g., if you clicked inside the template, the cursor stays at the start of where it was; if outside, it adjusts minimally.
   - Post-removal, the line is automatically cleaned up (excess spaces collapsed, respecting task/list prefixes) and the Canonical Formatter ensures consistent ordering of remaining metadata.
   - A trash icon provides clear visual feedback in the menu item.
+  - For editing, use double-click on the template wrapper to open the parameter edit modal.
 
 - **When to use this feature:**
-  - Use this for quick corrections during editing sessions, such as removing a mis-inserted template type, undoing an experimental artifact, or streamlining a task line without manual span deletion.
-  - Ideal for iterative workflows where you prototype structures (e.g., trying different Epic titles) and need to remove without disrupting flow or triggering full-line reformats unnecessarily.
+  - Use this for quick corrections during editing sessions, such as removing a mis-inserted template type, undoing an experimental artifact, or streamlining a task line without manual span deletion. For parameter changes (e.g., updating titles), prefer double-click editing to avoid full removal.
 
 - **Use Cases and Guided Workflows:**
   - **Use Case U1: Correct a Template Insertion Error**
@@ -408,13 +411,14 @@ Formatting is orchestrated per active editor view and coalesced/debounced for pe
       1. Right-click directly on the template chip (the colored/formatted span).
       2. In the Obsidian context menu, select "Remove Template" (with trash icon).
       3. The template span is removed, leaving: `- [ ] ` (cursor preserved at the original relative position).
-      4. Continue editing the plain task text or insert a corrected template via slash command.
+      4. Continue editing the plain task text or insert a corrected template via slash command. Alternatively, if you want to edit parameters without removing, double-click the template instead.
     - **Verification:** The source line updates immediately without affecting indentation or other metadata. If the dashboard is open, it reflects the change after the next index update. No manual cleanup is needed for spacing or cursor jumps.
   - **Use Case U2: Streamline Nested Artifacts**
     - **Prerequisites:** A nested structure like an Epic under an Initiative.
     - **Step-by-step:**
       1. Right-click on the child Epic template to remove just that artifact, preserving the parent Initiative.
       2. The removal adjusts the line cleanly, maintaining any assignments, dates, or statuses.
+      3. For editing the remaining Initiative without removal, double-click it to access the parameter modal.
     - **Verification:** Only the targeted template is removed; the task remains parseable, and the dashboard updates accordingly.
 
 - **Configuration you're likely to touch:**
