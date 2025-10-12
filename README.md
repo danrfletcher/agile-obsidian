@@ -153,7 +153,7 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
 * **User Navigates Template Sequence:**
     1. User clicks a template wrapper (e.g., awaitingDeposit) in an editor or the Agile Dashboard.
     2. Templating sequencer handler (wired via composition or custom view) suppresses default behavior and builds a floating menu from preset sequences (forward/back options filtered by start/target template, with full bidirectional support for "both" direction).
-    3. User selects a move (e.g., → depositPaid); sequencer service computes automatic mappings (shared pass-through, drop extras), applies optional overrides, prompts "Additional Properties" modal for missing fields (filtered schema), and renders the target template.
+    3. User selects a move (e.g., → depositPaid); sequencer service computes automatic mappings (shared pass-through, drop extras), applies optional overrides, prompts "Additional Properties" modal for missing *required* fields only (filtered schema; optional fields omitted), and renders the target template.
     4. Overwrite occurs: in editors via templating-engine API (inner HTML only); in custom views via direct file write (targeting line/instanceId).
     5. Obsidian modify event fires; Task Indexer re-parses, and views (e.g., Dashboard) refresh via callback.
 
@@ -231,7 +231,7 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
 
 - **What you can do:**
   - Define and navigate sequences of templates (e.g., CRM pipelines: awaitingDeposit ↔ depositPaid ↔ paymentPlan ↔ paidInFull) using a floating UI menu that appears on click.
-  - Automatically map variables from the current template to the target (forward/backward) for shared names; drop source-only fields and prompt for target-only fields via a filtered "Additional Properties" modal (shows only absent fields from the target schema).
+  - Automatically map variables from the current template to the target (forward/backward) for shared names; drop source-only fields and prompt for target-only *required* fields via a filtered "Additional Properties" modal (shows only absent required fields from the target schema; optional fields are omitted if missing).
   - Optionally override automatic mapping with custom transformations via `variableMapOverrides` callbacks in sequence definitions (forward/backward generics).
   - Overwrite the current template wrapper with the new one, preserving instance IDs and attributes; works in editors and custom views like the Agile Dashboard with full bidirectional ("both") support.
   - Filter menu options dynamically based on the clicked template; no explicit mapping needed for simple pass-through sequences.
@@ -245,17 +245,17 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
     - **Step-by-step:**
       1. In a note or the Agile Dashboard, click on an inserted template wrapper (e.g., awaitingDeposit chip).
       2. A floating menu appears with forward options (depositPaid, paymentPlan, paidInFull) and backward options (if applicable, e.g., from paidInFull back to paymentPlan).
-      3. Select "depositPaid"; shared variables (e.g., currency, totalAmount) are mapped automatically. If new fields are needed (e.g., paidAmount), the "Additional Properties" modal prompts for them with pre-filled defaults where possible.
+      3. Select "depositPaid"; shared variables (e.g., currency, totalAmount) are mapped automatically. If new *required* fields are needed (e.g., paidAmount), the "Additional Properties" modal prompts for them with pre-filled defaults where possible. Optional fields (e.g., notes) are omitted if not provided on the source.
       4. Submit to overwrite the wrapper with the depositPaid template; the source note updates, and the dashboard refreshes.
       5. To go back (e.g., edit deposit details), click the new wrapper and select from backward options—automatic mapping reverses the flow (e.g., drop paymentPlan-specific fields like months/endDate).
-    - **Verification:** The template key changes (e.g., data-template-key="depositPaid"), variables are preserved/transformed/dropped as per defaults or overrides, and the menu shows valid bidirectional sequences. No raw HTML is exposed on click.
+    - **Verification:** The template key changes (e.g., data-template-key="depositPaid"), variables are preserved/transformed/dropped as per defaults or overrides, and the menu shows valid bidirectional sequences. No raw HTML is exposed on click. Optional fields do not trigger prompts, ensuring a streamlined flow.
 
 - **Configuration you're likely to touch:**
   - Sequences are predefined in the plugin (e.g., CRM presets with optional `variableMapOverrides`); no user config yet. Future releases may allow custom sequences via settings or YAML. For now, defaults cover shared variables without explicit code.
 
 - **Implementation notes for maintainers:**
   - Relies on templating-sequencer module with Sequence type (startTemplate, targetTemplate, direction: "forward"|"both", optional variableMapOverrides for forward/backward).
-  - Automatic defaults in sequencer-service: pass-through for shared names, prompt missing target fields, drop extras; overrides compose atop defaults.
+  - Automatic defaults in sequencer-service: pass-through for shared names, prompt missing *required* target fields only, drop extras; overrides compose atop defaults.
   - Integrates with templating-engine for rendering/prefilling and templating-params-editor for modals.
   - Generalized handler (attachCustomViewTemplatingSequencerHandler) enables reuse in custom views; uses filePath/line hints for direct overwrites without active editors. Backward navigation fixed via corrected startTemplate guards.
 
