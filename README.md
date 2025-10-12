@@ -27,12 +27,12 @@ Agile Obsidian is a plugin that transforms your Obsidian vault into a powerful, 
     - Settings service: load/save plugin settings; expose org/team/member config
     - Command service: register and handle user-triggered commands
     - View service: register/open the Agile Dashboard view
-    - Template service: insert and edit structured “chips” (initiative, epic, OKR, etc.)
+    - Template service: insert and edit structured "chips" (initiative, epic, OKR, etc.)
     - Task indexer/parser: watch vault for changes; parse canonical task lines; keep an in‑memory index
 - Commands (user entry points)
     - Open Agile Dashboard
     - Insert Template (choose initiative/epic/story/OKR, etc.)
-    - Set Assignee (assign current task to a member or “everyone”)
+    - Set Assignee (assign current task to a member or "everyone")
     - Set Delegate (optional reviewer/helper for a task)
 - Views
     - Agile Dashboard view
@@ -79,6 +79,7 @@ Agile Obsidian is a plugin that transforms your Obsidian vault into a powerful, 
 | Agile Task Statuses | Additional preset task statuses & custom task checkboxes [ ] → [/] → [x] → [-] | Automatic (click to advance status, long-click to cancel) | Stable |
 | Custom Task Status Styles | Extended set of custom, parseable status tokens for richer workflows (Blocked, Waiting, Review, Recurring, Prioritize, One-off, Outline, etc.) | Automatic (click to advance status, status chips, stylesheet-driven) | Stable |
 | Quick Insert Multiple Agile Artifacts | Press enter on a task line with an existing agile atifact e.g., Epic to insert another agile artifact e.g., Epic on the next line | Automatic (on enter click on task line with Agile artifact) | Stable |
+| Right-Click Template Removal | Quickly remove templated artifacts (Initiatives, Epics, OKRs, etc.) from task lines via the native Obsidian context menu without disrupting your editing flow. | Right-click on template wrapper in editor | Stable |
 
 ### Quickstart
 
@@ -120,6 +121,7 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
 -   **Task Indexer/Parser (inferred from `registerEvents`):** A service that listens for vault changes, parses Markdown files for tasks matching the canonical format, and maintains an in-memory index of all tasks for quick retrieval.
 -   **Agile Dashboard (View):** A custom Obsidian View that queries the Task Indexer and renders the UI for assigned tasks. It contains its own logic for filtering, sorting, and interacting with tasks.
 -   **Templating Engine:** A service that registers slash commands and manages the lifecycle of inserting and editing template "chips" in Markdown.
+-   **UX Shortcuts Module:** Handles editor-level interactions like double-enter to repeat templates and right-click context menu enhancements for template management.
 -   **Settings Root Module:** Manages the loading, saving, and UI for the plugin's settings tab.
 
 #### Data flow and major sequences
@@ -130,6 +132,13 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
     4.  The Obsidian `workspace.on('modify', ...)` event fires.
     5.  The Task Indexer service catches the event, re-parses the changed file, and updates its in-memory index.
     6.  The Agile Dashboard view, if open, is notified of the change and re-renders to display the newly assigned task.
+
+*   **User Removes a Template via Right-Click:**
+    1.  User right-clicks on a rendered template wrapper (e.g., `<span data-template-key="initiative">Initiative: Project X</span>`) in the editor.
+    2.  The UX Shortcuts module captures the exact click position using Obsidian's Editor API.
+    3.  The standard Obsidian "editor-menu" event fires, and the module injects a "Remove Template" item with trash icon into the context menu.
+    4.  User selects "Remove Template"; the module identifies the innermost matching span, removes it from the line, and adjusts the cursor position to maintain the user's relative location.
+    5.  The line is updated in-place; Obsidian fires a modify event, triggering the Task Indexer to re-parse and update the dashboard if affected.
 
 #### Storage schemas/models
 -   **Settings:** Stored in `[VAULT]/.obsidian/plugins/agile-obsidian/data.json`.
@@ -165,7 +174,7 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
                 -   If it's not your task, click the assignee chip (`@yourname`) to reassign it.
         -   **Verification:** Your dashboard should be empty or contain only items you are actively working on. The source `.md` files will be updated automatically with the new statuses and metadata.
 
--   **Configuration you’re likely to touch:**
+-   **Configuration you're likely to touch:**
     -   **Teams Selector:** Controls which teams' tasks are visible. Your selection is saved automatically.
     -   **Member Filter:** Narrows the view to tasks assigned to a specific member of the selected teams.
     -   **Section Toggles (in Settings):** You can hide entire sections (e.g., "Priorities") from the dashboard if you don't use them.
@@ -177,9 +186,10 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
     -   Link tasks to other items in your vault, creating a web of dependencies.
     -   Add metadata like version numbers, PR links, or status tags (e.g., "Blocked," "Review").
     -   Ensure consistent formatting for all metadata.
+    -   Easily remove inserted templates via right-click context menu for quick iteration without disrupting your editing flow.
 
 -   **When to use this feature:**
-    -   Use this whenever you are creating a new piece of work that fits an Agile concept. Instead of typing out a title manually, use a template to get the correct formatting and icon automatically.
+    -   Use this whenever you are creating a new piece of work that fits an Agile concept. Instead of typing out a title manually, use a template to get the correct formatting and icon automatically. Use the right-click removal for rapid prototyping or corrections.
 
 -   **Use Cases and Guided Workflows:**
     -   **Use Case U1: Create a New Project Initiative**
@@ -191,9 +201,10 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
             4.  A formatted chip `🎖️ Initiative: Q4 Website Redesign` will be inserted.
             5.  To create a child Epic, create a new indented task below it.
             6.  On the new line, type `/epic`, provide a title, and submit.
-        -   **Verification:** Your note will contain a nested structure of tasks with formatted, clickable chips. Clicking a chip re-opens the modal to edit its parameters.
+            7.  If you need to remove an incorrectly inserted template (e.g., wrong type), right-click directly on the template chip (the rendered span) and select "Remove Template" from the context menu. Your cursor will remain in place relative to the removal.
+        -   **Verification:** Your note will contain a nested structure of tasks with formatted, clickable chips. Clicking a chip re-opens the modal to edit its parameters. Removed templates leave the task line clean, with preserved indentation and cursor position.
 
--   **Configuration you’re likely to touch:**
+-   **Configuration you're likely to touch:**
     -   This feature is not directly configurable. The list of available templates is predefined within the plugin.
 
 #### Feature: Organization & Team Management
@@ -217,7 +228,7 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
             5.  To add a person, you can either add them directly in settings or, more practically, assign them a task. Go to a note, create a task, and run `Agile Obsidian: Set Assignee`. Choose "New Member," enter their name, and assign them. They will now appear in the settings under the relevant team.
         -   **Verification:** Your new team structure is visible in the settings tab. The members you add will be available in the assignee list for new tasks and in the member filter on the Agile Dashboard.
 
--   **Configuration you’re likely to touch:**
+-   **Configuration you're likely to touch:**
     -   The entire feature is managed within the "Organizations" section of the plugin's settings tab. There are no other configuration points.
 
 #### Feature: Task Assignment & Delegation
@@ -240,7 +251,7 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
             3.  Run the command `Agile Obsidian: Set Delegate`. Select "Casey". The chip `→ @Casey` appears next to the assignee.
         -   **Verification:** The task line in your note now reads: `- [ ] Fix login button alignment issue @Alex → @Casey`. The task will appear on Alex's Agile Dashboard.
 
--   **Configuration you’re likely to touch:**
+-   **Configuration you're likely to touch:**
     -   The list of available members for assignment and delegation is drawn directly from your **Organization & Team Management** settings.
 
 #### Feature: Task Management & Canonical Formatting
@@ -250,10 +261,10 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
     -   Temporarily hide tasks from your view using the "Snooze" function to maintain focus.
     -   Trust the plugin to automatically organize all metadata on a task line into a clean, consistent, and parseable order.
 
--   When to use this feature:
+-   **When to use this feature:**
     -   This is the core of your daily workflow. You will use these features on every task you interact with, either in a note or in the Agile Dashboard.
 
--   Use Cases and Guided Workflows:
+-   **Use Cases and Guided Workflows:**
     -   Use Case U1: Work on and Complete a Task
         -   Prerequisites: A task is assigned to you on your dashboard.
         -   Step-by-step:
@@ -263,7 +274,7 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
             4.  If you need to cancel the task at any point, long-press (or tap-and-hold on mobile) the checkbox. The status will change to `[-]` (Cancelled).
         -   Verification: The task's status symbol updates in both the dashboard and the source `.md` file. The Canonical Formatter automatically ensures any new chips (like `[Blocked]`) are placed in the correct order on the line.
 
--   Configuration you’re likely to touch:
+-   **Configuration you're likely to touch:**
     -   The status sequence (` ` -> `/` -> `x`) and the long-press to cancel (`-`) are core behaviors and are not configurable.
 
 ##### Canonical Formatter: What it does
@@ -280,11 +291,11 @@ The Canonical Formatter restructures each task line into a consistent, parseable
     7.  Assignment:
         -   If both assignee and delegate exist: rendered as `assignee → delegate`
         -   If only delegate exists and assignee is missing: delegate is dropped
-        -   “special” assignee type counts as an assignee
+        -   "special" assignee type counts as an assignee
     8.  Metadata tags (order-tag: `metadata`) — appended after assignments
     9.  Date tokens — extracted and ordered by priority:
         -   🛫 (start) > ⏳ (hold) > 📅 (due) > 🎯 (target) > 💤 (snooze) > 💤⬇️ (snooze all) > ✅ (done) > ❌ (cancelled)
-        -   Supports individual snoozes with hidden spans, folder/global snoozes, and “snooze all”
+        -   Supports individual snoozes with hidden spans, folder/global snoozes, and "snooze all"
     10. Block ID (`^id`) — deduped and placed once at the end (the last standalone `^id` in the line wins)
 
 -   Preserves indentation:
@@ -296,14 +307,14 @@ The Canonical Formatter restructures each task line into a consistent, parseable
 
 -   Keeps your caret where you expect:
     -   If you were editing in the task text, the formatter attempts to map your caret or selection to the equivalent place in the new line.
-    -   Falls back to keeping the caret at the end of the line when a precise mapping isn’t possible.
+    -   Falls back to keeping the caret at the end of the line when a precise mapping isn't possible.
 
 ##### When it runs
 
 Formatting is orchestrated per active editor view and coalesced/debounced for performance and stability.
 
 -   On Enter / committing a line:
-    -   Triggered when you press Enter (IME-safe) or when an edit increases the document’s line count (e.g., paste with newline).
+    -   Triggered when you press Enter (IME-safe) or when an edit increases the document's line count (e.g., paste with newline).
     -   Scope: current line.
 
 -   On cursor moving to a different line:
@@ -322,7 +333,7 @@ Formatting is orchestrated per active editor view and coalesced/debounced for pe
 
 -   Debounce: 300 ms for all triggers to avoid redundant work while you type or navigate quickly.
 -   Coalescing: If a run is already in progress, newer triggers are queued and only the latest one runs afterward.
--   Re-entrancy guard: Edits made by the formatter don’t retrigger the formatter.
+-   Re-entrancy guard: Edits made by the formatter don't retrigger the formatter.
 -   Whole-file progress UI: If a whole-file format takes longer than ~1s, a progress notice appears and updates until completion. Large files are processed in small batches with cooperative yielding to keep the UI responsive.
 
 ##### What it does not do
@@ -352,7 +363,7 @@ Formatting is orchestrated per active editor view and coalesced/debounced for pe
   - [d] One-off — `[d]`
   - [O] Outline — `[O]`
 
-  Note: The plugin stylesheet also contains many non-essential emoji-based statuses. These are intentionally not enumerated in this documentation because they are optional visual variants and are not required for the plugin’s core behavior.
+  Note: The plugin stylesheet also contains many non-essential emoji-based statuses. These are intentionally not enumerated in this documentation because they are optional visual variants and are not required for the plugin's core behavior.
 
 - **When to use this feature:**
   - Use custom status styles when you need more nuance than simple todo/done (for example: blocking issues, items waiting on external input, items that recur, review-required tasks, or prioritization flags).
@@ -366,16 +377,55 @@ Formatting is orchestrated per active editor view and coalesced/debounced for pe
     - **Verification:** The source `.md` line contains `[b]` and the Dashboard filter surfaces the task under Blocked items.
   - **Use Case U2: Schedule recurring work**
     1. Create a task and tag its status as `[r]` (Recurring).
-    2. Use the Agile Task Date Manager (experimental) to control recurrence dates and the plugin’s metadata cleanup to maintain timestamps.
+    2. Use the Agile Task Date Manager (experimental) to control recurrence dates and the plugin's metadata cleanup to maintain timestamps.
     - **Verification:** Recurring tasks appear in recurrence-aware views and are preserved as recurring rather than being permanently closed after completion.
 
-- **Configuration you’re likely to touch:**
+- **Configuration you're likely to touch:**
   - Status-related behavior is mostly automatic. You may adjust Dashboard filters and Section Toggles in the settings to include/exclude custom statuses from specific views.
   - The Canonical Formatter enforces the parseable order of status tokens and other chips; you generally won't need to edit status order manually.
 
 - **Implementation notes for maintainers:**
-  - Status tokens are parsed as part of the Task Indexer’s canonical line parser. When adding new tokens, ensure the parser’s token map and the Canonical Formatter are updated.
+  - Status tokens are parsed as part of the Task Indexer's canonical line parser. When adding new tokens, ensure the parser's token map and the Canonical Formatter are updated.
   - The Dashboard and status UI should treat status tokens as first-class filters and allow click-to-advance behavior consistent with the plugin's configured status sequence behavior.
+
+#### Feature: Right-Click Template Removal
+
+- **What you can do:**
+  - Right-click on any rendered template wrapper (e.g., Initiative, Epic, OKR chips inserted via the Templating Engine) in the Obsidian editor to access a "Remove Template" option in the native context menu.
+  - The feature identifies the exact template span at the click position, even in nested structures, and removes it cleanly from the task line.
+  - Your cursor position is preserved relative to the removed template—e.g., if you clicked inside the template, the cursor stays at the start of where it was; if outside, it adjusts minimally.
+  - Post-removal, the line is automatically cleaned up (excess spaces collapsed, respecting task/list prefixes) and the Canonical Formatter ensures consistent ordering of remaining metadata.
+  - A trash icon provides clear visual feedback in the menu item.
+
+- **When to use this feature:**
+  - Use this for quick corrections during editing sessions, such as removing a mis-inserted template type, undoing an experimental artifact, or streamlining a task line without manual span deletion.
+  - Ideal for iterative workflows where you prototype structures (e.g., trying different Epic titles) and need to remove without disrupting flow or triggering full-line reformats unnecessarily.
+
+- **Use Cases and Guided Workflows:**
+  - **Use Case U1: Correct a Template Insertion Error**
+    - **Prerequisites:** You have a task line with an inserted template, e.g., `- [ ] 🎖️ Initiative: Wrong Project Name`.
+    - **Step-by-step:**
+      1. Right-click directly on the template chip (the colored/formatted span).
+      2. In the Obsidian context menu, select "Remove Template" (with trash icon).
+      3. The template span is removed, leaving: `- [ ] ` (cursor preserved at the original relative position).
+      4. Continue editing the plain task text or insert a corrected template via slash command.
+    - **Verification:** The source line updates immediately without affecting indentation or other metadata. If the dashboard is open, it reflects the change after the next index update. No manual cleanup is needed for spacing or cursor jumps.
+  - **Use Case U2: Streamline Nested Artifacts**
+    - **Prerequisites:** A nested structure like an Epic under an Initiative.
+    - **Step-by-step:**
+      1. Right-click on the child Epic template to remove just that artifact, preserving the parent Initiative.
+      2. The removal adjusts the line cleanly, maintaining any assignments, dates, or statuses.
+    - **Verification:** Only the targeted template is removed; the task remains parseable, and the dashboard updates accordingly.
+
+- **Configuration you're likely to touch:**
+  - This feature requires no configuration—it automatically integrates with the Templating Engine and works on any template with a `data-template-key` attribute.
+  - Enabled by default; relies on the plugin's UX Shortcuts module, which is wired during plugin initialization.
+
+- **Implementation notes for maintainers:**
+  - The feature uses Obsidian's `editor-menu` event to inject the menu item dynamically, ensuring it only appears when clicking inside a valid template wrapper.
+  - It handles nested `<span>` tags robustly via deterministic parsing (counting open/close tags) to target the innermost wrapper.
+  - Cursor preservation uses position mapping relative to the removal range, with fallbacks for edge cases.
+  - No additional commands or settings are needed; it's triggered via the existing `wireTemplatingUxShortcutsDomHandlers` call in the plugin's composition wiring.
 
 ### Configuration/Settings Reference
 
@@ -444,6 +494,7 @@ The Agile Obsidian settings are accessible via **Settings > Agile Obsidian**.
   - Added support and documentation for new & revised custom task status styles (see "Feature: Custom Task Status Styles").
   - Added "Custom Task Status Styles" to the Other Capabilities Table.
   - Clarified behavior and examples for blocked, waiting, recurring, review, prioritize, one-off, and outline statuses.
+  - Added documentation for the new "Right-Click Template Removal" feature, including entry in Other Capabilities Table, a dedicated Feature Catalog section, updates to Templating Engine feature description and use cases, and enhancements to Architecture (Components and Data Flow).
 - Previous (1.0.0) changes:
   - Documentation updated to version 1.0.0.
   - Rewrote documentation in full to align with a standardized, comprehensive structure.
