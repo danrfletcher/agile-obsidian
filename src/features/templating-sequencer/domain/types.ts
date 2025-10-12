@@ -30,6 +30,9 @@ export type BackwardMapper<TStartParams, TTargetParams> = (args: {
  * - variableMapOverrides (optional): mapping callbacks to override default behaviors
  * - label: optional display name to show in menus; we also show the target template's label from its definition.
  * - isAvailable?: optional predicate to dynamically hide/show a movement based on current values.
+ * - disabled?: when true, this sequence serves as a declarative "blocker" for auto-generated sequences
+ *              with the same (startTemplate -> targetTemplate). Disabled sequences are not included in
+ *              the final available set, but they prevent auto-generation of the same pair.
  */
 export interface Sequence<TStartParams = any, TTargetParams = any> {
 	id: string;
@@ -49,6 +52,13 @@ export interface Sequence<TStartParams = any, TTargetParams = any> {
 		// Movement direction we plan to execute
 		direction: "forward" | "backward";
 	}) => boolean;
+
+	/**
+	 * When true, indicates a user wants to disable the corresponding auto-generated
+	 * sequence. Such entries are not included in the final set, and they block
+	 * dynamic generation for the same start->target pair.
+	 */
+	disabled?: boolean;
 }
 
 /**

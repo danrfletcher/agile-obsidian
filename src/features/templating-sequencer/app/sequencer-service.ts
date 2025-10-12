@@ -69,6 +69,9 @@ export function getCurrentParamsFromWrapper(
 /**
  * Produce a filtered schema that contains only fields missing on "candidate" params,
  * to be used by the "Additional Properties" modal.
+ * 
+ * Change: Only prompt for fields that are explicitly required.
+ * Optional fields are ignored even if they are missing; they will simply be left off.
  */
 function makeMissingOnlySchema(
 	fullSchema: any | undefined,
@@ -81,13 +84,19 @@ function makeMissingOnlySchema(
 	) {
 		return undefined;
 	}
+
 	const missingFields = fullSchema.fields.filter((f: any) => {
-		const name = String(f?.name ?? "");
+		const required = !!f?.required;
+		if (!required) return false; // do not prompt for optional fields
+
+		const name = String(f?.name ?? "").trim();
 		if (!name) return false;
+
 		const v = candidate[name];
 		const str = v == null ? "" : String(v).trim();
-		return str.length === 0; // absent or empty -> needs collection
+		return str.length === 0; // missing or empty -> needs collection (only for required)
 	});
+
 	if (missingFields.length === 0) return undefined;
 
 	return {
