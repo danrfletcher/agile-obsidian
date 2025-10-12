@@ -69,7 +69,7 @@ export function getCurrentParamsFromWrapper(
 /**
  * Produce a filtered schema that contains only fields missing on "candidate" params,
  * to be used by the "Additional Properties" modal.
- * 
+ *
  * Change: Only prompt for fields that are explicitly required.
  * Optional fields are ignored even if they are missing; they will simply be left off.
  */
@@ -273,12 +273,15 @@ function escapeRegExp(s: string): string {
 }
 
 /**
- * Replace a wrapper's inner HTML in the specified file, targeting a specific line when possible.
- * Strategy:
- * - Prefer the hinted line (data-line) and replace the first span containing the "data-template-wrapper=<id>"
- *   (if instanceId is provided) or "data-template-key=<key>" (fallback).
- * - Replace ONLY the inner HTML of the matching wrapper, leaving the wrapper tag/attributes intact.
- * - Keep EOL style intact.
+ * Replace a wrapper on the specified file and line, aligning behavior with the editor path.
+ *
+ * Key changes:
+ * - Replace the ENTIRE wrapper region (opening <span ...> through its matching </span>),
+ *   not just the inner HTML. This aligns the custom view overwrite with the regular note behavior
+ *   and prevents nested wrappers or trailing leftovers.
+ * - Use a simple nesting-aware scan to find the correct closing span, so nested <span> tags
+ *   inside the wrapper do not confuse the replacement.
+ * - Prefer matching by instanceId when provided; fall back to matching by data-template-key.
  */
 async function replaceWrapperInnerHtmlOnFileLine(params: {
 	app: App;
@@ -286,7 +289,7 @@ async function replaceWrapperInnerHtmlOnFileLine(params: {
 	line0?: number | null;
 	instanceId?: string | null;
 	templateKey: string;
-	newInnerHtml: string;
+	newInnerHtml: string; // May be a full wrapper; we now replace the entire wrapper region with this markup.
 }): Promise<void> {
 	const { app, filePath, line0, instanceId, templateKey, newInnerHtml } =
 		params;
@@ -308,34 +311,66 @@ async function replaceWrapperInnerHtmlOnFileLine(params: {
 				: null;
 		const keyStr = `data-template-key="${escapeRegExp(templateKey)}"`;
 
-		const idPos = idStr ? line.search(new RegExp(idStr)) : -1;
-		const keyPos = line.search(new RegExp(keyStr));
-
-		// If both id and key exist, prefer id. If no id, fall back to key.
-		let anchorPos = idPos >= 0 ? idPos : keyPos;
+		// Anchor preference: instanceId > key
+		let anchorPos = -1;
+		if (idStr) {
+			const reId = new RegExp(idStr);
+			anchorPos = line.search(reId);
+		}
+		if (anchorPos < 0) {
+			const reKey = new RegExp(keyStr);
+			anchorPos = line.search(reKey);
+		}
 		if (anchorPos < 0) return { changed: false, out: line };
 
 		// Find the opening <span ...> that contains our anchor
-		let openStart = line.lastIndexOf("<span", anchorPos);
+		const openStart = line.lastIndexOf("<span", anchorPos);
 		if (openStart < 0) return { changed: false, out: line };
-		const openEnd = line.indexOf(">", anchorPos);
+		const openEnd = line.indexOf(">", openStart);
 		if (openEnd < 0) return { changed: false, out: line };
 
-		// Sanity check: ensure this opening tag indeed has the template key
+		// Sanity: ensure this opening tag has the template key attribute
 		const openTag = line.slice(openStart, openEnd + 1);
-		if (!new RegExp(keyStr, "i").test(openTag)) {
-			// Anchor might be stale; bail out to avoid corrupting unrelated spans
+		const openHasKey = new RegExp(keyStr, "i").test(openTag);
+		if (!openHasKey) return { changed: false, out: line };
+
+		// Walk forward to find the matching closing </span> for this wrapper, accounting for nested spans
+		let idx = openEnd + 1;
+		let depth = 1;
+		let closeStart = -1;
+		let closeEnd = -1;
+
+		while (idx < line.length) {
+			const nextOpen = line.indexOf("<span", idx);
+			const nextClose = line.indexOf("</span>", idx);
+
+			if (nextClose === -1) {
+				// Malformed or multi-line wrapper; bail to avoid corruption
+				return { changed: false, out: line };
+			}
+
+			if (nextOpen !== -1 && nextOpen < nextClose) {
+				// Another nested <span> before the next close
+				depth++;
+				idx = nextOpen + 5; // move past "<span"
+			} else {
+				// We encountered a closing span
+				depth--;
+				closeStart = nextClose;
+				closeEnd = nextClose + "</span>".length;
+				idx = closeEnd;
+				if (depth === 0) break;
+			}
+		}
+
+		if (depth !== 0 || closeStart < 0 || closeEnd < 0) {
+			// Could not find a proper matching closing tag
 			return { changed: false, out: line };
 		}
 
-		// Find the closing </span> that matches this opening tag.
-		// Heuristic (single-line assumption): find the next </span>.
-		// In typical template wrappers, content remains on the same line.
-		const closeStart = line.indexOf("</span>", openEnd + 1);
-		if (closeStart < 0) return { changed: false, out: line };
-
-		const before = line.slice(0, openEnd + 1);
-		const after = line.slice(closeStart);
+		// Replace the ENTIRE wrapper (from openStart to closeEnd) with new markup
+		const before = line.slice(0, openStart);
+		const after = line.slice(closeEnd);
 		const out = `${before}${newInnerHtml}${after}`;
 		return { changed: true, out };
 	};
@@ -486,10 +521,10 @@ export async function executeSequenceMoveOnFile(args: {
 		}
 	}
 
-	// 6) Render inner HTML only
+	// 6) Render inner HTML only (may be full wrapper depending on engine; we replace entire wrapper region below)
 	const newInnerHtml = renderTemplateOnly(targetTemplate, finalParams);
 
-	// 7) Replace in file (targeting wrapper on the hinted line; falling back to scan)
+	// 7) Replace in file by replacing the entire wrapper region on the hinted line (fallback to scan)
 	await replaceWrapperInnerHtmlOnFileLine({
 		app,
 		filePath,
