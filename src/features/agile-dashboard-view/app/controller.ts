@@ -19,6 +19,9 @@ import {
 import { renderProjectView } from "../ui/views/project-view";
 import { refreshForFile } from "./refresh-service";
 
+// NEW: generalized custom-view sequencer handler
+import { attachCustomViewTemplatingSequencerHandler } from "@features/templating-sequencer";
+
 type RegisterFn = (fn: () => void) => void;
 type RegisterEventFn = (evt: any) => void;
 type RegisterDomEvent = (
@@ -112,7 +115,7 @@ export class DashboardController {
 			},
 		});
 
-		// Handlers (assignment + templating)
+		// Handlers (assignment + templating params + NEW: templating sequencer)
 		attachDashboardAssignmentHandler({
 			app: this.deps.app,
 			orgStructurePort: this.deps.orgStructurePort,
@@ -120,6 +123,22 @@ export class DashboardController {
 			registerDomEvent: this.deps.registerDomEvent,
 		});
 
+		// NEW: Sequencer menu for templates inside the dashboard
+		attachCustomViewTemplatingSequencerHandler({
+			app: this.deps.app,
+			viewContainer: container,
+			registerDomEvent: this.deps.registerDomEvent,
+			refreshForFile: async (filePath?: string | null) => {
+				await refreshForFile(
+					this.deps.app,
+					this.deps.taskIndexService,
+					filePath
+				);
+				await this.updateView();
+			},
+		});
+
+		// Existing: params editor handler
 		attachDashboardTemplatingHandler({
 			app: this.deps.app,
 			viewContainer: container,
