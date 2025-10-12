@@ -27,7 +27,7 @@ export type BackwardMapper<TStartParams, TTargetParams> = (args: {
  * - startTemplate: source template key (e.g., "crm.depositPaid")
  * - targetTemplate: destination template key (e.g., "crm.paidInFull")
  * - direction: "forwards" or "both" (allow reverse option when "both")
- * - variableMap: mapping callbacks (forward required, backward optional)
+ * - variableMapOverrides (optional): mapping callbacks to override default behaviors
  * - label: optional display name to show in menus; we also show the target template's label from its definition.
  * - isAvailable?: optional predicate to dynamically hide/show a movement based on current values.
  */
@@ -36,8 +36,8 @@ export interface Sequence<TStartParams = any, TTargetParams = any> {
 	startTemplate: string;
 	targetTemplate: string;
 	direction: SequenceDirection;
-	variableMap: {
-		forward: ForwardMapper<TStartParams, TTargetParams>;
+	variableMapOverrides?: {
+		forward?: ForwardMapper<TStartParams, TTargetParams>;
 		backward?: BackwardMapper<TStartParams, TTargetParams>;
 	};
 	label?: string;

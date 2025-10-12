@@ -99,9 +99,45 @@ function makeMissingOnlySchema(
 }
 
 /**
+ * Helpers: automatic param mapping layer
+ * - We only prefill keys present on the destination template schema (drop extras).
+ * - We only prefill when a source value is non-empty after trimming (empty values remain "missing" to trigger the modal).
+ * - Sequence callback overrides (variableMapOverrides) win over these defaults (so users can transform or replace).
+ */
+function getSchemaFieldNames(def: any | undefined): string[] {
+	if (!def?.paramsSchema?.fields || !Array.isArray(def.paramsSchema.fields))
+		return [];
+	return def.paramsSchema.fields
+		.map((f: any) => String(f?.name ?? "").trim())
+		.filter((n: string) => n.length > 0);
+}
+
+function normalizeString(v: unknown): string {
+	return v == null ? "" : String(v).trim();
+}
+
+function computeAutoMappedParams(
+	source: Record<string, unknown>,
+	destTemplateDef: any | undefined
+): Record<string, unknown> {
+	const out: Record<string, unknown> = {};
+	const destKeys = getSchemaFieldNames(destTemplateDef);
+	if (destKeys.length === 0) return out;
+
+	for (const key of destKeys) {
+		const val = normalizeString(source[key]);
+		if (val.length > 0) {
+			out[key] = val;
+		}
+	}
+	return out;
+}
+
+/**
  * Execute a sequence move (forward/backward) using the active MarkdownView.
  * - Reads current params from wrapper
- * - Maps via variableMap
+ * - Applies automatic pass-through for shared variable names (drop extras)
+ * - Applies user-provided variableMapOverrides on top (if present)
  * - Prompts for missing fields via "Additional Properties"
  * - Renders target HTML and overwrites the clicked wrapper (preserving instance id via the editor API)
  */
@@ -132,16 +168,15 @@ export async function executeSequenceMove(args: {
 	const startTemplate =
 		direction === "forward"
 			? sequence.startTemplate
-			: sequence.targetTemplate;
+			: sequence.targetTemplate; // clicked template on backward
 	const targetTemplate =
 		direction === "forward"
 			? sequence.targetTemplate
 			: sequence.startTemplate;
 
-	// Ensure the clicked template matches start/target as expected
-	if (direction === "forward" && currentTemplateKey !== startTemplate) return;
-	if (direction === "backward" && currentTemplateKey !== targetTemplate)
-		return;
+	// Ensure the clicked template matches the expected "start" for this move
+	// Note: startTemplate is always the clicked template (forward: sequence.startTemplate; backward: sequence.targetTemplate)
+	if (currentTemplateKey !== startTemplate) return;
 
 	// Resolve target template definition
 	const targetDef = findTemplateById(targetTemplate) as
@@ -155,18 +190,29 @@ export async function executeSequenceMove(args: {
 	if (!targetDef)
 		throw new Error(`Unknown target template: ${targetTemplate}`);
 
-	// 1) Variable mapping
-	let baseParams: Record<string, unknown> = {};
+	// 1) Automatic pass-through for shared names (drop extras)
+	const autoDefaults = computeAutoMappedParams(currentParams, targetDef);
+
+	// 2) Sequence callback overrides (user-defined mapping wins over defaults)
+	let callbackParams: Record<string, unknown> = {};
+	const overrides = sequence.variableMapOverrides;
 	if (direction === "forward") {
-		baseParams = await sequence.variableMap.forward({
+		const res = await overrides?.forward?.({
 			start: currentParams,
 		});
+		callbackParams = (res ?? {}) as Record<string, unknown>;
 	} else {
-		const backward = sequence.variableMap.backward;
-		baseParams = backward ? await backward({ target: currentParams }) : {};
+		const res = await overrides?.backward?.({ target: currentParams });
+		callbackParams = (res ?? {}) as Record<string, unknown>;
 	}
 
-	// 2) Collect any missing fields via filtered schema
+	// Compose: defaults first, then user callback overrides
+	let baseParams: Record<string, unknown> = {
+		...autoDefaults,
+		...callbackParams,
+	};
+
+	// 3) Collect any missing fields via filtered schema (automatic prompting)
 	let finalParams = { ...(baseParams ?? {}) };
 	if (
 		targetDef.paramsSchema &&
@@ -196,10 +242,10 @@ export async function executeSequenceMove(args: {
 		}
 	}
 
-	// 3) Render only the inner content (wrapper is unchanged)
+	// 4) Render only the inner content (wrapper is unchanged)
 	const newInnerHtml = renderTemplateOnly(targetTemplate, finalParams);
 
-	// 4) Replace the wrapper inner HTML in the current line via templating-engine helper
+	// 5) Replace the wrapper inner HTML in the current line via templating-engine helper
 	await replaceTemplateWrapperOnCurrentLine(
 		app as any,
 		view as any,
@@ -328,8 +374,10 @@ async function replaceWrapperInnerHtmlOnFileLine(params: {
 
 /**
  * Execute a sequence move (forward/backward) directly on a file.
- * Supports custom views (e.g., Agile Dashboard) where we click on a rendered wrapper and need to
- * overwrite the source note without requiring an active editor view.
+ * Supports custom views where we click on a rendered wrapper and need to overwrite the source note
+ * without requiring an active editor view.
+ *
+ * Automatic mapping rules are the same as the editor path.
  */
 export async function executeSequenceMoveOnFile(args: {
 	app: App;
@@ -359,15 +407,14 @@ export async function executeSequenceMoveOnFile(args: {
 	const startTemplate =
 		direction === "forward"
 			? sequence.startTemplate
-			: sequence.targetTemplate;
+			: sequence.targetTemplate; // clicked template on backward
 	const targetTemplate =
 		direction === "forward"
 			? sequence.targetTemplate
 			: sequence.startTemplate;
 
-	if (direction === "forward" && currentTemplateKey !== startTemplate) return;
-	if (direction === "backward" && currentTemplateKey !== targetTemplate)
-		return;
+	// Ensure the clicked template matches the expected "start" for this move
+	if (currentTemplateKey !== startTemplate) return;
 
 	const targetDef = findTemplateById(targetTemplate) as
 		| {
@@ -379,18 +426,28 @@ export async function executeSequenceMoveOnFile(args: {
 	if (!targetDef)
 		throw new Error(`Unknown target template: ${targetTemplate}`);
 
-	// 3) Variable mapping
-	let baseParams: Record<string, unknown> = {};
+	// 3) Automatic pass-through for shared names (drop extras)
+	const autoDefaults = computeAutoMappedParams(currentParams, targetDef);
+
+	// 4) Sequence callback overrides (user-defined mapping wins over defaults)
+	let callbackParams: Record<string, unknown> = {};
+	const overrides = sequence.variableMapOverrides;
 	if (direction === "forward") {
-		baseParams = await sequence.variableMap.forward({
+		const res = await overrides?.forward?.({
 			start: currentParams,
 		});
+		callbackParams = (res ?? {}) as Record<string, unknown>;
 	} else {
-		const backward = sequence.variableMap.backward;
-		baseParams = backward ? await backward({ target: currentParams }) : {};
+		const res = await overrides?.backward?.({ target: currentParams });
+		callbackParams = (res ?? {}) as Record<string, unknown>;
 	}
 
-	// 4) Collect missing fields (Additional Properties)
+	let baseParams: Record<string, unknown> = {
+		...autoDefaults,
+		...callbackParams,
+	};
+
+	// 5) Collect missing fields (Additional Properties)
 	let finalParams = { ...(baseParams ?? {}) };
 	if (
 		targetDef.paramsSchema &&
@@ -420,10 +477,10 @@ export async function executeSequenceMoveOnFile(args: {
 		}
 	}
 
-	// 5) Render inner HTML only
+	// 6) Render inner HTML only
 	const newInnerHtml = renderTemplateOnly(targetTemplate, finalParams);
 
-	// 6) Replace in file (targeting wrapper on the hinted line; falling back to scan)
+	// 7) Replace in file (targeting wrapper on the hinted line; falling back to scan)
 	await replaceWrapperInnerHtmlOnFileLine({
 		app,
 		filePath,

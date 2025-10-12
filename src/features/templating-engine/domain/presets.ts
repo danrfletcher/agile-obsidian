@@ -637,7 +637,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 				},
 				{
 					name: "totalAmount",
-					label: "Total Deposit",
+					label: "Total Amount",
 					required: true,
 					placeholder: "e.g., 2,000.00",
 				},
@@ -691,12 +691,6 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 					options: currencyDropdownOptions,
 				},
 				{
-					name: "paidAmount",
-					label: "Paid Amount",
-					required: true,
-					placeholder: "e.g., 4,999.00",
-				},
-				{
 					name: "totalAmount",
 					label: "Total Amount",
 					required: true,
@@ -711,7 +705,6 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 			totalAmount?: string;
 		}) {
 			const currency = (params?.currency ?? "$").trim();
-			const paidAmount = (params?.paidAmount ?? "").trim();
 			const totalAmount = (params?.totalAmount ?? "").trim();
 
 			const inner = chip({
@@ -719,7 +712,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 				text: `<strong>Paid in Full ${wrapVar(
 					"currency",
 					currency
-				)}${wrapVar("paidAmount", paidAmount)} / ${wrapVar(
+				)}${totalAmount} / ${wrapVar(
 					"currency",
 					currency
 				)}${wrapVar("totalAmount", totalAmount)}</strong>`,
@@ -877,6 +870,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 };
+
 /**
  * Members — tasks only
  */

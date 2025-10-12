@@ -338,18 +338,14 @@ export function prefillTemplateParams(
 	const explicit = extractParamsFromWrapperEl(wrapperEl);
 	if (Object.keys(explicit).length > 0) return explicit;
 
-	// No markers found. Enforce “wrapped vars only”.
-	console.warn(
-		"[templating] No [data-tpl-var] markers found for parameterized template:",
-		templateId,
-		wrapperEl
-	);
 	return {};
 }
 
 /**
- * Replace the first template wrapper on the current editor line with newHtml.
- * Uses instanceId if provided for precise matching; otherwise falls back to templateKey.
+ * Replace the clicked template wrapper's ENTIRE <span ...>...</span> in the editor.
+ * - Prefer matching the exact instance by data-template-wrapper across the entire document.
+ * - Fall back to current-line, by data-template-key, only when no instance id is provided.
+ * - Uses a deterministic span-matching scanner (single-line assumption for wrappers).
  */
 export async function replaceTemplateWrapperOnCurrentLine(
 	app: any,
@@ -360,62 +356,118 @@ export async function replaceTemplateWrapperOnCurrentLine(
 	wrapperInstanceId?: string
 ): Promise<void> {
 	try {
-		const cur = editor.getCursor();
-		const lineNo = cur.line;
-		const lineText = editor.getLine(lineNo);
+		const doc = editor.getValue() ?? "";
+		const lines = doc.split(/\r?\n/);
 
-		// Prefer matching by data-template-wrapper (unique per instance)
+		// Helper: robust attr matcher supporting single or double quotes
+		const hasAttrWithValue = (s: string, attr: string, val: string): boolean => {
+			const esc = String(val || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+			const re = new RegExp(`\\b${attr}\\s*=\\s*(['"])${esc}\\1`, "i");
+			return re.test(s);
+		};
+
+		// Find the line that actually contains the clicked instance id
+		let targetLineNo = -1;
+		if (wrapperInstanceId && wrapperInstanceId.trim()) {
+			for (let i = 0; i < lines.length; i++) {
+				if (hasAttrWithValue(lines[i] ?? "", "data-template-wrapper", wrapperInstanceId)) {
+					targetLineNo = i;
+					break;
+				}
+			}
+		}
+
+		// Fallback: no instance id or not found -> use current cursor line
+		if (targetLineNo < 0) {
+			const cur = editor.getCursor();
+			targetLineNo = typeof cur?.line === "number" ? cur.line : 0;
+		}
+
+		if (targetLineNo < 0 || targetLineNo >= lines.length) {
+			console.debug(
+				"[templating] replaceTemplateWrapperOnCurrentLine: invalid target line",
+				{ templateKey, wrapperInstanceId, targetLineNo }
+			);
+			return;
+		}
+
+		const lineText = editor.getLine(targetLineNo) ?? "";
+		if (!lineText || lineText.length === 0) {
+			console.debug(
+				"[templating] replaceTemplateWrapperOnCurrentLine: empty target line",
+				{ templateKey, wrapperInstanceId, targetLineNo }
+			);
+			return;
+		}
+
+		// Build an anchor regex using the strongest selector we have:
+		// 1) instance id (preferred), else 2) template key.
 		const openTagRe = new RegExp(
-			wrapperInstanceId
-				? `<span\\b[^>]*\\bdata-template-wrapper\\s*=\\s*"${escapeRegExp(
-						wrapperInstanceId
-				  )}"[^>]*>`
-				: `<span\\b[^>]*\\bdata-template-key\\s*=\\s*"${escapeRegExp(
+			wrapperInstanceId && wrapperInstanceId.trim()
+				? `<span\\b[^>]*\\bdata-template-wrapper\\s*=\\s*(['"])${escapeRegExp(
+						wrapperInstanceId.trim()
+				  )}\\1[^>]*>`
+				: `<span\\b[^>]*\\bdata-template-key\\s*=\\s*(['"])${escapeRegExp(
 						templateKey
-				  )}"[^>]*>`,
+				  )}\\1[^>]*>`,
 			"i"
 		);
 
 		const openMatch = openTagRe.exec(lineText);
 		if (!openMatch) {
 			console.debug(
-				"[templating] replaceTemplateWrapperOnCurrentLine: wrapper not found on line",
-				{ lineNo, templateKey, wrapperInstanceId, lineText }
+				"[templating] replaceTemplateWrapperOnCurrentLine: wrapper not found on target line",
+				{
+					lineNo: targetLineNo,
+					templateKey,
+					wrapperInstanceId,
+					lineText,
+				}
 			);
 			return;
 		}
 
-		const startIdx = openMatch.index;
+		// Find the opening <span ...> start index that contains the anchor
+		const anchorPos = openMatch.index;
+		let openStart = lineText.lastIndexOf("<span", anchorPos);
+		if (openStart < 0) {
+			// Be permissive: try forward search from anchor
+			openStart = lineText.toLowerCase().indexOf("<span", anchorPos);
+			if (openStart < 0) {
+				console.debug(
+					"[templating] replaceTemplateWrapperOnCurrentLine: opening <span not found",
+					{ lineNo: targetLineNo, templateKey, wrapperInstanceId }
+				);
+				return;
+			}
+		}
 
-		// Find the end index of the matching </span> for this wrapper via deterministic counting
-		const endIdx = findMatchingSpanEndIndexDeterministic(
+		// Determine the end index of the matching </span> for this wrapper
+		const endIdxExclusive = findMatchingSpanEndIndexDeterministic(
 			lineText,
-			startIdx
+			openStart
 		);
-		if (endIdx === -1) {
+		if (endIdxExclusive === -1) {
 			console.warn(
-				"[templating] replaceTemplateWrapperOnCurrentLine: could not find matching </span> for wrapper",
-				{ lineNo, templateKey, wrapperInstanceId }
+				"[templating] replaceTemplateWrapperOnCurrentLine: unmatched </span>",
+				{ lineNo: targetLineNo, templateKey, wrapperInstanceId }
 			);
 			return;
 		}
 
-		const updated =
-			lineText.slice(0, startIdx) + newHtml + lineText.slice(endIdx);
+		// Replace the ENTIRE wrapper with the provided HTML (which itself is a full wrapper from renderTemplateOnly)
+		const updatedLine =
+			lineText.slice(0, openStart) + newHtml + lineText.slice(endIdxExclusive);
 
-		const from = { line: lineNo, ch: 0 };
-		const to = { line: lineNo, ch: lineText.length };
-		editor.replaceRange(updated, from, to);
-
-		// Place caret at end of line to avoid caret jumping inside HTML
-		if (typeof editor.setCursor === "function") {
-			editor.setCursor({ line: lineNo, ch: updated.length });
-		}
-	} catch (e) {
-		console.error(
-			"[templating] replaceTemplateWrapperOnCurrentLine error",
-			e
+		// Commit the line replacement
+		editor.replaceRange(
+			updatedLine,
+			{ line: targetLineNo, ch: 0 },
+			{ line: targetLineNo, ch: lineText.length }
 		);
+		editor.setCursor?.({ line: targetLineNo, ch: updatedLine.length });
+	} catch (e) {
+		console.error("[templating] replaceTemplateWrapperOnCurrentLine error", e);
 	}
 }
 

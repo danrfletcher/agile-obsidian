@@ -51,20 +51,10 @@ export function openSequencerMenuAt(opts: {
 
 	const menu: Menu = new ObsidianMenu();
 
-	// Helper to add a section header (disabled item) + optional separator
-	const addSectionHeader = (title: string, first: boolean) => {
-		if (!first) menu.addSeparator();
-		menu.addItem((i) => {
-			i.setTitle(title);
-			// @ts-ignore - setDisabled is not public API; use a label-like item by not wiring clicks
-		});
-	};
+	let addedAny = false;
 
-	let isFirst = true;
-
+	// Forward options (no "Move Forward" header)
 	if (forward.length > 0) {
-		addSectionHeader("Move Forward", isFirst);
-		isFirst = false;
 		for (const seq of forward) {
 			const toLabel = getTemplateLabel(seq.targetTemplate);
 			const display = seq.label ? `${seq.label} → ${toLabel}` : toLabel;
@@ -92,11 +82,13 @@ export function openSequencerMenuAt(opts: {
 				});
 			});
 		}
+		addedAny = true;
 	}
 
+	// Backward options (no "Move Back" header). Add a separator only if both groups exist.
 	if (backward.length > 0) {
-		addSectionHeader("Move Back", isFirst);
-		isFirst = false;
+		if (addedAny) menu.addSeparator();
+
 		for (const seq of backward) {
 			const toLabel = getTemplateLabel(seq.startTemplate);
 			const display = seq.label ? `${seq.label} → ${toLabel}` : toLabel;
