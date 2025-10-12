@@ -563,7 +563,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 					type: "dropdown",
 					required: true,
 					placeholder: "Select currency…",
-					defaultValue: "USD",
+					defaultValue: "$",
 					options: currencyDropdownOptions,
 				},
 				{
@@ -586,7 +586,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 			paidAmount?: string;
 			totalAmount?: string;
 		}) {
-			const currency = (params?.currency ?? "USD").trim();
+			const currency = (params?.currency ?? "$").trim();
 			const paidAmount = (params?.paidAmount ?? "").trim();
 			const totalAmount = (params?.totalAmount ?? "").trim();
 
@@ -626,7 +626,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 					type: "dropdown",
 					required: true,
 					placeholder: "Select currency…",
-					defaultValue: "USD",
+					defaultValue: "$",
 					options: currencyDropdownOptions,
 				},
 				{
@@ -649,7 +649,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 			paidAmount?: string;
 			totalAmount?: string;
 		}) {
-			const currency = (params?.currency ?? "USD").trim();
+			const currency = (params?.currency ?? "$").trim();
 			const paidAmount = (params?.paidAmount ?? "").trim();
 			const totalAmount = (params?.totalAmount ?? "").trim();
 
@@ -687,7 +687,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 					type: "dropdown",
 					required: true,
 					placeholder: "Select currency…",
-					defaultValue: "USD",
+					defaultValue: "$",
 					options: currencyDropdownOptions,
 				},
 				{
@@ -710,7 +710,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 			paidAmount?: string;
 			totalAmount?: string;
 		}) {
-			const currency = (params?.currency ?? "USD").trim();
+			const currency = (params?.currency ?? "$").trim();
 			const paidAmount = (params?.paidAmount ?? "").trim();
 			const totalAmount = (params?.totalAmount ?? "").trim();
 
@@ -750,7 +750,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 					type: "dropdown",
 					required: true,
 					placeholder: "Select currency…",
-					defaultValue: "USD",
+					defaultValue: "$",
 					options: currencyDropdownOptions,
 				},
 				{
@@ -773,7 +773,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 			paidAmount?: string;
 			totalAmount?: string;
 		}) {
-			const currency = (params?.currency ?? "USD").trim();
+			const currency = (params?.currency ?? "$").trim();
 			const paidAmount = (params?.paidAmount ?? "").trim();
 			const totalAmount = (params?.totalAmount ?? "").trim();
 
@@ -826,7 +826,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 					type: "dropdown",
 					required: true,
 					placeholder: "Select currency…",
-					defaultValue: "USD",
+					defaultValue: "$",
 					options: currencyDropdownOptions,
 				},
 				{
@@ -853,7 +853,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 		}) {
 			const months = (params?.months ?? "").trim();
 			const endDate = (params?.endDate ?? "").trim();
-			const currency = (params?.currency ?? "USD").trim();
+			const currency = (params?.currency ?? "$").trim();
 			const paidAmount = (params?.paidAmount ?? "").trim();
 			const totalAmount = (params?.totalAmount ?? "").trim();
 

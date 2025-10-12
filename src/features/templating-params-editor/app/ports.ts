@@ -3,18 +3,27 @@
  * Provide concrete implementations via your composition module.
  */
 
-import type {
-	TemplateDef,
-	TemplateParams,
-	ParamsSchema,
-	EventBusLike,
-} from "../domain/types";
+import type { TemplateParams, EventBusLike } from "../domain/types";
+import type { ParamsSchema } from "@features/templating-engine";
+
+/**
+ * Minimal template definition shape expected by the params editor,
+ * but using the templating-engine's rich ParamsSchema so dropdowns,
+ * textarea, blockSelect, labels, placeholders, and options are preserved.
+ */
+export type TemplateDefForPorts = {
+	id: string;
+	hasParams: boolean;
+	hiddenFromDynamicCommands?: boolean;
+	paramsSchema?: ParamsSchema;
+};
 
 export interface TemplatingPorts {
 	/**
 	 * Lookup a template definition by id (aka templateKey).
+	 * Must return the rich schema so the modal can render correct inputs.
 	 */
-	findTemplateById: (id: string) => TemplateDef | undefined;
+	findTemplateById: (id: string) => TemplateDefForPorts | undefined;
 
 	/**
 	 * Attempt to prefill parameters from the wrapper element.
@@ -30,7 +39,8 @@ export interface TemplatingPorts {
 	renderTemplateOnly: (templateId: string, params: TemplateParams) => string;
 
 	/**
-	 * Show a schema-driven modal. Return undefined on cancel.
+	 * Show a schema-driven modal using the rich templating-engine ParamsSchema.
+	 * Return undefined on cancel.
 	 */
 	showSchemaModal: (
 		templateId: string,
