@@ -38,8 +38,8 @@ export interface AttachEditorHandlerOptions {
 
 /**
  * Attach an editor templating handler.
- * Intercepts clicks on spans with data-template-wrapper and data-template-key, opens edit flow,
- * and persists changes to the current file.
+ * Intercepts double-clicks on spans with data-template-wrapper and data-template-key,
+ * opens edit flow, and persists changes to the current file.
  */
 export function attachEditorTemplatingHandler(
 	opts: AttachEditorHandlerOptions
@@ -63,7 +63,7 @@ export function attachEditorTemplatingHandler(
 			  }
 			: undefined);
 
-	const onClick = async (evt: MouseEvent) => {
+	const onDblClick = async (evt: MouseEvent) => {
 		try {
 			const target = evt.target as HTMLElement | null;
 			if (!target) return;
@@ -87,17 +87,15 @@ export function attachEditorTemplatingHandler(
 			// Current file path is required to persist changes
 			if (!filePath) return;
 
-			// We will handle this click: cancel default and stop propagation
+			// We will handle this double-click: cancel default and stop propagation
 			evt.preventDefault();
 			evt.stopPropagation();
 			// @ts-ignore
 			evt.stopImmediatePropagation?.();
 
-			const instanceId =
-				wrapper.getAttribute("data-template-wrapper") || undefined;
+			const instanceId = wrapper.getAttribute("data-template-wrapper") || undefined;
 
-			const lineHint0 =
-				typeof getLineHint0 === "function" ? getLineHint0() : null;
+			const lineHint0 = typeof getLineHint0 === "function" ? getLineHint0() : null;
 
 			await editTemplateParamsOnDashboard(
 				{
@@ -115,16 +113,14 @@ export function attachEditorTemplatingHandler(
 				}
 			);
 		} catch (err) {
-			const msg = `Template edit failed: ${String(
-				(err as Error)?.message ?? err
-			)}`;
+			const msg = `Template edit failed: ${String((err as Error)?.message ?? err)}`;
 			if (useObsidianNotice) new Notice(msg);
 			else deps.notices?.error?.(msg);
 		}
 	};
 
-	// Use capture to intercept clicks before default behaviors in the editor
-	registerDomEvent(viewContainer, "click", onClick, { capture: true });
+	// Use capture to intercept double-clicks before default behaviors in the editor
+	registerDomEvent(viewContainer, "dblclick", onDblClick, { capture: true });
 
 	// Obsidian will auto-clean via registerDomEvent. Return no-op for interface symmetry.
 	return () => {};

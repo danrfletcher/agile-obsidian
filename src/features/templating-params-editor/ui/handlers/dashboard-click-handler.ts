@@ -30,6 +30,7 @@ export interface AttachHandlerOptions {
 
 /**
  * Attach the dashboard templating handler.
+ * Listens on double-click to open the edit modal.
  * Returns a cleanup no-op; Obsidian will clean up via registerDomEvent lifecycle.
  */
 export function attachDashboardTemplatingHandler(
@@ -52,7 +53,7 @@ export function attachDashboardTemplatingHandler(
 			  }
 			: undefined);
 
-	const onClick = async (evt: MouseEvent) => {
+	const onDblClick = async (evt: MouseEvent) => {
 		try {
 			const target = evt.target as HTMLElement | null;
 			if (!target) return;
@@ -77,9 +78,7 @@ export function attachDashboardTemplatingHandler(
 			// @ts-ignore
 			evt.stopImmediatePropagation?.();
 
-			const li = wrapper.closest(
-				"li[data-file-path]"
-			) as HTMLElement | null;
+			const li = wrapper.closest("li[data-file-path]") as HTMLElement | null;
 			const filePath = li?.getAttribute("data-file-path") || "";
 			if (!filePath) return;
 
@@ -105,14 +104,13 @@ export function attachDashboardTemplatingHandler(
 				}
 			);
 		} catch (err) {
-			const msg = `Template edit failed: ${String(
-				(err as Error)?.message ?? err
-			)}`;
+			const msg = `Template edit failed: ${String((err as Error)?.message ?? err)}`;
 			if (useObsidianNotice) new Notice(msg);
 			else deps.notices?.error?.(msg);
 		}
 	};
 
-	registerDomEvent(viewContainer, "click", onClick, { capture: true });
+	// Listen on double click instead of single click
+	registerDomEvent(viewContainer, "dblclick", onDblClick, { capture: true });
 	return () => {};
 }
