@@ -31,6 +31,36 @@ function preserveInstanceIdInHtml(
 }
 
 /**
+ * Attempt to normalize a prefilled dropdown value to an option value so the select
+ * can preselect correctly. Useful when existing content stores "USD" but options store "$".
+ */
+function normalizeDropdownPrefillToOptionValue(
+	prefillVal: unknown,
+	options?: Array<{ label: string; value: string }>
+): string | undefined {
+	if (!options || options.length === 0)
+		return prefillVal as string | undefined;
+	const raw = prefillVal == null ? "" : String(prefillVal).trim();
+	if (!raw) return undefined;
+
+	// 1) Exact match by value
+	const exact = options.find((o) => String(o.value) === raw);
+	if (exact) return String(exact.value);
+
+	// 2) Case-insensitive match by label containing the raw text (tolerate code vs symbol)
+	const lower = raw.toLowerCase();
+	const byLabel = options.find((o) =>
+		String(o.label ?? "")
+			.toLowerCase()
+			.includes(lower)
+	);
+	if (byLabel) return String(byLabel.value);
+
+	// 3) Fallback: return the raw string (the select will not preselect)
+	return raw;
+}
+
+/**
  * Orchestrates the edit flow:
  * 1) Validate template and prefill params
  * 2) Ask user for new params (schema modal or JSON)
@@ -62,16 +92,32 @@ export async function editTemplateParamsOnDashboard(
 
 	let params: TemplateParams | undefined;
 	if (def.paramsSchema && def.paramsSchema.fields?.length) {
-		// Merge defaults into the schema for nicer UX; Modals can prefill with strings
+		// Merge defaults into the schema for nicer UX; For dropdowns, normalize prefill to an option value.
 		const schema = {
 			...def.paramsSchema,
-			fields: def.paramsSchema.fields.map((f) => ({
-				...f,
-				defaultValue:
-					prefill[f.name] != null
-						? String(prefill[f.name] ?? "")
-						: f.defaultValue,
-			})),
+			fields: def.paramsSchema.fields.map((f: any) => {
+				const pre = prefill[f.name];
+				let nextDefault = pre != null ? String(pre) : f.defaultValue;
+
+				if (
+					String(f.type) === "dropdown" &&
+					Array.isArray(f.options) &&
+					pre != null
+				) {
+					const normalized = normalizeDropdownPrefillToOptionValue(
+						pre,
+						f.options
+					);
+					if (normalized != null) {
+						nextDefault = normalized;
+					}
+				}
+
+				return {
+					...f,
+					defaultValue: nextDefault,
+				};
+			}),
 		};
 		params = await templating.showSchemaModal(templateKey, schema, true);
 	} else {
@@ -81,7 +127,10 @@ export async function editTemplateParamsOnDashboard(
 	if (!params) return; // user cancelled
 
 	// Validate/sanitize params
-	const validation = validateAndSanitizeParams(params, def.paramsSchema);
+	const validation = validateAndSanitizeParams(
+		params,
+		def.paramsSchema as any
+	);
 	if (!validation.ok) {
 		notices?.error?.(
 			`Invalid parameters: ${validation.error ?? "Unknown error"}`

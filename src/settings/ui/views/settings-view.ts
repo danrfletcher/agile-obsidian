@@ -9,6 +9,9 @@ import { TeamsPresenter, TeamsActions } from "../presenters/teams-presenter";
 import { IdentityPresenter } from "../presenters/identity-presenter";
 import { AddTeamModal } from "../modals/add-team-modal";
 
+// Import the asset so the bundler emits a correct public URL.
+import coffeeGifUrl from "../assets/coffee.gif";
+
 export class AgileSettingTab extends PluginSettingTab {
 	constructor(
 		app: App,
@@ -25,9 +28,109 @@ export class AgileSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl("h1", { text: "Agile Obsidian Settings" });
+		// Ensure our settings-specific styles are present once.
+		this.ensureAgileSettingsStyles();
 
-		containerEl.createEl("h3", { text: "Org Structure" });
+		// Header row with title + coffee GIF link (fills remaining space)
+		const headerRow = containerEl.createEl("div", {
+			attr: {
+				style: "display:flex; align-items:center; gap:12px; margin-bottom: 6px;",
+			},
+		});
+		headerRow.createEl("h1", {
+			text: "Agile Obsidian Settings",
+			attr: { style: "margin: 0; flex: 0 0 auto;" },
+		});
+
+		const coffeeLink = headerRow.createEl("a", {
+			href: "https://buymeacoffee.com/danrfletcher",
+			attr: {
+				target: "_blank",
+				rel: "noopener noreferrer",
+				style: "flex: 1 1 auto; display:flex; align-items:center; height: 36px; text-decoration: none;",
+				"aria-label": "Buy me a coffee",
+			},
+		});
+		coffeeLink.createEl("img", {
+			attr: {
+				src: coffeeGifUrl,
+				alt: "Buy Me a Coffee",
+				style: "width: 100%; height: 100%; object-fit: contain; object-position: right center; opacity: 0.95;",
+			},
+		});
+
+		// ORG STRUCTURE SECTION (foldable)
+		const org = this.createFoldableSection(
+			containerEl,
+			"Org Structure",
+			"Discover and manage teams and organizations found in your vault. Add/update teams, create organizations, and manage subteams. Add Sample Team to see how it works.",
+			this.settings.uiFoldOrgStructure,
+			async (folded) => {
+				this.settings.uiFoldOrgStructure = folded;
+				await this.saveSettings();
+			}
+		);
+		this.renderOrgStructureSection(org.contentEl);
+
+		// AGILE DASHBOARD SECTION (foldable)
+		const dash = this.createFoldableSection(
+			containerEl,
+			"Agile Dashboard View",
+			"Choose which sections appear in the agile dashboard. Sections with no tasks are hidden by default.",
+			this.settings.uiFoldAgileDashboard ?? true,
+			async (folded) => {
+				this.settings.uiFoldAgileDashboard = folded;
+				await this.saveSettings();
+			}
+		);
+		this.renderAgileDashboardSection(dash.contentEl);
+
+		// UX SHORTCUTS SECTION (foldable)
+		const ux = this.createFoldableSection(
+			containerEl,
+			"UX Shortcuts",
+			"Turn ease of use features on/off.",
+			this.settings.uiFoldUxShortcuts ?? true,
+			async (folded) => {
+				this.settings.uiFoldUxShortcuts = folded;
+				await this.saveSettings();
+			}
+		);
+		this.renderUxShortcutsSection(ux.contentEl);
+
+		// AGILE TASK FORMATTING SECTION (foldable) — 4th section
+		const fmt = this.createFoldableSection(
+			containerEl,
+			"Agile Task Formatting",
+			"Automatically keeps task lines clean and consistent. This section controls the canonical formatter and related task formatting actions.",
+			this.settings.uiFoldAgileTaskFormatting ?? true,
+			async (folded) => {
+				this.settings.uiFoldAgileTaskFormatting = folded;
+				await this.saveSettings();
+			}
+		);
+		this.renderAgileTaskFormattingSection(fmt.contentEl);
+	}
+
+	private logCanonicalFlags(context: string) {
+		try {
+			const s = this.settings;
+			console.debug(
+				`[Agile][CanonicalFmt][Settings] ${context}: master=${!!s.enableTaskCanonicalFormatter}, onLineCommit=${!!s.enableCanonicalOnLineCommit}, onLeafChange=${!!s.enableCanonicalOnLeafChange}`
+			);
+		} catch {}
+	}
+
+	private getTeamsCount(): number {
+		return this.settings.teams?.length ?? 0;
+	}
+
+	/**
+	 * Renders the Org Structure content into the provided container.
+	 */
+	private renderOrgStructureSection(containerEl: HTMLElement): void {
+		containerEl.empty();
+
 		const teamsButtons = new Setting(containerEl)
 			.setName("List Members & Teams")
 			.setDesc(
@@ -44,7 +147,6 @@ export class AgileSettingTab extends PluginSettingTab {
 		teamsButtons.addButton((btn) => {
 			btn.setButtonText("Add Sample Team")
 				.setDisabled(hasSampleTeam)
-				// intentionally NOT setCta or setWarning to keep it non-primary/non-secondary
 				.onClick(() => {
 					new AddTeamModal(
 						this.app,
@@ -55,14 +157,13 @@ export class AgileSettingTab extends PluginSettingTab {
 							parentPath,
 							teamSlug,
 							code,
-							options
+							_options
 						) => {
 							await this.actions.createTeam(
 								teamName,
 								parentPath,
 								teamSlug,
-								code,
-								{ seedWithSampleData: true }
+								code
 							);
 							await this.actions.detectAndUpdateTeams();
 							this.display();
@@ -126,7 +227,19 @@ export class AgileSettingTab extends PluginSettingTab {
 			this.display()
 		);
 
-		containerEl.createEl("h3", { text: "Agile Dashboard View" });
+		const identityPresenter = new IdentityPresenter(
+			this.settings,
+			this.saveSettings
+		);
+		identityPresenter.mount(identityContainer);
+	}
+
+	/**
+	 * Renders the Agile Dashboard content into the provided container.
+	 */
+	private renderAgileDashboardSection(containerEl: HTMLElement): void {
+		containerEl.empty();
+
 		new Setting(containerEl)
 			.setName("Toggle Sections")
 			.setDesc(
@@ -200,15 +313,241 @@ export class AgileSettingTab extends PluginSettingTab {
 					await this.saveSettings();
 				})
 		);
-
-		const identityPresenter = new IdentityPresenter(
-			this.settings,
-			this.saveSettings
-		);
-		identityPresenter.mount(identityContainer);
 	}
 
-	private getTeamsCount(): number {
-		return this.settings.teams?.length ?? 0;
+	/**
+	 * Renders the UX Shortcuts content into the provided container.
+	 */
+	private renderUxShortcutsSection(containerEl: HTMLElement): void {
+		containerEl.empty();
+
+		// Subheader + description
+		new Setting(containerEl)
+			.setName("Agile Artifact Templates")
+			.setDesc(
+				"Applies to tasks containing Initiatives, Epics, User Stories & other agile templates"
+			);
+
+		// Toggle: Multiple Agile Template Easy Insertion
+		new Setting(containerEl)
+			.setName("Multiple Agile Template Easy Insertion")
+			.setDesc(
+				"With your cursor at the end of a task line containing an agile artifact template (Initiative, Epic, User Story etc), double press enter to quickly create the same artifact on the next line."
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.settings.enableUxRepeatAgileTemplates)
+					.onChange(async (value) => {
+						this.settings.enableUxRepeatAgileTemplates = value;
+						// Persist and take effect immediately; the handler checks this flag live.
+						await this.saveSettings();
+					})
+			);
+	}
+
+	/**
+	 * Renders the Agile Task Formatting content into the provided container.
+	 * - Adds visual "disabled" styling to subordinate toggles when the master is off.
+	 * - Adds targeted logs when toggles change.
+	 */
+	private renderAgileTaskFormattingSection(containerEl: HTMLElement): void {
+		containerEl.empty();
+
+		// Section subheader inside the fold
+		new Setting(containerEl)
+			.setName("Auto Canonical Formatting")
+			.setDesc(
+				"Settings related to the Canonical Formatter, which keeps each task line in a clean, consistent structure."
+			);
+
+		// Master toggle
+		new Setting(containerEl)
+			.setName("Enable Canonical Task Formatter")
+			.setDesc(
+				"Turns on automatic task canonicalization. Disables all related triggers when off."
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.settings.enableTaskCanonicalFormatter)
+					.onChange(async (value) => {
+						this.settings.enableTaskCanonicalFormatter = value;
+						await this.saveSettings();
+						this.logCanonicalFlags("toggle: master changed");
+						// Re-render to update disabled state + color of child toggles immediately
+						this.display();
+					})
+			);
+
+		const masterEnabled = !!this.settings.enableTaskCanonicalFormatter;
+
+		// Toggle 2: Run on Line Commit
+		const lineCommitSetting = new Setting(containerEl)
+			.setName("Run on Line Commit")
+			.setDesc("Auto format task line when you move to a new task.");
+		lineCommitSetting.addToggle((toggle) => {
+			toggle.setValue(this.settings.enableCanonicalOnLineCommit);
+			toggle.setDisabled(!masterEnabled);
+			toggle.onChange(async (value) => {
+				this.settings.enableCanonicalOnLineCommit = value;
+				await this.saveSettings();
+				this.logCanonicalFlags("toggle: onLineCommit changed");
+			});
+		});
+		this.applySubToggleDisabledStyle(lineCommitSetting, !masterEnabled);
+
+		// Toggle 3: Run on Leaf Change
+		const leafChangeSetting = new Setting(containerEl)
+			.setName("Run on Leaf Change")
+			.setDesc("Auto format file when the active note changes.");
+		leafChangeSetting.addToggle((toggle) => {
+			toggle.setValue(this.settings.enableCanonicalOnLeafChange);
+			toggle.setDisabled(!masterEnabled);
+			toggle.onChange(async (value) => {
+				this.settings.enableCanonicalOnLeafChange = value;
+				await this.saveSettings();
+				this.logCanonicalFlags("toggle: onLeafChange changed");
+			});
+		});
+		this.applySubToggleDisabledStyle(leafChangeSetting, !masterEnabled);
+
+		// Button: Format All Files in Vault
+		new Setting(containerEl)
+			.setName("Format All Files in Vault")
+			.setDesc(
+				"Run the canonical formatter across every Markdown file in your vault now."
+			)
+			.addButton((btn) =>
+				btn
+					.setCta()
+					.setButtonText("Format All Files")
+					.onClick(async () => {
+						try {
+							console.info(
+								`[Agile][CanonicalFmt][Settings] Manual format-all requested`
+							);
+							// @ts-ignore
+							this.app.workspace.trigger(
+								"agile-canonical-format-all"
+							);
+							new Notice("Started formatting all files…");
+						} catch {
+							new Notice(
+								"Could not start formatting. Please try again."
+							);
+						}
+					})
+			);
+	}
+
+	/**
+	 * Adds or removes a CSS class that visually dims the toggle control area when disabled.
+	 * Only affects the right-hand control column, not the name/description text.
+	 */
+	private applySubToggleDisabledStyle(setting: Setting, isDisabled: boolean) {
+		const row = setting.settingEl;
+		if (!row) return;
+		if (isDisabled) {
+			row.classList.add("agile-subtoggle-disabled");
+			row.setAttribute("aria-disabled", "true");
+		} else {
+			row.classList.remove("agile-subtoggle-disabled");
+			row.removeAttribute("aria-disabled");
+		}
+	}
+
+	/**
+	 * Creates a foldable section with a header and description.
+	 * Returns the created elements so the caller can render content into `contentEl`.
+	 * - No explicit toggle button; the caret/title/description header is clickable.
+	 * - Description expands to fill the space (min-width:0 enables wrapping within flex).
+	 */
+	private createFoldableSection(
+		parent: HTMLElement,
+		title: string,
+		description: string,
+		initialFolded: boolean,
+		onTogglePersist: (folded: boolean) => Promise<void>
+	): { headerEl: HTMLElement; contentEl: HTMLElement } {
+		const section = parent.createEl("div", {
+			attr: {
+				style: "border: 1px solid var(--background-modifier-border); border-radius: 8px; margin: 12px 0; overflow: hidden;",
+			},
+		});
+
+		const header = section.createEl("div", {
+			attr: {
+				style: "display:flex; align-items:flex-start; gap:10px; padding:10px; cursor:pointer; background: var(--background-secondary);",
+			},
+		});
+
+		const caret = header.createEl("div", {
+			text: initialFolded ? "▶" : "▼",
+			attr: {
+				style: "width: 18px; flex: 0 0 18px; line-height:18px; text-align:center; user-select:none;",
+			},
+		});
+
+		// Titles container fills remaining width; min-width:0 ensures text wraps instead of overflowing in flex.
+		const titles = header.createEl("div", {
+			attr: { style: "flex:1 1 auto; min-width:0;" },
+		});
+		titles.createEl("div", {
+			text: title,
+			attr: { style: "font-weight:600; font-size:14px;" },
+		});
+		titles.createEl("div", {
+			text: description,
+			attr: {
+				style: "color: var(--text-muted); margin-top:2px; line-height: 1.4;",
+			},
+		});
+
+		const content = section.createEl("div", {
+			attr: { style: "padding: 10px;" },
+		});
+
+		const applyFold = (folded: boolean) => {
+			content.style.display = folded ? "none" : "block";
+			caret.textContent = folded ? "▶" : "▼";
+		};
+
+		applyFold(initialFolded);
+
+		const toggle = async () => {
+			const folded = content.style.display !== "none" ? true : false;
+			applyFold(folded);
+			try {
+				await onTogglePersist(folded);
+			} catch {
+				// ignore save errors here; UI already reflects the choice
+			}
+		};
+
+		// Entire header toggles (caret, title, description)
+		header.addEventListener("click", () => void toggle());
+
+		return { headerEl: header, contentEl: content };
+	}
+
+	/**
+	 * Injects a one-time style element to dim disabled subordinate toggle controls.
+	 * We specifically target the right-hand control column so the labels/descriptions
+	 * remain fully readable even when disabled.
+	 */
+	private ensureAgileSettingsStyles(): void {
+		const styleId = "agile-settings-toggle-styles";
+		if (document.getElementById(styleId)) return;
+		const style = document.createElement("style");
+		style.id = styleId;
+		style.textContent = `
+/* Dim only the right-hand control (toggle) when the sub-toggle is disabled by the master */
+.agile-subtoggle-disabled .setting-item-control {
+	opacity: 0.5;
+	filter: grayscale(40%);
+}
+/* Keep the row layout intact; ensure no pointer events are hijacked here.
+   Actual click prevention is handled by toggle.setDisabled(true). */
+		`.trim();
+		document.head.appendChild(style);
 	}
 }

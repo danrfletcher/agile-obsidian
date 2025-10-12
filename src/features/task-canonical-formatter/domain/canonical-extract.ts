@@ -1,3 +1,8 @@
+/**
+ * Parses a task line, extracts wrappers, date tokens, block id, and the "plain" task text.
+ * Classifies wrapper instances by orderTag and template metadata.
+ */
+
 import {
 	extractPrefix,
 	extractBlockId,
@@ -14,7 +19,7 @@ import type { Extracted, ParsedLine, TagInstance } from "./canonical-types";
 import {
 	findAllWrappers,
 	removeWrappersByTemplate,
-} from "../ui/canonical-html";
+} from "./html/canonical-html-scanner";
 
 // Assignee/delegate detection relies on Members.assignee template with props:
 //  - data-assign-type="assignee" | "delegate"

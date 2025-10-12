@@ -6,6 +6,9 @@ import { registerOrgStructureSettings } from "@features/org-structure";
 import { registerCustomCheckboxesSettings } from "@styles/custom-checkboxes";
 import { applyCheckboxStylesSetting } from "./register-styles";
 
+/**
+ * Initializes settings by loading persisted data (if available) and applying defaults.
+ */
 export async function initSettings(
 	plugin: Plugin & {
 		settings?: AgileObsidianSettings;
@@ -22,20 +25,21 @@ export async function initSettings(
 	return settings;
 }
 
+/**
+ * Registers the plugin settings tab and hooks feature-specific settings sub-systems.
+ */
 export async function registerSettings(container: Container) {
 	const { app, plugin, settings } = container;
 	const p = plugin as Plugin & {
 		saveSettings?: () => Promise<void>;
 		saveData?: (data: AgileObsidianSettings) => Promise<void>;
+		addSettingTab: (tab: any) => void;
 	};
 
-	// Feature-specific action factories
 	const saveSettingsLocal = async (): Promise<void> => {
-		// Persist settings
 		if (typeof p.saveSettings === "function") await p.saveSettings();
 		else if (typeof p.saveData === "function") await p.saveData(settings);
 
-		// Notify any open views (e.g., Agile Dashboard) to refresh immediately
 		try {
 			// @ts-ignore - Obsidian Workspace supports custom events via trigger
 			app.workspace.trigger("agile-settings-changed");
@@ -53,6 +57,7 @@ export async function registerSettings(container: Container) {
 		settings,
 		saveSettings: saveSettingsLocal,
 	});
+
 	const checkbox = registerCustomCheckboxesSettings({
 		app,
 		plugin,
@@ -61,7 +66,6 @@ export async function registerSettings(container: Container) {
 			await applyCheckboxStylesSetting(container),
 	});
 
-	// Register the tab using the settings module factory so composition doesn't import internals
 	p.addSettingTab(
 		createSettingsTab({
 			app,

@@ -563,7 +563,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 					type: "dropdown",
 					required: true,
 					placeholder: "Select currency…",
-					defaultValue: "USD",
+					defaultValue: "$",
 					options: currencyDropdownOptions,
 				},
 				{
@@ -586,7 +586,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 			paidAmount?: string;
 			totalAmount?: string;
 		}) {
-			const currency = (params?.currency ?? "USD").trim();
+			const currency = (params?.currency ?? "$").trim();
 			const paidAmount = (params?.paidAmount ?? "").trim();
 			const totalAmount = (params?.totalAmount ?? "").trim();
 
@@ -626,7 +626,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 					type: "dropdown",
 					required: true,
 					placeholder: "Select currency…",
-					defaultValue: "USD",
+					defaultValue: "$",
 					options: currencyDropdownOptions,
 				},
 				{
@@ -637,7 +637,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 				},
 				{
 					name: "totalAmount",
-					label: "Total Deposit",
+					label: "Total Amount",
 					required: true,
 					placeholder: "e.g., 2,000.00",
 				},
@@ -649,7 +649,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 			paidAmount?: string;
 			totalAmount?: string;
 		}) {
-			const currency = (params?.currency ?? "USD").trim();
+			const currency = (params?.currency ?? "$").trim();
 			const paidAmount = (params?.paidAmount ?? "").trim();
 			const totalAmount = (params?.totalAmount ?? "").trim();
 
@@ -687,14 +687,8 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 					type: "dropdown",
 					required: true,
 					placeholder: "Select currency…",
-					defaultValue: "USD",
+					defaultValue: "$",
 					options: currencyDropdownOptions,
-				},
-				{
-					name: "paidAmount",
-					label: "Paid Amount",
-					required: true,
-					placeholder: "e.g., 4,999.00",
 				},
 				{
 					name: "totalAmount",
@@ -710,8 +704,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 			paidAmount?: string;
 			totalAmount?: string;
 		}) {
-			const currency = (params?.currency ?? "USD").trim();
-			const paidAmount = (params?.paidAmount ?? "").trim();
+			const currency = (params?.currency ?? "$").trim();
 			const totalAmount = (params?.totalAmount ?? "").trim();
 
 			const inner = chip({
@@ -719,7 +712,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 				text: `<strong>Paid in Full ${wrapVar(
 					"currency",
 					currency
-				)}${wrapVar("paidAmount", paidAmount)} / ${wrapVar(
+				)}${totalAmount} / ${wrapVar(
 					"currency",
 					currency
 				)}${wrapVar("totalAmount", totalAmount)}</strong>`,
@@ -750,7 +743,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 					type: "dropdown",
 					required: true,
 					placeholder: "Select currency…",
-					defaultValue: "USD",
+					defaultValue: "$",
 					options: currencyDropdownOptions,
 				},
 				{
@@ -773,7 +766,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 			paidAmount?: string;
 			totalAmount?: string;
 		}) {
-			const currency = (params?.currency ?? "USD").trim();
+			const currency = (params?.currency ?? "$").trim();
 			const paidAmount = (params?.paidAmount ?? "").trim();
 			const totalAmount = (params?.totalAmount ?? "").trim();
 
@@ -826,7 +819,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 					type: "dropdown",
 					required: true,
 					placeholder: "Select currency…",
-					defaultValue: "USD",
+					defaultValue: "$",
 					options: currencyDropdownOptions,
 				},
 				{
@@ -853,7 +846,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 		}) {
 			const months = (params?.months ?? "").trim();
 			const endDate = (params?.endDate ?? "").trim();
-			const currency = (params?.currency ?? "USD").trim();
+			const currency = (params?.currency ?? "$").trim();
 			const paidAmount = (params?.paidAmount ?? "").trim();
 			const totalAmount = (params?.totalAmount ?? "").trim();
 
@@ -877,6 +870,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 		},
 	},
 };
+
 /**
  * Members — tasks only
  */

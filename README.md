@@ -27,12 +27,12 @@ Agile Obsidian is a plugin that transforms your Obsidian vault into a powerful, 
     - Settings service: load/save plugin settings; expose org/team/member config
     - Command service: register and handle user-triggered commands
     - View service: register/open the Agile Dashboard view
-    - Template service: insert and edit structured “chips” (initiative, epic, OKR, etc.)
+    - Template service: insert and edit structured "chips" (initiative, epic, OKR, etc.)
     - Task indexer/parser: watch vault for changes; parse canonical task lines; keep an in‑memory index
 - Commands (user entry points)
     - Open Agile Dashboard
     - Insert Template (choose initiative/epic/story/OKR, etc.)
-    - Set Assignee (assign current task to a member or “everyone”)
+    - Set Assignee (assign current task to a member or "everyone")
     - Set Delegate (optional reviewer/helper for a task)
 - Views
     - Agile Dashboard view
@@ -79,6 +79,9 @@ Agile Obsidian is a plugin that transforms your Obsidian vault into a powerful, 
 | Agile Task Statuses | Additional preset task statuses & custom task checkboxes [ ] → [/] → [x] → [-] | Automatic (click to advance status, long-click to cancel) | Stable |
 | Custom Task Status Styles | Extended set of custom, parseable status tokens for richer workflows (Blocked, Waiting, Review, Recurring, Prioritize, One-off, Outline, etc.) | Automatic (click to advance status, status chips, stylesheet-driven) | Stable |
 | Quick Insert Multiple Agile Artifacts | Press enter on a task line with an existing agile atifact e.g., Epic to insert another agile artifact e.g., Epic on the next line | Automatic (on enter click on task line with Agile artifact) | Stable |
+| Right-Click Template Removal | Quickly remove templated artifacts (Initiatives, Epics, OKRs, etc.) from task lines via the native Obsidian context menu without disrupting your editing flow. | Right-click on template wrapper in editor | Stable |
+| Double-Click Template Editing | Edit parameters of inserted templates (e.g., Initiative title, Epic scope) via double-click on the rendered template wrapper, opening a pre-populated modal. | Double-click on template wrapper in editor or dashboard | Stable |
+| Template Sequencing | Navigate predefined sequences of templates (e.g., CRM workflows: awaitingDeposit ↔ depositPaid ↔ paymentPlan ↔ paidInFull) via floating UI menus; automatically map shared variables, prompt for missing params, and overwrite current template with full bidirectional support. | Click on template wrapper in editor or dashboard | Stable |
 
 ### Quickstart
 
@@ -114,28 +117,52 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
 ### Architecture
 
 #### Components and responsibilities
--   **Plugin Class (`main.ts`):** The main entry point. It orchestrates the plugin's lifecycle (`onload`) and holds the central DI container.
--   **Composition Wiring (`@composition/*`):** A set of modules responsible for initializing and registering all the plugin's features (styles, settings, commands, events) with the container and Obsidian.
--   **DI Container:** A central registry for all services. This allows for loose coupling between modules (e.g., the Dashboard doesn't need to know how the Task Indexer works, it just asks the container for the indexed tasks).
--   **Task Indexer/Parser (inferred from `registerEvents`):** A service that listens for vault changes, parses Markdown files for tasks matching the canonical format, and maintains an in-memory index of all tasks for quick retrieval.
--   **Agile Dashboard (View):** A custom Obsidian View that queries the Task Indexer and renders the UI for assigned tasks. It contains its own logic for filtering, sorting, and interacting with tasks.
--   **Templating Engine:** A service that registers slash commands and manages the lifecycle of inserting and editing template "chips" in Markdown.
--   **Settings Root Module:** Manages the loading, saving, and UI for the plugin's settings tab.
+- **Plugin Class (`main.ts`):** The main entry point. It orchestrates the plugin's lifecycle (`onload`) and holds the central DI container.
+- **Composition Wiring (`@composition/*`):** A set of modules responsible for initializing and registering all the plugin's features (styles, settings, commands, events) with the container and Obsidian.
+- **DI Container:** A central registry for all services. This allows for loose coupling between modules (e.g., the Dashboard doesn't need to know how the Task Indexer works, it just asks the container for the indexed tasks).
+- **Task Indexer/Parser (inferred from `registerEvents`):** A service that listens for vault changes, parses Markdown files for tasks matching the canonical format, and maintains an in-memory index of all tasks for quick retrieval.
+- **Agile Dashboard (View):** A custom Obsidian View that queries the Task Indexer and renders the UI for assigned tasks. It contains its own logic for filtering, sorting, and interacting with tasks.
+- **Templating Engine:** A service that registers slash commands and manages the lifecycle of inserting and editing template "chips" in Markdown. Now refactored into modular components (`templating-engine` for core rendering/prefilling and `templating-params-editor` for modals and parameter workflows), with the dashboard's `templating-handler` acting as a type-safe adapter to wire these without schema mismatches.
+- **Templating Sequencer:** A module for navigating predefined template sequences (e.g., CRM workflows). Includes domain types (Sequence with optional variableMapOverrides), preset sequences (simplified to rely on automatic defaults), app service for variable mapping/prompting/execution, UI handlers for floating menus, and a generalized custom view handler for integration with editors and views like the Agile Dashboard. Supports full bidirectional navigation with automatic shared-variable pass-through.
+- **UX Shortcuts Module:** Handles editor-level interactions like double-enter to repeat templates and right-click context menu enhancements for template management.
+- **Settings Root Module:** Manages the loading, saving, and UI for the plugin's settings tab.
 
 #### Data flow and major sequences
-*   **User Assigns a Task:**
-    1.  User triggers the `Agile Obsidian: Set Assignee` command on a task line.
-    2.  The Command Service handles the action, opening a modal to select a user.
-    3.  On selection, the service modifies the text of the task line in the `.md` file to add the assignee chip.
-    4.  The Obsidian `workspace.on('modify', ...)` event fires.
-    5.  The Task Indexer service catches the event, re-parses the changed file, and updates its in-memory index.
-    6.  The Agile Dashboard view, if open, is notified of the change and re-renders to display the newly assigned task.
+* **User Assigns a Task:**
+    1. User triggers the `Agile Obsidian: Set Assignee` command on a task line.
+    2. The Command Service handles the action, opening a modal to select a user.
+    3. On selection, the service modifies the text of the task line in the `.md` file to add the assignee chip.
+    4. The Obsidian `workspace.on('modify', ...)` event fires.
+    5. The Task Indexer service catches the event, re-parses the changed file, and updates its in-memory index.
+    6. The Agile Dashboard view, if open, is notified of the change and re-renders to display the newly assigned task.
+
+* **User Removes a Template via Right-Click:**
+    1. User right-clicks on a rendered template wrapper (e.g., `<span data-template-key="initiative">Initiative: Project X</span>`) in the editor.
+    2. The UX Shortcuts module captures the exact click position using Obsidian's Editor API.
+    3. The standard Obsidian "editor-menu" event fires, and the module injects a "Remove Template" item with trash icon into the context menu.
+    4. User selects "Remove Template"; the module identifies the innermost matching span, removes it from the line, and adjusts the cursor position to maintain the user's relative location.
+    5. The line is updated in-place; Obsidian fires a modify event, triggering the Task Indexer to re-parse and update the dashboard if affected.
+
+* **User Edits Template Parameters via Double-Click:**
+    1. User double-clicks on a rendered template wrapper in the editor or dashboard.
+    2. The templating-handler adapter routes the request to the templating-params-editor module, which opens a pre-populated modal using the engine's schema.
+    3. User updates parameters (e.g., title, links); the editor validates against the schema and returns updated params.
+    4. The handler re-renders the template chip in-place using the templating-engine's render function.
+    5. Obsidian fires a modify event, re-parsing the line via the Task Indexer for dashboard consistency.
+
+* **User Navigates Template Sequence:**
+    1. User clicks a template wrapper (e.g., awaitingDeposit) in an editor or the Agile Dashboard.
+    2. Templating sequencer handler (wired via composition or custom view) suppresses default behavior and builds a floating menu from preset sequences (forward/back options filtered by start/target template, with full bidirectional support for "both" direction).
+    3. User selects a move (e.g., → depositPaid); sequencer service computes automatic mappings (shared pass-through, drop extras), applies optional overrides, prompts "Additional Properties" modal for missing *required* fields only (filtered schema; optional fields omitted), and renders the target template.
+    4. Overwrite occurs: in editors via templating-engine API (inner HTML only); in custom views via direct file write (targeting line/instanceId).
+    5. Obsidian modify event fires; Task Indexer re-parses, and views (e.g., Dashboard) refresh via callback.
 
 #### Storage schemas/models
--   **Settings:** Stored in `[VAULT]/.obsidian/plugins/agile-obsidian/data.json`.
--   **Task Data:** Stored directly in `.md` files as single lines of text. The plugin relies on its "Canonical Format" to structure metadata within the line itself, rather than using frontmatter.
-    -   **Format:** `[status] {parent-link} {artifact-type} {task text} {state} {tags} {assignee → delegate} {metadata} {ordered date tokens} {block ID}`
-    -   **Example:** `- [ ] 🎖️ [[Initiative-Note]] Initiative: Launch v1 @alex {due:2025-10-17} ^abcdef`
+- **Settings:** Stored in `[VAULT]/.obsidian/plugins/agile-obsidian/data.json`.
+- **Task Data:** Stored directly in `.md` files as single lines of text. The plugin relies on its "Canonical Format" to structure metadata within the line itself, rather than using frontmatter.
+    - **Format:** `[status] {parent-link} {artifact-type} {task text} {state} {tags} {assignee → delegate} {metadata} {ordered date tokens} {block ID}`
+    - **Example:** `- [ ] 🎖️ [[Initiative-Note]] Initiative: Launch v1 @alex {due:2025-10-17} ^abcdef`
+- **Template Sequences:** Predefined in code as `presetSequences` array (templating-sequencer/domain/preset-sequences.ts); no persistent storage. Each Sequence includes startTemplate, targetTemplate, direction ("forward"|"both"), and optional variableMapOverrides (forward/backward generics for param transformation/override of automatic defaults).
 
 ### Feature Catalog
 
@@ -165,36 +192,112 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
                 -   If it's not your task, click the assignee chip (`@yourname`) to reassign it.
         -   **Verification:** Your dashboard should be empty or contain only items you are actively working on. The source `.md` files will be updated automatically with the new statuses and metadata.
 
--   **Configuration you’re likely to touch:**
+-   **Configuration you're likely to touch:**
     -   **Teams Selector:** Controls which teams' tasks are visible. Your selection is saved automatically.
     -   **Member Filter:** Narrows the view to tasks assigned to a specific member of the selected teams.
     -   **Section Toggles (in Settings):** You can hide entire sections (e.g., "Priorities") from the dashboard if you don't use them.
 
 #### Feature: Templating Engine
 
--   **What you can do:**
-    -   Insert complex, structured Agile artifacts like Initiatives, Epics, User Stories, and OKRs with a simple command.
-    -   Link tasks to other items in your vault, creating a web of dependencies.
-    -   Add metadata like version numbers, PR links, or status tags (e.g., "Blocked," "Review").
-    -   Ensure consistent formatting for all metadata.
+- **What you can do:**
+  - Insert complex, structured Agile artifacts like Initiatives, Epics, User Stories, and OKRs with a simple command.
+  - Link tasks to other items in your vault, creating a web of dependencies.
+  - Add metadata like version numbers, PR links, or status tags (e.g., "Blocked," "Review").
+  - Ensure consistent formatting for all metadata.
+  - Double-click on an inserted template wrapper to edit its parameters via a pre-populated modal (e.g., update an Initiative title).
+  - Easily remove inserted templates via right-click context menu for quick iteration without disrupting your editing flow.
+  - Leverage the templating engine and params editor for seamless parameter editing, schema modals, and JSON workflows with type-safe integration.
+  - Sequence templates through predefined workflows (e.g., CRM stages) via click menus; map variables and collect additional params as needed.
 
--   **When to use this feature:**
-    -   Use this whenever you are creating a new piece of work that fits an Agile concept. Instead of typing out a title manually, use a template to get the correct formatting and icon automatically.
+- **When to use this feature:**
+  - Use this whenever you are creating a new piece of work that fits an Agile concept. Instead of typing out a title manually, use a template to get the correct formatting and icon automatically. Double-click to edit existing templates, use right-click removal for rapid prototyping or corrections, and click for sequencing to advance multi-stage artifacts.
 
--   **Use Cases and Guided Workflows:**
-    -   **Use Case U1: Create a New Project Initiative**
-        -   **Prerequisites:** A note where you track projects.
-        -   **Step-by-step:**
-            1.  Create a new task line: `- [ ]`
-            2.  With the cursor on that line, type `/initiative` and press Enter, or run `Agile Obsidian: Insert Template` from the Command Palette and select "Initiative".
-            3.  A modal will appear asking for the "Initiative Title." Enter your project name (e.g., "Q4 Website Redesign") and submit.
-            4.  A formatted chip `🎖️ Initiative: Q4 Website Redesign` will be inserted.
-            5.  To create a child Epic, create a new indented task below it.
-            6.  On the new line, type `/epic`, provide a title, and submit.
-        -   **Verification:** Your note will contain a nested structure of tasks with formatted, clickable chips. Clicking a chip re-opens the modal to edit its parameters.
+- **Use Cases and Guided Workflows:**
+  - **Use Case U1: Create a New Project Initiative**
+    - **Prerequisites:** A note where you track projects.
+    - **Step-by-step:**
+      1. Create a new task line: `- [ ]`
+      2. With the cursor on that line, type `/initiative` and press Enter, or run `Agile Obsidian: Insert Template` from the Command Palette and select "Initiative".
+      3. A modal will appear asking for the "Initiative Title." Enter your project name (e.g., "Q4 Website Redesign") and submit.
+      4. A formatted chip `🎖️ Initiative: Q4 Website Redesign` will be inserted.
+      5. To create a child Epic, create a new indented task below it.
+      6. On the new line, type `/epic`, provide a title, and submit.
+      7. To edit the Initiative title later, double-click directly on the template chip to open the edit modal with pre-filled values. Make changes and submit to update the source line.
+      8. If you need to remove an incorrectly inserted template (e.g., wrong type), right-click directly on the template chip (the rendered span) and select "Remove Template" from the context menu. Your cursor will remain in place relative to the removal.
+      9. For multi-stage progression (e.g., Initiative → Epic → Story), click the wrapper to open a sequencing menu; select the next template to map variables and overwrite seamlessly.
+    - **Verification:** Your note will contain a nested structure of tasks with formatted, clickable chips. Double-clicking a chip re-opens the modal to edit its parameters. Removed templates leave the task line clean, with preserved indentation and cursor position. Sequencing advances the workflow without data loss.
 
--   **Configuration you’re likely to touch:**
-    -   This feature is not directly configurable. The list of available templates is predefined within the plugin.
+#### Feature: Template Sequencing
+
+- **What you can do:**
+  - Define and navigate sequences of templates (e.g., CRM pipelines: awaitingDeposit ↔ depositPaid ↔ paymentPlan ↔ paidInFull) using a floating UI menu that appears on click.
+  - Automatically map variables from the current template to the target (forward/backward) for shared names; drop source-only fields and prompt for target-only *required* fields via a filtered "Additional Properties" modal (shows only absent required fields from the target schema; optional fields are omitted if missing).
+  - Optionally override automatic mapping with custom transformations via `variableMapOverrides` callbacks in sequence definitions (forward/backward generics).
+  - Overwrite the current template wrapper with the new one, preserving instance IDs and attributes; works in editors and custom views like the Agile Dashboard with full bidirectional ("both") support.
+  - Filter menu options dynamically based on the clicked template; no explicit mapping needed for simple pass-through sequences.
+
+- **When to use this feature:**
+  - Use this for multi-stage workflows where templates represent progression (e.g., sales/CRM stages, project phases). It's ideal for editing mistakes (back) or advancing work (forward) without manual re-typing. Defaults handle most cases; add overrides only for complex transformations.
+
+- **Use Cases and Guided Workflows:**
+  - **Use Case U1: Advance a CRM Deal Stage**
+    - **Prerequisites:** Preset CRM sequences are defined (e.g., awaitingDeposit → depositPaid) with optional overrides for custom logic.
+    - **Step-by-step:**
+      1. In a note or the Agile Dashboard, click on an inserted template wrapper (e.g., awaitingDeposit chip).
+      2. A floating menu appears with forward options (depositPaid, paymentPlan, paidInFull) and backward options (if applicable, e.g., from paidInFull back to paymentPlan).
+      3. Select "depositPaid"; shared variables (e.g., currency, totalAmount) are mapped automatically. If new *required* fields are needed (e.g., paidAmount), the "Additional Properties" modal prompts for them with pre-filled defaults where possible. Optional fields (e.g., notes) are omitted if not provided on the source.
+      4. Submit to overwrite the wrapper with the depositPaid template; the source note updates, and the dashboard refreshes.
+      5. To go back (e.g., edit deposit details), click the new wrapper and select from backward options—automatic mapping reverses the flow (e.g., drop paymentPlan-specific fields like months/endDate).
+    - **Verification:** The template key changes (e.g., data-template-key="depositPaid"), variables are preserved/transformed/dropped as per defaults or overrides, and the menu shows valid bidirectional sequences. No raw HTML is exposed on click. Optional fields do not trigger prompts, ensuring a streamlined flow.
+
+- **Configuration you're likely to touch:**
+  - Sequences are predefined in the plugin (e.g., CRM presets with optional `variableMapOverrides`); no user config yet. Future releases may allow custom sequences via settings or YAML. For now, defaults cover shared variables without explicit code.
+
+- **Implementation notes for maintainers:**
+  - Relies on templating-sequencer module with Sequence type (startTemplate, targetTemplate, direction: "forward"|"both", optional variableMapOverrides for forward/backward).
+  - Automatic defaults in sequencer-service: pass-through for shared names, prompt missing *required* target fields only, drop extras; overrides compose atop defaults.
+  - Integrates with templating-engine for rendering/prefilling and templating-params-editor for modals.
+  - Generalized handler (attachCustomViewTemplatingSequencerHandler) enables reuse in custom views; uses filePath/line hints for direct overwrites without active editors. Backward navigation fixed via corrected startTemplate guards.
+
+#### Feature: Parameterized Template Editing & Template Removal
+
+- **What you can do:**
+  - Right-click on any rendered template wrapper (e.g., Initiative, Epic, OKR chips inserted via the Templating Engine) in the Obsidian editor to access a "Remove Template" option in the native context menu.
+  - The feature identifies the exact template span at the click position, even in nested structures, and removes it cleanly from the task line.
+  - Your cursor position is preserved relative to the removed template—e.g., if you clicked inside the template, the cursor stays at the start of where it was; if outside, it adjusts minimally.
+  - Post-removal, the line is automatically cleaned up (excess spaces collapsed, respecting task/list prefixes) and the Canonical Formatter ensures consistent ordering of remaining metadata.
+  - A trash icon provides clear visual feedback in the menu item.
+  - For editing, use double-click on the template wrapper to open the parameter edit modal.
+
+- **When to use this feature:**
+  - Use this for quick corrections during editing sessions, such as removing a mis-inserted template type, undoing an experimental artifact, or streamlining a task line without manual span deletion. For parameter changes (e.g., updating titles), prefer double-click editing to avoid full removal.
+
+- **Use Cases and Guided Workflows:**
+  - **Use Case U1: Correct a Template Insertion Error**
+    - **Prerequisites:** You have a task line with an inserted template, e.g., `- [ ] 🎖️ Initiative: Wrong Project Name`.
+    - **Step-by-step:**
+      1. Right-click directly on the template chip (the colored/formatted span).
+      2. In the Obsidian context menu, select "Remove Template" (with trash icon).
+      3. The template span is removed, leaving: `- [ ] ` (cursor preserved at the original relative position).
+      4. Continue editing the plain task text or insert a corrected template via slash command. Alternatively, if you want to edit parameters without removing, double-click the template instead.
+    - **Verification:** The source line updates immediately without affecting indentation or other metadata. If the dashboard is open, it reflects the change after the next index update. No manual cleanup is needed for spacing or cursor jumps.
+  - **Use Case U2: Streamline Nested Artifacts**
+    - **Prerequisites:** A nested structure like an Epic under an Initiative.
+    - **Step-by-step:**
+      1. Right-click on the child Epic template to remove just that artifact, preserving the parent Initiative.
+      2. The removal adjusts the line cleanly, maintaining any assignments, dates, or statuses.
+      3. For editing the remaining Initiative without removal, double-click it to access the parameter modal.
+    - **Verification:** Only the targeted template is removed; the task remains parseable, and the dashboard updates accordingly.
+
+- **Configuration you're likely to touch:**
+  - This feature requires no configuration—it automatically integrates with the Templating Engine and works on any template with a `data-template-key` attribute.
+  - Enabled by default; relies on the plugin's UX Shortcuts module, which is wired during plugin initialization.
+
+- **Implementation notes for maintainers:**
+  - The feature uses Obsidian's `editor-menu` event to inject the menu item dynamically, ensuring it only appears when clicking inside a valid template wrapper.
+  - It handles nested `<span>` tags robustly via deterministic parsing (counting open/close tags) to target the innermost wrapper.
+  - Cursor preservation uses position mapping relative to the removal range, with fallbacks for edge cases.
+  - No additional commands or settings are needed; it's triggered via the existing `wireTemplatingUxShortcutsDomHandlers` call in the plugin's composition wiring.
 
 #### Feature: Organization & Team Management
 
@@ -217,7 +320,7 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
             5.  To add a person, you can either add them directly in settings or, more practically, assign them a task. Go to a note, create a task, and run `Agile Obsidian: Set Assignee`. Choose "New Member," enter their name, and assign them. They will now appear in the settings under the relevant team.
         -   **Verification:** Your new team structure is visible in the settings tab. The members you add will be available in the assignee list for new tasks and in the member filter on the Agile Dashboard.
 
--   **Configuration you’re likely to touch:**
+-   **Configuration you're likely to touch:**
     -   The entire feature is managed within the "Organizations" section of the plugin's settings tab. There are no other configuration points.
 
 #### Feature: Task Assignment & Delegation
@@ -240,12 +343,12 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
             3.  Run the command `Agile Obsidian: Set Delegate`. Select "Casey". The chip `→ @Casey` appears next to the assignee.
         -   **Verification:** The task line in your note now reads: `- [ ] Fix login button alignment issue @Alex → @Casey`. The task will appear on Alex's Agile Dashboard.
 
--   **Configuration you’re likely to touch:**
+-   **Configuration you're likely to touch:**
     -   The list of available members for assignment and delegation is drawn directly from your **Organization & Team Management** settings.
 
 #### Feature: Task Management & Canonical Formatting
 
--   **What you can do:**
+-   What you can do:
     -   Manage the full lifecycle of a task using a custom, multi-stage status system.
     -   Temporarily hide tasks from your view using the "Snooze" function to maintain focus.
     -   Trust the plugin to automatically organize all metadata on a task line into a clean, consistent, and parseable order.
@@ -254,17 +357,81 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
     -   This is the core of your daily workflow. You will use these features on every task you interact with, either in a note or in the Agile Dashboard.
 
 -   **Use Cases and Guided Workflows:**
-    -   **Use Case U1: Work on and Complete a Task**
-        -   **Prerequisites:** A task is assigned to you on your dashboard.
-        -   **Step-by-step:**
+    -   Use Case U1: Work on and Complete a Task
+        -   Prerequisites: A task is assigned to you on your dashboard.
+        -   Step-by-step:
             1.  When you begin work, find the task and click its checkbox. The status changes from `[ ]` (Unstarted) to `[/]` (In Progress).
-            2.  If you get blocked, you can use the Templating Engine to add a `[Blocked]` chip.
+            2.  If you get blocked, you can use the Templating Engine to add a `[Blocked]` chip `/blocked` command.
             3.  Once the work is complete, click the checkbox again. The status changes to `[x]` (Done).
             4.  If you need to cancel the task at any point, long-press (or tap-and-hold on mobile) the checkbox. The status will change to `[-]` (Cancelled).
-        -   **Verification:** The task's status symbol updates in both the dashboard and the source `.md` file. The Canonical Formatter automatically ensures any new chips (like `[Blocked]`) are placed in the correct order on the line.
+        -   Verification: The task's status symbol updates in both the dashboard and the source `.md` file. The Canonical Formatter automatically ensures any new chips (like `[Blocked]`) are placed in the correct order on the line.
 
--   **Configuration you’re likely to touch:**
+-   **Configuration you're likely to touch:**
     -   The status sequence (` ` -> `/` -> `x`) and the long-press to cancel (`-`) are core behaviors and are not configurable.
+
+##### Canonical Formatter: What it does
+
+The Canonical Formatter restructures each task line into a consistent, parseable order while preserving indentation and your caret/selection position. Given a valid task line (e.g., `- [ ] ...`), it:
+
+-   Extracts and reorders semantic pieces into this order:
+    1.  Status prefix (`- [ ]`, `- [/]`, `- [x]`, etc.)
+    2.  Parent link tag (order-tag: `parent-link`) — at most one
+    3.  Artifact item type tag (order-tag: `artifact-item-type`) — at most one
+    4.  Plain task text (wrappers, date tokens, arrows removed during extraction)
+    5.  State chips (order-tag: `state`) — can be multiple, preserved and grouped
+    6.  Other tags — sorted alphabetically by their `data-order-tag` (tags without an order-tag are placed last in this group)
+    7.  Assignment:
+        -   If both assignee and delegate exist: rendered as `assignee → delegate`
+        -   If only delegate exists and assignee is missing: delegate is dropped
+        -   "special" assignee type counts as an assignee
+    8.  Metadata tags (order-tag: `metadata`) — appended after assignments
+    9.  Date tokens — extracted and ordered by priority:
+        -   🛫 (start) > ⏳ (hold) > 📅 (due) > 🎯 (target) > 💤 (snooze) > 💤⬇️ (snooze all) > ✅ (done) > ❌ (cancelled)
+        -   Supports individual snoozes with hidden spans, folder/global snoozes, and "snooze all"
+    10. Block ID (`^id`) — deduped and placed once at the end (the last standalone `^id` in the line wins)
+
+-   Preserves indentation:
+    -   Leading whitespace is preserved exactly. Normalization is applied to the content after the indentation and then indentation is re-applied.
+
+-   Produces clean spacing:
+    -   Collapses internal whitespace but preserves trailing space if it was present.
+    -   Ensures a single trailing space if the line ends with a closing HTML tag (to keep the caret placement safe for further typing).
+
+-   Keeps your caret where you expect:
+    -   If you were editing in the task text, the formatter attempts to map your caret or selection to the equivalent place in the new line.
+    -   Falls back to keeping the caret at the end of the line when a precise mapping isn't possible.
+
+##### When it runs
+
+Formatting is orchestrated per active editor view and coalesced/debounced for performance and stability.
+
+-   On Enter / committing a line:
+    -   Triggered when you press Enter (IME-safe) or when an edit increases the document's line count (e.g., paste with newline).
+    -   Scope: current line.
+
+-   On cursor moving to a different line:
+    -   Triggered when the caret leaves a line (arrow keys, Home/End/PageUp/PageDown, mouse click, pointer up, or any selection change).
+    -   Scope: the line you just left (previous line).
+
+-   On file/leaf activation:
+    -   Triggered when a Markdown file becomes the active view (file open or active-leaf change).
+    -   Scope: the entire file for that view.
+    -   Note: This does not run across the entire vault; only the currently active file is formatted on activation/startup.
+
+-   Manual (developer utility):
+    -   A probe exists on the view for diagnostics: `view.__canonicalProbe()` formats the current line immediately.
+
+##### Performance and safety
+
+-   Debounce: 300 ms for all triggers to avoid redundant work while you type or navigate quickly.
+-   Coalescing: If a run is already in progress, newer triggers are queued and only the latest one runs afterward.
+-   Re-entrancy guard: Edits made by the formatter don't retrigger the formatter.
+-   Whole-file progress UI: If a whole-file format takes longer than ~1s, a progress notice appears and updates until completion. Large files are processed in small batches with cooperative yielding to keep the UI responsive.
+
+##### What it does not do
+
+-   It does not automatically format every file in the vault on startup. Only the currently active Markdown file is formatted when it opens or becomes active.
+-   It does not change non-task lines (lines without a `- [ ]`-style prefix are left as-is).
 
 #### Feature: Custom Task Status Styles
 
@@ -288,7 +455,7 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
   - [d] One-off — `[d]`
   - [O] Outline — `[O]`
 
-  Note: The plugin stylesheet also contains many non-essential emoji-based statuses. These are intentionally not enumerated in this documentation because they are optional visual variants and are not required for the plugin’s core behavior.
+  Note: The plugin stylesheet also contains many non-essential emoji-based statuses. These are intentionally not enumerated in this documentation because they are optional visual variants and are not required for the plugin's core behavior.
 
 - **When to use this feature:**
   - Use custom status styles when you need more nuance than simple todo/done (for example: blocking issues, items waiting on external input, items that recur, review-required tasks, or prioritization flags).
@@ -302,16 +469,17 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
     - **Verification:** The source `.md` line contains `[b]` and the Dashboard filter surfaces the task under Blocked items.
   - **Use Case U2: Schedule recurring work**
     1. Create a task and tag its status as `[r]` (Recurring).
-    2. Use the Agile Task Date Manager (experimental) to control recurrence dates and the plugin’s metadata cleanup to maintain timestamps.
+    2. Use the Agile Task Date Manager (experimental) to control recurrence dates and the plugin's metadata cleanup to maintain timestamps.
     - **Verification:** Recurring tasks appear in recurrence-aware views and are preserved as recurring rather than being permanently closed after completion.
 
-- **Configuration you’re likely to touch:**
+- **Configuration you're likely to touch:**
   - Status-related behavior is mostly automatic. You may adjust Dashboard filters and Section Toggles in the settings to include/exclude custom statuses from specific views.
   - The Canonical Formatter enforces the parseable order of status tokens and other chips; you generally won't need to edit status order manually.
 
 - **Implementation notes for maintainers:**
-  - Status tokens are parsed as part of the Task Indexer’s canonical line parser. When adding new tokens, ensure the parser’s token map and the Canonical Formatter are updated.
+  - Status tokens are parsed as part of the Task Indexer's canonical line parser. When adding new tokens, ensure the parser's token map and the Canonical Formatter are updated.
   - The Dashboard and status UI should treat status tokens as first-class filters and allow click-to-advance behavior consistent with the plugin's configured status sequence behavior.
+
 
 ### Configuration/Settings Reference
 
@@ -376,10 +544,35 @@ The Agile Obsidian settings are accessible via **Settings > Agile Obsidian**.
 -   [Needs confirmation: The build and test commands (e.g., `npm run build`, `npm run test`) need to be documented].
 
 ### Change Log (Docs)
+- Documentation updated to version 1.0.3.
+  - Added "Template Sequencing" to the Other Capabilities Table and created a dedicated Feature Catalog section, including use cases for CRM workflows, variable mapping, and menu integration.
+  - Updated Templating Engine feature description and use cases to incorporate sequencing (click menus for advancement, integration with params editor for missing fields).
+  - Enhanced Architecture section: Added templating-sequencer to Components, new data flow sequence for template navigation, and Sequence schema to Storage Schemas/Models.
+  - No breaking changes; aligns with new templating-sequencer module for multi-stage template workflows.
+- Documentation updated to version 1.0.2.
+    - Updated Templating Engine feature to reflect refactored implementation with modular templating-engine and templating-params-editor components, emphasizing type-safe parameter editing and schema modals.
+    - Enhanced Architecture section to document the new templating-handler adapter, its role in wiring refactored modules, and an additional data flow sequence for double-click template editing.
+  - No breaking changes; updates align with internal refactoring for better maintainability and TypeScript compliance.
 - Documentation updated to version 1.0.1.
   - Added support and documentation for new & revised custom task status styles (see "Feature: Custom Task Status Styles").
   - Added "Custom Task Status Styles" to the Other Capabilities Table.
   - Clarified behavior and examples for blocked, waiting, recurring, review, prioritize, one-off, and outline statuses.
+  - Added documentation for the new "Right-Click Template Removal" feature, including entry in Other Capabilities Table, a dedicated Feature Catalog section, updates to Templating Engine feature description and use cases, and enhancements to Architecture (Components and Data Flow).
+- Previous (1.0.0) changes:
+  - Documentation updated to version 1.0.0.
+  - Rewrote documentation in full to align with a standardized, comprehensive structure.
+  - Corrected and expanded feature descriptions based on an analysis of the plugin's architecture and existing README.
+  - Added new sections for Architecture, API Surfaces, Security, and a detailed User-Centric Feature Catalog.
+  - Incorporated maintainer feedback to correct command names and provide a complete feature breakdown.
+- Documentation updated to version 1.0.2.
+    - Updated Templating Engine feature to reflect refactored implementation with modular templating-engine and templating-params-editor components, emphasizing type-safe parameter editing and schema modals.
+    - Enhanced Architecture section to document the new templating-handler adapter, its role in wiring refactored modules, and an additional data flow sequence for double-click template editing.
+  - No breaking changes; updates align with internal refactoring for better maintainability and TypeScript compliance.
+- Documentation updated to version 1.0.1.
+  - Added support and documentation for new & revised custom task status styles (see "Feature: Custom Task Status Styles").
+  - Added "Custom Task Status Styles" to the Other Capabilities Table.
+  - Clarified behavior and examples for blocked, waiting, recurring, review, prioritize, one-off, and outline statuses.
+  - Added documentation for the new "Right-Click Template Removal" feature, including entry in Other Capabilities Table, a dedicated Feature Catalog section, updates to Templating Engine feature description and use cases, and enhancements to Architecture (Components and Data Flow).
 - Previous (1.0.0) changes:
   - Documentation updated to version 1.0.0.
   - Rewrote documentation in full to align with a standardized, comprehensive structure.

@@ -7,34 +7,47 @@ import {
 import { TeamInfo } from "@features/org-structure";
 
 export interface SettingsService {
+	/**
+	 * Returns a live snapshot of current settings.
+	 * Prefer this in runtime gating to avoid stale reads.
+	 */
+	get(): AgileObsidianSettings;
+
+	/**
+	 * Alias for get() for backwards compatibility with older call sites.
+	 */
+	getRaw(): AgileObsidianSettings;
+
 	getCurrentUserAlias(): string | null;
 	getCurrentUserDisplayName(): string | null;
 	getMemberDisplayNameByAlias(alias: string): string | null;
 	getTeams(): TeamInfo[];
-	getRaw(): AgileObsidianSettings;
 }
 
 export function createSettingsService(
 	getSettings: () => AgileObsidianSettings
 ): SettingsService {
+	const getLive = () => getSettings();
+
 	return {
-		getCurrentUserAlias() {
-			return getCurrentUserAlias(getSettings());
-		},
-		getCurrentUserDisplayName() {
-			return getCurrentUserDisplayName(getSettings());
-		},
-		getMemberDisplayNameByAlias(alias: string) {
-			return getMemberDisplayNameByAlias(
-				getSettings().teams ?? [],
-				alias
-			);
-		},
-		getTeams() {
-			return getSettings().teams ?? [];
+		get() {
+			return getLive();
 		},
 		getRaw() {
-			return getSettings();
+			// Back-compat alias
+			return getLive();
+		},
+		getCurrentUserAlias() {
+			return getCurrentUserAlias(getLive());
+		},
+		getCurrentUserDisplayName() {
+			return getCurrentUserDisplayName(getLive());
+		},
+		getMemberDisplayNameByAlias(alias: string) {
+			return getMemberDisplayNameByAlias(getLive().teams ?? [], alias);
+		},
+		getTeams() {
+			return getLive().teams ?? [];
 		},
 	};
 }

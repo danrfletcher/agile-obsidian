@@ -94,20 +94,13 @@ export function wireTemplatingDomHandlers(
 						hasParams: !!def.hasParams,
 						hiddenFromDynamicCommands:
 							def.hiddenFromDynamicCommands,
+						// Preserve full params schema so modals have type, label, placeholder, options, etc.
 						paramsSchema: def.paramsSchema
 							? {
 									...def.paramsSchema,
 									fields:
 										def.paramsSchema.fields?.map((f) => ({
-											name: f.name,
-											required: f.required,
-											defaultValue:
-												typeof f.defaultValue ===
-												"string"
-													? f.defaultValue
-													: (f.defaultValue as unknown as
-															| string
-															| undefined),
+											...f,
 										})) ?? [],
 							  }
 							: undefined,

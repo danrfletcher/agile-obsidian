@@ -16,4 +16,20 @@ export const DEFAULT_SETTINGS: AgileObsidianSettings = {
 	currentUserAlias: null,
 	teamsFolder: "Teams",
 	teams: [],
+
+	// Settings sections minimized by default
+	uiFoldOrgStructure: true,
+	uiFoldAgileDashboard: true,
+	uiFoldUxShortcuts: true,
+
+	// UX Shortcuts
+	enableUxRepeatAgileTemplates: true,
+
+	// Agile Task Formatting section (folded by default)
+	uiFoldAgileTaskFormatting: true,
+
+	// Canonical formatter defaults
+	enableTaskCanonicalFormatter: true,
+	enableCanonicalOnLineCommit: true,
+	enableCanonicalOnLeafChange: true,
 };

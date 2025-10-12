@@ -11,9 +11,7 @@ if you want to view the source, please visit the github repository of this plugi
 const prod = process.argv[2] === "production";
 
 const context = await esbuild.context({
-	banner: {
-		js: banner,
-	},
+	banner: { js: banner },
 	entryPoints: ["src/main.ts"],
 	bundle: true,
 	external: [
@@ -40,6 +38,11 @@ const context = await esbuild.context({
 	loader: {
 		".css": "text",
 		".md": "text",
+		".gif": "dataurl",
+		".png": "dataurl",
+		".jpg": "dataurl",
+		".jpeg": "dataurl",
+		".svg": "dataurl",
 	},
 	outfile: "main.js",
 	minify: prod,
