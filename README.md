@@ -81,7 +81,7 @@ Agile Obsidian is a plugin that transforms your Obsidian vault into a powerful, 
 | Quick Insert Multiple Agile Artifacts | Press enter on a task line with an existing agile atifact e.g., Epic to insert another agile artifact e.g., Epic on the next line | Automatic (on enter click on task line with Agile artifact) | Stable |
 | Right-Click Template Removal | Quickly remove templated artifacts (Initiatives, Epics, OKRs, etc.) from task lines via the native Obsidian context menu without disrupting your editing flow. | Right-click on template wrapper in editor | Stable |
 | Double-Click Template Editing | Edit parameters of inserted templates (e.g., Initiative title, Epic scope) via double-click on the rendered template wrapper, opening a pre-populated modal. | Double-click on template wrapper in editor or dashboard | Stable |
-| Template Sequencing | Navigate predefined sequences of templates (e.g., CRM workflows: awaitingDeposit → depositPaid) via floating UI menus; map variables, collect missing params, and overwrite current template. | Click on template wrapper in editor or dashboard | Stable |
+| Template Sequencing | Navigate predefined sequences of templates (e.g., CRM workflows: awaitingDeposit ↔ depositPaid ↔ paymentPlan ↔ paidInFull) via floating UI menus; automatically map shared variables, prompt for missing params, and overwrite current template with full bidirectional support. | Click on template wrapper in editor or dashboard | Stable |
 
 ### Quickstart
 
@@ -123,7 +123,7 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
 - **Task Indexer/Parser (inferred from `registerEvents`):** A service that listens for vault changes, parses Markdown files for tasks matching the canonical format, and maintains an in-memory index of all tasks for quick retrieval.
 - **Agile Dashboard (View):** A custom Obsidian View that queries the Task Indexer and renders the UI for assigned tasks. It contains its own logic for filtering, sorting, and interacting with tasks.
 - **Templating Engine:** A service that registers slash commands and manages the lifecycle of inserting and editing template "chips" in Markdown. Now refactored into modular components (`templating-engine` for core rendering/prefilling and `templating-params-editor` for modals and parameter workflows), with the dashboard's `templating-handler` acting as a type-safe adapter to wire these without schema mismatches.
-- **Templating Sequencer:** A new module for navigating predefined template sequences (e.g., CRM workflows). Includes domain types (Sequence), preset sequences, app service for variable mapping and param collection, UI handlers for floating menus, and a generalized custom view handler for integration with editors and views like the Agile Dashboard.
+- **Templating Sequencer:** A module for navigating predefined template sequences (e.g., CRM workflows). Includes domain types (Sequence with optional variableMapOverrides), preset sequences (simplified to rely on automatic defaults), app service for variable mapping/prompting/execution, UI handlers for floating menus, and a generalized custom view handler for integration with editors and views like the Agile Dashboard. Supports full bidirectional navigation with automatic shared-variable pass-through.
 - **UX Shortcuts Module:** Handles editor-level interactions like double-enter to repeat templates and right-click context menu enhancements for template management.
 - **Settings Root Module:** Manages the loading, saving, and UI for the plugin's settings tab.
 
@@ -150,10 +150,10 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
     4. The handler re-renders the template chip in-place using the templating-engine's render function.
     5. Obsidian fires a modify event, re-parsing the line via the Task Indexer for dashboard consistency.
 
-* **User Navigates Template Sequence (New):**
+* **User Navigates Template Sequence:**
     1. User clicks a template wrapper (e.g., awaitingDeposit) in an editor or the Agile Dashboard.
-    2. Templating sequencer handler (wired via composition or custom view) suppresses default behavior and builds a floating menu from preset sequences (forward/back options filtered by start/target template).
-    3. User selects a move (e.g., → depositPaid); sequencer service maps variables via callback, prompts "Additional Properties" modal for missing fields (filtered schema), and renders the target template.
+    2. Templating sequencer handler (wired via composition or custom view) suppresses default behavior and builds a floating menu from preset sequences (forward/back options filtered by start/target template, with full bidirectional support for "both" direction).
+    3. User selects a move (e.g., → depositPaid); sequencer service computes automatic mappings (shared pass-through, drop extras), applies optional overrides, prompts "Additional Properties" modal for missing fields (filtered schema), and renders the target template.
     4. Overwrite occurs: in editors via templating-engine API (inner HTML only); in custom views via direct file write (targeting line/instanceId).
     5. Obsidian modify event fires; Task Indexer re-parses, and views (e.g., Dashboard) refresh via callback.
 
@@ -162,7 +162,7 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
 - **Task Data:** Stored directly in `.md` files as single lines of text. The plugin relies on its "Canonical Format" to structure metadata within the line itself, rather than using frontmatter.
     - **Format:** `[status] {parent-link} {artifact-type} {task text} {state} {tags} {assignee → delegate} {metadata} {ordered date tokens} {block ID}`
     - **Example:** `- [ ] 🎖️ [[Initiative-Note]] Initiative: Launch v1 @alex {due:2025-10-17} ^abcdef`
-- **Template Sequences (New):** Predefined in code as `presetSequences` array (templating-sequencer/domain/preset-sequences.ts); no persistent storage. Each Sequence includes startTemplate, targetTemplate, direction ("forward"|"both"), and variableMap callbacks (forward/backward generics for param transformation).
+- **Template Sequences:** Predefined in code as `presetSequences` array (templating-sequencer/domain/preset-sequences.ts); no persistent storage. Each Sequence includes startTemplate, targetTemplate, direction ("forward"|"both"), and optional variableMapOverrides (forward/backward generics for param transformation/override of automatic defaults).
 
 ### Feature Catalog
 
@@ -230,33 +230,34 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
 #### Feature: Template Sequencing
 
 - **What you can do:**
-  - Define and navigate sequences of templates (e.g., CRM pipelines: awaitingDeposit ↔ depositPaid ↔ paymentPlan → paidInFull) using a floating UI menu that appears on click.
-  - Automatically map variables from the current template to the target (forward/backward), applying calculations or transformations via predefined callbacks.
-  - Collect any missing parameters via a filtered "Additional Properties" modal (shows only absent fields from the target schema).
-  - Overwrite the current template wrapper with the new one, preserving instance IDs and attributes; works in editors and custom views like the Agile Dashboard.
-  - Support bidirectional ("both") or forward-only sequences; filter menu options dynamically based on the clicked template.
+  - Define and navigate sequences of templates (e.g., CRM pipelines: awaitingDeposit ↔ depositPaid ↔ paymentPlan ↔ paidInFull) using a floating UI menu that appears on click.
+  - Automatically map variables from the current template to the target (forward/backward) for shared names; drop source-only fields and prompt for target-only fields via a filtered "Additional Properties" modal (shows only absent fields from the target schema).
+  - Optionally override automatic mapping with custom transformations via `variableMapOverrides` callbacks in sequence definitions (forward/backward generics).
+  - Overwrite the current template wrapper with the new one, preserving instance IDs and attributes; works in editors and custom views like the Agile Dashboard with full bidirectional ("both") support.
+  - Filter menu options dynamically based on the clicked template; no explicit mapping needed for simple pass-through sequences.
 
 - **When to use this feature:**
-  - Use this for multi-stage workflows where templates represent progression (e.g., sales/CRM stages, project phases). It's ideal for editing mistakes (back) or advancing work (forward) without manual re-typing.
+  - Use this for multi-stage workflows where templates represent progression (e.g., sales/CRM stages, project phases). It's ideal for editing mistakes (back) or advancing work (forward) without manual re-typing. Defaults handle most cases; add overrides only for complex transformations.
 
 - **Use Cases and Guided Workflows:**
   - **Use Case U1: Advance a CRM Deal Stage**
-    - **Prerequisites:** Preset CRM sequences are defined (e.g., awaitingDeposit → depositPaid).
+    - **Prerequisites:** Preset CRM sequences are defined (e.g., awaitingDeposit → depositPaid) with optional overrides for custom logic.
     - **Step-by-step:**
       1. In a note or the Agile Dashboard, click on an inserted template wrapper (e.g., awaitingDeposit chip).
-      2. A floating menu appears with "Move Forward" (depositPaid, paymentPlan, paidInFull) and any "Move Back" options.
-      3. Select "depositPaid"; variables (e.g., amount) are mapped automatically. If new fields are needed (e.g., payment date), the "Additional Properties" modal prompts for them.
+      2. A floating menu appears with forward options (depositPaid, paymentPlan, paidInFull) and backward options (if applicable, e.g., from paidInFull back to paymentPlan).
+      3. Select "depositPaid"; shared variables (e.g., currency, totalAmount) are mapped automatically. If new fields are needed (e.g., paidAmount), the "Additional Properties" modal prompts for them with pre-filled defaults where possible.
       4. Submit to overwrite the wrapper with the depositPaid template; the source note updates, and the dashboard refreshes.
-      5. To go back (e.g., edit deposit details), click the new wrapper and select from "Move Back" options.
-    - **Verification:** The template key changes (e.g., data-template-key="depositPaid"), variables are preserved/transformed, and the menu only shows valid sequences. No raw HTML is exposed on click.
+      5. To go back (e.g., edit deposit details), click the new wrapper and select from backward options—automatic mapping reverses the flow (e.g., drop paymentPlan-specific fields like months/endDate).
+    - **Verification:** The template key changes (e.g., data-template-key="depositPaid"), variables are preserved/transformed/dropped as per defaults or overrides, and the menu shows valid bidirectional sequences. No raw HTML is exposed on click.
 
 - **Configuration you're likely to touch:**
-  - Sequences are predefined in the plugin (e.g., CRM presets); no user config yet. Future releases may allow custom sequences via settings or YAML.
+  - Sequences are predefined in the plugin (e.g., CRM presets with optional `variableMapOverrides`); no user config yet. Future releases may allow custom sequences via settings or YAML. For now, defaults cover shared variables without explicit code.
 
 - **Implementation notes for maintainers:**
-  - Relies on templating-sequencer module with Sequence type (startTemplate, targetTemplate, direction: "forward"|"both", variableMap callbacks).
+  - Relies on templating-sequencer module with Sequence type (startTemplate, targetTemplate, direction: "forward"|"both", optional variableMapOverrides for forward/backward).
+  - Automatic defaults in sequencer-service: pass-through for shared names, prompt missing target fields, drop extras; overrides compose atop defaults.
   - Integrates with templating-engine for rendering/prefilling and templating-params-editor for modals.
-  - Generalized handler (attachCustomViewTemplatingSequencerHandler) enables reuse in custom views; uses filePath/line hints for direct overwrites without active editors.
+  - Generalized handler (attachCustomViewTemplatingSequencerHandler) enables reuse in custom views; uses filePath/line hints for direct overwrites without active editors. Backward navigation fixed via corrected startTemplate guards.
 
 #### Feature: Parameterized Template Editing & Template Removal
 
