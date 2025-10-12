@@ -121,7 +121,7 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
 -   **DI Container:** A central registry for all services. This allows for loose coupling between modules (e.g., the Dashboard doesn't need to know how the Task Indexer works, it just asks the container for the indexed tasks).
 -   **Task Indexer/Parser (inferred from `registerEvents`):** A service that listens for vault changes, parses Markdown files for tasks matching the canonical format, and maintains an in-memory index of all tasks for quick retrieval.
 -   **Agile Dashboard (View):** A custom Obsidian View that queries the Task Indexer and renders the UI for assigned tasks. It contains its own logic for filtering, sorting, and interacting with tasks.
--   **Templating Engine:** A service that registers slash commands and manages the lifecycle of inserting and editing template "chips" in Markdown.
+-   **Templating Engine:** A service that registers slash commands and manages the lifecycle of inserting and editing template "chips" in Markdown. Now refactored into modular components (`templating-engine` for core rendering/prefilling and `templating-params-editor` for modals and parameter workflows), with the dashboard's `templating-handler` acting as a type-safe adapter to wire these without schema mismatches.
 -   **UX Shortcuts Module:** Handles editor-level interactions like double-enter to repeat templates and right-click context menu enhancements for template management.
 -   **Settings Root Module:** Manages the loading, saving, and UI for the plugin's settings tab.
 
@@ -140,6 +140,13 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
     3.  The standard Obsidian "editor-menu" event fires, and the module injects a "Remove Template" item with trash icon into the context menu.
     4.  User selects "Remove Template"; the module identifies the innermost matching span, removes it from the line, and adjusts the cursor position to maintain the user's relative location.
     5.  The line is updated in-place; Obsidian fires a modify event, triggering the Task Indexer to re-parse and update the dashboard if affected.
+
+*   **User Edits Template Parameters via Double-Click:**
+    1.  User double-clicks on a rendered template wrapper in the editor or dashboard.
+    2.  The templating-handler adapter routes the request to the templating-params-editor module, which opens a pre-populated modal using the engine's schema.
+    3.  User updates parameters (e.g., title, links); the editor validates against the schema and returns updated params.
+    4.  The handler re-renders the template chip in-place using the templating-engine's render function.
+    5.  Obsidian fires a modify event, re-parsing the line via the Task Indexer for dashboard consistency.
 
 #### Storage schemas/models
 -   **Settings:** Stored in `[VAULT]/.obsidian/plugins/agile-obsidian/data.json`.
@@ -189,6 +196,7 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
     -   Ensure consistent formatting for all metadata.
     -   Double-click on an inserted template wrapper to edit its parameters via a pre-populated modal (e.g., update an Initiative title).
     -   Easily remove inserted templates via right-click context menu for quick iteration without disrupting your editing flow.
+    -   Leverage the templating engine and params editor for seamless parameter editing, schema modals, and JSON workflows with type-safe integration.
 
 -   **When to use this feature:**
     -   Use this whenever you are creating a new piece of work that fits an Agile concept. Instead of typing out a title manually, use a template to get the correct formatting and icon automatically. Double-click to edit existing templates, and use right-click removal for rapid prototyping or corrections.
@@ -208,7 +216,7 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
         -   **Verification:** Your note will contain a nested structure of tasks with formatted, clickable chips. Double-clicking a chip re-opens the modal to edit its parameters. Removed templates leave the task line clean, with preserved indentation and cursor position.
 
 -   **Configuration you're likely to touch:**
-    -   This feature is not directly configurable. The list of available templates is predefined within the plugin.
+    -   This feature is not directly configurable. The list of available templates is predefined within the plugin. The engine ensures type-safe parameter handling without user-visible changes. Template hot folders with YAML configs will be added in a later release.
 
 #### Feature: Organization & Team Management
 
@@ -494,6 +502,10 @@ The Agile Obsidian settings are accessible via **Settings > Agile Obsidian**.
 -   [Needs confirmation: The build and test commands (e.g., `npm run build`, `npm run test`) need to be documented].
 
 ### Change Log (Docs)
+- Documentation updated to version 1.0.2.
+    - Updated Templating Engine feature to reflect refactored implementation with modular templating-engine and templating-params-editor components, emphasizing type-safe parameter editing and schema modals.
+    - Enhanced Architecture section to document the new templating-handler adapter, its role in wiring refactored modules, and an additional data flow sequence for double-click template editing.
+  - No breaking changes; updates align with internal refactoring for better maintainability and TypeScript compliance.
 - Documentation updated to version 1.0.1.
   - Added support and documentation for new & revised custom task status styles (see "Feature: Custom Task Status Styles").
   - Added "Custom Task Status Styles" to the Other Capabilities Table.
