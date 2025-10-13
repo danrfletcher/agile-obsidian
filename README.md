@@ -182,6 +182,11 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
     -   Understand your priorities at a glance with sections for Objectives, Responsibilities, and different task types.
     -   Drill down into project context by expanding parent Initiatives and Epics.
 
+##### Notes on Personal Learning Artifacts
+- Personal Learning Initiatives (inserted with a template key like `agile.personalLearningInitiative`) are treated as standard Initiatives in the Dashboard and appear in the Initiatives section automatically.
+- Personal Learning Epics (template key like `agile.personalLearningEpic`) are treated as standard Epics and can appear as first-level children under Initiatives alongside regular Epics.
+- This works without any additional configuration. The classification layer normalizes these personal learning templates to the canonical types used by the Dashboard.
+
 -   **When to use this feature:**
     -   Use this as your primary daily driver to decide what to work on next. It's designed for an "inbox zero" workflow where you process every item by completing, snoozing, or delegating it.
 
@@ -203,7 +208,7 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
     -   **Teams Selector:** Controls which teams' tasks are visible. Your selection is saved automatically.
     -   **Member Filter:** Narrows the view to tasks assigned to a specific member of the selected teams.
     -   **Section Toggles (in Settings):** You can hide entire sections (e.g., "Priorities") from the dashboard if you don't use them.
-
+    
 #### Feature: Templating Engine
 
 - **What you can do:**
