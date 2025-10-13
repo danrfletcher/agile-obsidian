@@ -161,6 +161,10 @@ function buildLinesByFile(tasks: TaskItem[]): Map<string, Set<number>> {
 /**
  * Remove expired "snooze all subtasks" user-specific markers and expired global snoozes.
  * Returns set of modified file paths.
+ *
+ * Important: Preserve any trailing whitespace on lines. We intentionally do NOT trim EOL spaces,
+ * because other parts of the system/caret mapping may rely on them, and the canonical formatter
+ * already handles internal whitespace normalization where needed.
  */
 async function cleanupExpiredSnoozeAllAndGlobal(
 	app: App,
@@ -218,7 +222,9 @@ async function cleanupExpiredSnoozeAllAndGlobal(
 			);
 
 			if (updated !== original) {
-				lines[lineNo] = updated.replace(/[ \t]+$/g, ""); // trim trailing whitespace
+				// Preserve trailing whitespace exactly as produced by replacements.
+				// Do not trim end-of-line spaces here.
+				lines[lineNo] = updated;
 				modified = true;
 			}
 		}
@@ -274,12 +280,7 @@ async function runMetadataCleanupOnce(
 	};
 
 	// 1) Use existing cleanup for per-user single-task snoozes (💤<span>user</span> date)
-	//    This reuses your proven logic from task-snooze.
-	await cleanupExpiredSnoozes(
-		app,
-		tasks as any,
-		userDisplayName || ""
-	);
+	await cleanupExpiredSnoozes(app, tasks as any, userDisplayName || "");
 	// Check if we need to show a notice after this stage
 	maybeStartProgress();
 
@@ -338,7 +339,36 @@ export function registerTaskMetadataCleanup(container: Container) {
 	let midnightTimeout: number | null = null;
 	let dailyInterval: number | null = null;
 
-	const run = async () => {
+	const getSettingsSnapshot = () => {
+		try {
+			const svc: any = settingsService as any;
+			if (svc && typeof svc.getRaw === "function") return svc.getRaw();
+			if (svc && typeof svc.get === "function") return svc.get();
+		} catch {}
+		return container.settings as any;
+	};
+
+	const getFlags = () => {
+		const s: any = getSettingsSnapshot();
+		return {
+			master: !!s.enableMetadataCleanup,
+			onStart: !!s.enableMetadataCleanupOnStart,
+			atMidnight: !!s.enableMetadataCleanupAtMidnight,
+		};
+	};
+
+	const clearTimers = () => {
+		if (midnightTimeout != null) {
+			window.clearTimeout(midnightTimeout);
+			midnightTimeout = null;
+		}
+		if (dailyInterval != null) {
+			window.clearInterval(dailyInterval);
+			dailyInterval = null;
+		}
+	};
+
+	const runCore = async () => {
 		if (running || disposed) return;
 		running = true;
 		try {
@@ -352,36 +382,77 @@ export function registerTaskMetadataCleanup(container: Container) {
 		}
 	};
 
-	// Run immediately on start
-	void run();
-
-	// Schedule next midnight, then every 24 hours while open
-	const schedule = () => {
-		if (disposed) return;
-		const delay = msUntilNextLocalMidnight();
-		midnightTimeout = window.setTimeout(async () => {
-			if (disposed) return;
-			await run();
-			// Then every 24h
-			dailyInterval = window.setInterval(async () => {
-				if (disposed) return;
-				await run();
-			}, 24 * 60 * 60 * 1000);
-		}, delay);
+	// Respect master toggle for automated runs
+	const runIfEnabled = async () => {
+		const flags = getFlags();
+		if (!flags.master) return;
+		await runCore();
 	};
 
-	schedule();
+	// Manual runs should execute regardless of master toggle (like "Format All Files")
+	const runManual = async () => {
+		await runCore();
+	};
+
+	const scheduleFromSettings = () => {
+		clearTimers();
+		if (disposed) return;
+		const flags = getFlags();
+		// Schedule next midnight only if master + atMidnight
+		if (flags.master && flags.atMidnight) {
+			const delay = msUntilNextLocalMidnight();
+			midnightTimeout = window.setTimeout(async () => {
+				if (disposed) return;
+				await runIfEnabled();
+				// Then every 24h while enabled
+				dailyInterval = window.setInterval(async () => {
+					if (disposed) return;
+					await runIfEnabled();
+				}, 24 * 60 * 60 * 1000);
+			}, delay);
+		}
+	};
+
+	// Initial boot: run on start if enabled, then schedule timers from settings
+	(() => {
+		const flags = getFlags();
+		if (flags.master && flags.onStart) {
+			void runIfEnabled();
+		}
+		scheduleFromSettings();
+	})();
+
+	// React to settings changes immediately (enable/disable and schedules)
+	const offSettingsChanged = app.workspace.on(
+		"agile-settings-changed" as any,
+		() => {
+			// Re-schedule timers to reflect toggles immediately
+			scheduleFromSettings();
+		}
+	);
+	plugin.registerEvent(offSettingsChanged);
+
+	// Manual “run across vault now” trigger (like canonical formatter’s format-all)
+	plugin.registerEvent(
+		// @ts-ignore - custom workspace events supported
+		app.workspace.on("agile-metadata-cleanup-all", async () => {
+			try {
+				new Notice("Starting metadata cleanup across vault…");
+				await runManual();
+				new Notice("Metadata cleanup complete.");
+			} catch (e) {
+				new Notice(
+					`Metadata cleanup failed: ${
+						e instanceof Error ? e.message : String(e)
+					}`
+				);
+			}
+		})
+	);
 
 	// Cleanup timers on unload
 	plugin.register(() => {
 		disposed = true;
-		if (midnightTimeout != null) {
-			window.clearTimeout(midnightTimeout);
-			midnightTimeout = null;
-		}
-		if (dailyInterval != null) {
-			window.clearInterval(dailyInterval);
-			dailyInterval = null;
-		}
+		clearTimers();
 	});
 }

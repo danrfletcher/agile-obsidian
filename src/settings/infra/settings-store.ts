@@ -32,4 +32,9 @@ export const DEFAULT_SETTINGS: AgileObsidianSettings = {
 	enableTaskCanonicalFormatter: true,
 	enableCanonicalOnLineCommit: true,
 	enableCanonicalOnLeafChange: true,
+
+	// Metadata Cleanup defaults
+	enableMetadataCleanup: true,
+	enableMetadataCleanupOnStart: true,
+	enableMetadataCleanupAtMidnight: true,
 };

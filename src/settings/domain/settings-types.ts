@@ -45,4 +45,11 @@ export interface AgileObsidianSettings {
 	enableTaskCanonicalFormatter: boolean; // Master enable/disable
 	enableCanonicalOnLineCommit: boolean; // Format last line when cursor changes line
 	enableCanonicalOnLeafChange: boolean; // Format entire file on leaf/file change
+
+	/**
+	 * Metadata Cleanup controls
+	 */
+	enableMetadataCleanup: boolean; // Master enable/disable for automated cleanup
+	enableMetadataCleanupOnStart: boolean; // Run once on Obsidian start/plugin load
+	enableMetadataCleanupAtMidnight: boolean; // Schedule daily at local midnight
 }
