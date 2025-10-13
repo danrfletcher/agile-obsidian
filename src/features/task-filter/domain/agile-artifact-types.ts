@@ -21,6 +21,12 @@ function extractTemplateKeysFromText(
 /**
  * Normalize a template key to a canonical AgileArtifactType by pattern matching.
  * This is resilient to different naming styles (kebab/camel/dotted, v2 suffixes, etc.).
+ *
+ * NOTE: We intentionally normalize personal learning items to the canonical types:
+ *  - agile.personalLearningInitiative -> "initiative"
+ *  - agile.personalLearningEpic -> "epic"
+ * This allows the Initiatives section to include personal learning initiatives,
+ * and to show personal learning epics as first-level children (treated like epics).
  */
 function inferTypeFromKey(key: string): AgileArtifactType | undefined {
 	if (!key) return undefined;
@@ -42,22 +48,30 @@ function inferTypeFromKey(key: string): AgileArtifactType | undefined {
 
 	// Most specific first
 
-	// Learning Initiative
+	// Personal Learning Initiative -> canonical "initiative"
 	if (
-		has("learninginitiative") ||
-		(has("learning") && has("initiative")) ||
-		has("personallearninginitiative")
+		has("personallearninginitiative") ||
+		(has("learning") && has("initiative") && has("personal"))
 	) {
-		return "learning-initiative";
+		return "initiative";
 	}
 
-	// Learning Epic
+	// Learning Initiative (non-personal) -> canonical "initiative"
+	if (has("learninginitiative") || (has("learning") && has("initiative"))) {
+		return "initiative";
+	}
+
+	// Personal Learning Epic -> canonical "epic"
 	if (
-		has("learningepic") ||
-		(has("learning") && has("epic")) ||
-		has("personallearningepic")
+		has("personallearningepic") ||
+		(has("learning") && has("epic") && has("personal"))
 	) {
-		return "learning-epic";
+		return "epic";
+	}
+
+	// Learning Epic (non-personal) -> canonical "epic"
+	if (has("learningepic") || (has("learning") && has("epic"))) {
+		return "epic";
 	}
 
 	// Initiative
