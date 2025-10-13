@@ -65,6 +65,7 @@ Agile Obsidian is a plugin that transforms your Obsidian vault into a powerful, 
 | Org & Team Mgmt | Organize work and permissions across multiple teams. | Settings | Stable |
 | Task Assignment | Assign tasks to team members with optional delegation. | Command, Agile Dashboard, UI Menu | Stable |
 | Canonical Formatting | Automatically keeps task metadata consistent and parseable. | Automatic (on task edit) | Stable |
+| Task Metadata Cleanup | Automatically removes expired snooze dates and deprecated metadata from tasks across the vault. | Settings (toggles and manual button) | Stable |
 
 #### Other Capabilities Table
 
@@ -75,7 +76,6 @@ Agile Obsidian is a plugin that transforms your Obsidian vault into a powerful, 
 | Task Close Cascade | Completed or cancels nested & deeply nested subtasks when the parent is cancelled | Automatic (on task close) | Stable |
 | Task Close Dates | Adds completed & cancelled data metadata on task close (complete or cancel) | Automatic (on task close) | Stable |
 | Agile Task Date Manager | Adds UI menu with date picker to manage start, scheduled, due & target dates | Command, Agile Dashboard, UI Menu | Experimental |
-| Task Metadata Cleanup | Automated metadata cleanup e.g., removing expired snooze dates from tasks | Automatic (on Obsidian start, Agile Dashboard open) | Stable |
 | Agile Task Statuses | Additional preset task statuses & custom task checkboxes [ ] → [/] → [x] → [-] | Automatic (click to advance status, long-click to cancel) | Stable |
 | Custom Task Status Styles | Extended set of custom, parseable status tokens for richer workflows (Blocked, Waiting, Review, Recurring, Prioritize, One-off, Outline, etc.) | Automatic (click to advance status, status chips, stylesheet-driven) | Stable |
 | Quick Insert Multiple Agile Artifacts | Press enter on a task line with an existing agile atifact e.g., Epic to insert another agile artifact e.g., Epic on the next line | Automatic (on enter click on task line with Agile artifact) | Stable |
@@ -126,6 +126,7 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
 - **Templating Sequencer:** A module for navigating predefined template sequences (e.g., CRM workflows). Includes domain types (Sequence with optional variableMapOverrides), preset sequences (simplified to rely on automatic defaults), app service for variable mapping/prompting/execution, UI handlers for floating menus, and a generalized custom view handler for integration with editors and views like the Agile Dashboard. Supports full bidirectional navigation with automatic shared-variable pass-through.
 - **UX Shortcuts Module:** Handles editor-level interactions like double-enter to repeat templates and right-click context menu enhancements for template management.
 - **Settings Root Module:** Manages the loading, saving, and UI for the plugin's settings tab.
+- **Task Metadata Cleanup:** A service that periodically scans task-indexed lines across the vault to remove expired snooze markers (individual, global, snooze-all) and deprecated metadata. Configurable via settings toggles for on-start and midnight runs; supports manual vault-wide execution.
 
 #### Data flow and major sequences
 * **User Assigns a Task:**
@@ -157,6 +158,12 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
     4. Overwrite occurs: in editors via templating-engine API (inner HTML only); in custom views via direct file write (targeting line/instanceId).
     5. Obsidian modify event fires; Task Indexer re-parses, and views (e.g., Dashboard) refresh via callback.
 
+* **Metadata Cleanup Runs:**
+    1. On plugin load/start (if enabled): Scans all task-indexed lines vault-wide, removes expired snooze markers (💤 date, 💤⬇️ date for global/snooze-all).
+    2. At local midnight (if enabled and Obsidian open): Same vault-wide scan, then schedules daily repeat.
+    3. Manual trigger (via settings button): Fires "agile-metadata-cleanup-all" event; runs immediately regardless of toggles, with progress notice for large vaults.
+    4. Settings changes (e.g., toggle off) immediately cancel/reschedule timers; only affects task lines from index (no full vault scan).
+
 #### Storage schemas/models
 - **Settings:** Stored in `[VAULT]/.obsidian/plugins/agile-obsidian/data.json`.
 - **Task Data:** Stored directly in `.md` files as single lines of text. The plugin relies on its "Canonical Format" to structure metadata within the line itself, rather than using frontmatter.
@@ -174,6 +181,11 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
     -   Quickly change a task's status, snooze it for later, or reassign it to someone else.
     -   Understand your priorities at a glance with sections for Objectives, Responsibilities, and different task types.
     -   Drill down into project context by expanding parent Initiatives and Epics.
+
+##### Notes on Personal Learning Artifacts
+- Personal Learning Initiatives (inserted with a template key like `agile.personalLearningInitiative`) are treated as standard Initiatives in the Dashboard and appear in the Initiatives section automatically.
+- Personal Learning Epics (template key like `agile.personalLearningEpic`) are treated as standard Epics and can appear as first-level children under Initiatives alongside regular Epics.
+- This works without any additional configuration. The classification layer normalizes these personal learning templates to the canonical types used by the Dashboard.
 
 -   **When to use this feature:**
     -   Use this as your primary daily driver to decide what to work on next. It's designed for an "inbox zero" workflow where you process every item by completing, snoozing, or delegating it.
@@ -196,7 +208,7 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
     -   **Teams Selector:** Controls which teams' tasks are visible. Your selection is saved automatically.
     -   **Member Filter:** Narrows the view to tasks assigned to a specific member of the selected teams.
     -   **Section Toggles (in Settings):** You can hide entire sections (e.g., "Priorities") from the dashboard if you don't use them.
-
+    
 #### Feature: Templating Engine
 
 - **What you can do:**
@@ -480,6 +492,45 @@ Formatting is orchestrated per active editor view and coalesced/debounced for pe
   - Status tokens are parsed as part of the Task Indexer's canonical line parser. When adding new tokens, ensure the parser's token map and the Canonical Formatter are updated.
   - The Dashboard and status UI should treat status tokens as first-class filters and allow click-to-advance behavior consistent with the plugin's configured status sequence behavior.
 
+#### Feature: Task Metadata Cleanup
+
+- **What you can do:**
+  - Automatically remove expired snooze markers (individual 💤 date, global snooze-all 💤⬇️ date) and deprecated metadata from task lines across your vault.
+  - Configure cleanup frequency: run immediately on Obsidian startup, schedule daily at local midnight (while Obsidian is open), or trigger manually on all files.
+  - Preserve trailing whitespace and only target task-indexed lines (no full vault scan unless manual).
+  - View progress for large vaults during manual runs (notice with bar and file count).
+
+- **When to use this feature:**
+  - Enable this for ongoing maintenance of task hygiene, especially in vaults with heavy snooze usage. Use manual runs after bulk snoozing or when cleaning up old projects. It's quiet by default (no notices on auto runs) to avoid interruptions.
+
+- **Use Cases and Guided Workflows:**
+  - **Use Case U1: Clean Up Expired Snoozes After a Project Sprint**
+    - **Prerequisites:** Tasks with past-due snoozes (e.g., 💤 2025-09-01) scattered across notes.
+    - **Step-by-step:**
+      1. Go to Settings > Agile Obsidian > Agile Task Formatting > Metadata Cleanup.
+      2. Ensure "Enable Metadata Cleanup" is on; toggle "Run On Obsidian Start" for future auto-cleanup.
+      3. Click "Run on All Files in Vault" to trigger immediate vault-wide scan.
+      4. A progress notice shows files processed (e.g., "Cleaning up task metadata… 5 / 12 (42%)"); expired markers are removed silently.
+      5. For daily maintenance, toggle "Run At Midnight" on—cleanup runs automatically at your local midnight.
+    - **Verification:** Check task lines: expired 💤 dates are gone, but active ones remain. Dashboard refreshes automatically via index updates; no trailing spaces lost.
+  - **Use Case U2: Disable During Active Work Periods**
+    - **Prerequisites:** Vault with ongoing tasks; don't want auto-cleanup interfering.
+    - **Step-by-step:**
+      1. In settings, toggle "Enable Metadata Cleanup" off—cancels all schedules immediately.
+      2. Run manual cleanup if needed before disabling.
+      3. Re-enable later for post-sprint hygiene.
+    - **Verification:** No midnight runs occur; settings changes take effect instantly.
+
+- **Configuration you're likely to touch:**
+  - All controls are in Settings > Agile Obsidian > Agile Task Formatting > Metadata Cleanup subsection.
+  - Master toggle disables all auto-runs; subtoggles control on-start and midnight scheduling.
+  - Manual button runs regardless of toggles; shows progress for vaults >1s runtime.
+
+- **Implementation notes for maintainers:**
+  - Uses TaskIndexService snapshot to target only task lines (buildLinesByFile map).
+  - Handles user-specific (💤⬇️<span>user</span> date) and global markers; preserves EOL whitespace.
+  - Timers (setTimeout for midnight, setInterval for daily) reschedule on settings changes via "agile-settings-changed" event.
+  - Errors swallowed silently; manual trigger via workspace event "agile-metadata-cleanup-all" with Notice feedback.
 
 ### Configuration/Settings Reference
 
@@ -491,6 +542,10 @@ The Agile Obsidian settings are accessible via **Settings > Agile Obsidian**.
 | **Dashboard Sections** | `object` | All `true` | Global | A series of toggles (e.g., `showObjectives`, `showResponsibilities`) that control which sections are visible in the Agile Dashboard. |
 | **Load Sample Team** | `button` | N/A | Global | Creates a new folder in the vault with sample notes to demonstrate plugin features. |
 | **Update Teams** | `button` | N/A | Global | Forces a rebuild of the internal team/member index. Use this if the dashboard seems out of sync with your settings. |
+| **Enable Metadata Cleanup** | `boolean` | `true` | Global | Master toggle for automated metadata cleanup (expired snoozes, deprecated markers). Disables on-start and midnight runs when off. |
+| **Run On Obsidian Start** | `boolean` | `true` | Global | If master enabled, runs vault-wide cleanup immediately on plugin load/Obsidian start. |
+| **Run At Midnight** | `boolean` | `true` | Global | If master enabled, schedules daily cleanup at local midnight (repeats every 24h while Obsidian open). |
+| **Run on All Files in Vault** (Metadata Cleanup) | `button` | N/A | Global | Triggers immediate vault-wide cleanup (regardless of toggles); shows progress notice for large operations. |
 
 ### API Surfaces (Obsidian)
 
@@ -542,40 +597,3 @@ The Agile Obsidian settings are accessible via **Settings > Agile Obsidian**.
 
 #### Build/test
 -   [Needs confirmation: The build and test commands (e.g., `npm run build`, `npm run test`) need to be documented].
-
-### Change Log (Docs)
-- Documentation updated to version 1.0.3.
-  - Added "Template Sequencing" to the Other Capabilities Table and created a dedicated Feature Catalog section, including use cases for CRM workflows, variable mapping, and menu integration.
-  - Updated Templating Engine feature description and use cases to incorporate sequencing (click menus for advancement, integration with params editor for missing fields).
-  - Enhanced Architecture section: Added templating-sequencer to Components, new data flow sequence for template navigation, and Sequence schema to Storage Schemas/Models.
-  - No breaking changes; aligns with new templating-sequencer module for multi-stage template workflows.
-- Documentation updated to version 1.0.2.
-    - Updated Templating Engine feature to reflect refactored implementation with modular templating-engine and templating-params-editor components, emphasizing type-safe parameter editing and schema modals.
-    - Enhanced Architecture section to document the new templating-handler adapter, its role in wiring refactored modules, and an additional data flow sequence for double-click template editing.
-  - No breaking changes; updates align with internal refactoring for better maintainability and TypeScript compliance.
-- Documentation updated to version 1.0.1.
-  - Added support and documentation for new & revised custom task status styles (see "Feature: Custom Task Status Styles").
-  - Added "Custom Task Status Styles" to the Other Capabilities Table.
-  - Clarified behavior and examples for blocked, waiting, recurring, review, prioritize, one-off, and outline statuses.
-  - Added documentation for the new "Right-Click Template Removal" feature, including entry in Other Capabilities Table, a dedicated Feature Catalog section, updates to Templating Engine feature description and use cases, and enhancements to Architecture (Components and Data Flow).
-- Previous (1.0.0) changes:
-  - Documentation updated to version 1.0.0.
-  - Rewrote documentation in full to align with a standardized, comprehensive structure.
-  - Corrected and expanded feature descriptions based on an analysis of the plugin's architecture and existing README.
-  - Added new sections for Architecture, API Surfaces, Security, and a detailed User-Centric Feature Catalog.
-  - Incorporated maintainer feedback to correct command names and provide a complete feature breakdown.
-- Documentation updated to version 1.0.2.
-    - Updated Templating Engine feature to reflect refactored implementation with modular templating-engine and templating-params-editor components, emphasizing type-safe parameter editing and schema modals.
-    - Enhanced Architecture section to document the new templating-handler adapter, its role in wiring refactored modules, and an additional data flow sequence for double-click template editing.
-  - No breaking changes; updates align with internal refactoring for better maintainability and TypeScript compliance.
-- Documentation updated to version 1.0.1.
-  - Added support and documentation for new & revised custom task status styles (see "Feature: Custom Task Status Styles").
-  - Added "Custom Task Status Styles" to the Other Capabilities Table.
-  - Clarified behavior and examples for blocked, waiting, recurring, review, prioritize, one-off, and outline statuses.
-  - Added documentation for the new "Right-Click Template Removal" feature, including entry in Other Capabilities Table, a dedicated Feature Catalog section, updates to Templating Engine feature description and use cases, and enhancements to Architecture (Components and Data Flow).
-- Previous (1.0.0) changes:
-  - Documentation updated to version 1.0.0.
-  - Rewrote documentation in full to align with a standardized, comprehensive structure.
-  - Corrected and expanded feature descriptions based on an analysis of the plugin's architecture and existing README.
-  - Added new sections for Architecture, API Surfaces, Security, and a detailed User-Centric Feature Catalog.
-  - Incorporated maintainer feedback to correct command names and provide a complete feature breakdown.

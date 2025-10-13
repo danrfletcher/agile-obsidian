@@ -355,7 +355,7 @@ export class AgileSettingTab extends PluginSettingTab {
 
 		// Section subheader inside the fold
 		new Setting(containerEl)
-			.setName("Auto Canonical Formatting")
+			.setName("Canonical Formatting")
 			.setDesc(
 				"Settings related to the Canonical Formatter, which keeps each task line in a clean, consistent structure."
 			);
@@ -412,14 +412,14 @@ export class AgileSettingTab extends PluginSettingTab {
 
 		// Button: Format All Files in Vault
 		new Setting(containerEl)
-			.setName("Format All Files in Vault")
+			.setName("Run on All Files in Vault")
 			.setDesc(
 				"Run the canonical formatter across every Markdown file in your vault now."
 			)
 			.addButton((btn) =>
 				btn
 					.setCta()
-					.setButtonText("Format All Files")
+					.setButtonText("Run Canonical Formatter")
 					.onClick(async () => {
 						try {
 							console.info(
@@ -433,6 +433,93 @@ export class AgileSettingTab extends PluginSettingTab {
 						} catch {
 							new Notice(
 								"Could not start formatting. Please try again."
+							);
+						}
+					})
+			);
+
+		// =========================
+		// Metadata Cleanup subsection
+		// =========================
+		new Setting(containerEl)
+			.setName("Metadata Cleanup")
+			.setDesc(
+				"Settings relating to the Metadata Cleanup feature, which removes deprecated & expired metadata from tasks."
+			);
+
+		// Master toggle: Enable Metadata Cleanup
+		const mcMaster = new Setting(containerEl)
+			.setName("Enable Metadata Cleanup")
+			.setDesc(
+				"Turns on automatic metadata cleanup. When off, scheduled cleanup does not run."
+			);
+		mcMaster.addToggle((toggle) => {
+			toggle.setValue(this.settings.enableMetadataCleanup ?? true);
+			toggle.onChange(async (value) => {
+				this.settings.enableMetadataCleanup = value;
+				await this.saveSettings();
+				// Re-render to reflect disabled state of child toggles
+				this.display();
+			});
+		});
+		const mcEnabled = !!this.settings.enableMetadataCleanup;
+
+		// Subtoggle: Run On Obsidian Start
+		const mcOnStart = new Setting(containerEl)
+			.setName("Run On Obsidian Start")
+			.setDesc(
+				"Runs a cleanup pass automatically when Obsidian starts (or the plugin loads)."
+			);
+		mcOnStart.addToggle((toggle) => {
+			toggle.setValue(this.settings.enableMetadataCleanupOnStart ?? true);
+			toggle.setDisabled(!mcEnabled);
+			toggle.onChange(async (value) => {
+				this.settings.enableMetadataCleanupOnStart = value;
+				await this.saveSettings();
+			});
+		});
+		this.applySubToggleDisabledStyle(mcOnStart, !mcEnabled);
+
+		// Subtoggle: Run At Midnight
+		const mcAtMidnight = new Setting(containerEl)
+			.setName("Run At Midnight")
+			.setDesc(
+				"Schedules a daily cleanup at your local midnight while Obsidian remains open."
+			);
+		mcAtMidnight.addToggle((toggle) => {
+			toggle.setValue(
+				this.settings.enableMetadataCleanupAtMidnight ?? true
+			);
+			toggle.setDisabled(!mcEnabled);
+			toggle.onChange(async (value) => {
+				this.settings.enableMetadataCleanupAtMidnight = value;
+				await this.saveSettings();
+			});
+		});
+		this.applySubToggleDisabledStyle(mcAtMidnight, !mcEnabled);
+
+		// Manual action button: Run on All Files in Vault
+		new Setting(containerEl)
+			.setName("Run on All Files in Vault")
+			.setDesc(
+				"Run metadata cleanup across every Markdown file in your vault now. This runs even if the automatic toggle above is disabled."
+			)
+			.addButton((btn) =>
+				btn
+					.setCta()
+					.setButtonText("Run Metadata Cleanup")
+					.onClick(async () => {
+						try {
+							// @ts-ignore
+							this.app.workspace.trigger(
+								"agile-metadata-cleanup-all"
+							);
+							new Notice(
+								"Started metadata cleanup across vault…"
+							);
+						} catch {
+							new Notice(
+								"Could not start metadata cleanup. Please try again."
 							);
 						}
 					})
