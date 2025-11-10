@@ -204,7 +204,7 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 			const title = params?.title?.trim() ?? "";
 			const details = params?.details?.trim() ?? "";
 			const main = title
-				? `<strong>${emojis.product} ${wrapVar("title",title)}${
+				? `<strong>${emojis.product} ${wrapVar("title", title)}${
 						details ? ":" : ""
 				  }</strong>`
 				: `<strong>${emojis.product} </strong>`;
@@ -712,10 +712,10 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 				text: `<strong>Paid in Full ${wrapVar(
 					"currency",
 					currency
-				)}${totalAmount} / ${wrapVar(
-					"currency",
-					currency
-				)}${wrapVar("totalAmount", totalAmount)}</strong>`,
+				)}${totalAmount} / ${wrapVar("currency", currency)}${wrapVar(
+					"totalAmount",
+					totalAmount
+				)}</strong>`,
 				bg: colors.crmPaidFull,
 			});
 			return wrapTemplate("crm.paidInFull", inner, {
@@ -954,21 +954,40 @@ export const Members: Record<string, TemplateDefinition<any>> = {
 };
 
 /**
- * Prioritization — lists only
+ * Prioritization
  */
 export const Prioritization: Record<string, TemplateDefinition<any>> = {
 	kanoDissatisfier: {
 		orderTag: "priority",
 		id: "prio.kano.dissatisfier",
 		label: "Kano - Dissatisfier",
-		rules: { allowedOn: ["list"] },
-		render() {
-			const inner = chip({
+		hasParams: true,
+		paramsSchema: {
+			titles: {
+				create: "Kano - Dissatisfier",
+				edit: "Edit Dissatisfier",
+			},
+			description:
+				"Optionally add a short description that will appear after the header.",
+			fields: [
+				{
+					name: "details",
+					label: "Description",
+					type: "textarea",
+					placeholder: "Optional description...",
+				},
+			],
+		},
+		rules: { allowedOn: ["task"] },
+		render(params?: { details?: string }) {
+			const details = (params?.details ?? "").trim();
+			const chipHtml = chip({
 				id: "kano-dissatisfier",
-				text: `<strong>${emojis.kanoLeft} Kano - Dissatisfier</strong>`,
+				text: `<strong>${emojis.kanoLeft} Kano - Dissatisfier${details && `:`}</strong>`,
 				bg: colors.kanoDissatisfier,
 			});
-			return wrapTemplate("prio.kano.dissatisfier", inner, {
+			const suffix = details ? ` ${wrapVar("details", details)}` : "";
+			return wrapTemplate("prio.kano.dissatisfier", chipHtml + suffix, {
 				orderTag: this.orderTag,
 			});
 		},
@@ -976,14 +995,32 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 	kanoIndifferent: {
 		id: "prio.kano.indifferent",
 		label: "Kano - Indifferent",
-		rules: { allowedOn: ["list"] },
-		render() {
-			const inner = chip({
+		hasParams: true,
+		paramsSchema: {
+			titles: { create: "Kano - Indifferent", edit: "Edit Indifferent" },
+			description:
+				"Optionally add a short description that will appear after the header.",
+			fields: [
+				{
+					name: "details",
+					label: "Description",
+					type: "textarea",
+					placeholder: "Optional description...",
+				},
+			],
+		},
+		rules: { allowedOn: ["task"] },
+		render(params?: { details?: string }) {
+			const details = (params?.details ?? "").trim();
+			const chipHtml = chip({
 				id: "kano-indifferent",
-				text: `<strong>${emojis.kanoIndiff} Kano - Indifferent</strong>`,
+				text: `<strong>${emojis.kanoIndiff} Kano - Indifferent${
+					details && `:`
+				}</strong>`,
 				bg: colors.kanoIndifferent,
 			});
-			return wrapTemplate("prio.kano.indifferent", inner, {
+			const suffix = details ? ` ${wrapVar("details", details)}` : "";
+			return wrapTemplate("prio.kano.indifferent", chipHtml + suffix, {
 				orderTag: this.orderTag,
 			});
 		},
@@ -991,44 +1028,105 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 	kanoBasic: {
 		id: "prio.kano.basic",
 		label: "Kano - Basic",
-		rules: { allowedOn: ["list"] },
-		render() {
-			const inner = chip({
+		hasParams: true,
+		paramsSchema: {
+			titles: { create: "Kano - Basic", edit: "Edit Basic" },
+			description:
+				"Optionally add a short description that will appear after the header.",
+			fields: [
+				{
+					name: "details",
+					label: "Description",
+					type: "textarea",
+					placeholder: "Description...",
+				},
+			],
+		},
+		rules: { allowedOn: ["task"] },
+		render(params?: { details?: string }) {
+			const details = (params?.details ?? "").trim();
+			const chipHtml = chip({
 				id: "kano-basic",
-				text: `<strong>${emojis.kanoBasic} Kano - Basic</strong>`,
+				text: `<strong>${emojis.kanoBasic} Kano - Basic${
+					details && `:`
+				}</strong>`,
 				bg: colors.kanoBasic,
 			});
-			return wrapTemplate("prio.kano.basic", inner, {
+			const suffix = details ? ` ${wrapVar("details", details)}` : "";
+			return wrapTemplate("prio.kano.basic", chipHtml + suffix, {
 				orderTag: this.orderTag,
 			});
 		},
 	},
 	kanoPerformantHeader: {
 		id: "prio.kano.performantHeader",
-		label: "Kano - Performant - Header",
-		rules: { allowedOn: ["list"] },
-		render() {
-			const inner = chip({
+		label: "Kano - Performant",
+		hasParams: true,
+		paramsSchema: {
+			titles: {
+				create: "Kano - Performant",
+				edit: "Edit Performant",
+			},
+			description:
+				"Optionally add a short description that will appear after the header.",
+			fields: [
+				{
+					name: "details",
+					label: "Description",
+					type: "textarea",
+					placeholder: "Description...",
+				},
+			],
+		},
+		rules: { allowedOn: ["task"] },
+		render(params?: { details?: string }) {
+			const details = (params?.details ?? "").trim();
+			const chipHtml = chip({
 				id: "kano-performant-header",
-				text: `<strong>${emojis.kanoPerf} Kano - Performant</strong>`,
+				text: `<strong>${emojis.kanoPerf} Kano - Performant${
+					details && `:`
+				}</strong>`,
 				bg: colors.kanoPerformant,
 			});
-			return wrapTemplate("prio.kano.performantHeader", inner, {
-				orderTag: this.orderTag,
-			});
+			const suffix = details ? ` ${wrapVar("details", details)}` : "";
+			return wrapTemplate(
+				"prio.kano.performantHeader",
+				chipHtml + suffix,
+				{
+					orderTag: this.orderTag,
+				}
+			);
 		},
 	},
 	kanoDelighter: {
 		id: "prio.kano.delighter",
 		label: "Kano - Delighter",
-		rules: { allowedOn: ["list"] },
-		render() {
-			const inner = chip({
+		hasParams: true,
+		paramsSchema: {
+			titles: { create: "Kano - Delighter", edit: "Edit Delighter" },
+			description:
+				"Optionally add a short description that will appear after the header.",
+			fields: [
+				{
+					name: "details",
+					label: "Description",
+					type: "textarea",
+					placeholder: "Description...",
+				},
+			],
+		},
+		rules: { allowedOn: ["task"] },
+		render(params?: { details?: string }) {
+			const details = (params?.details ?? "").trim();
+			const chipHtml = chip({
 				id: "kano-delighter",
-				text: `<strong>${emojis.kanoDelight} Kano - Delighter</strong>`,
+				text: `<strong>${emojis.kanoDelight} Kano - Delighter${
+					details && `:`
+				}</strong>`,
 				bg: colors.kanoDelighter,
 			});
-			return wrapTemplate("prio.kano.delighter", inner, {
+			const suffix = details ? ` ${wrapVar("details", details)}` : "";
+			return wrapTemplate("prio.kano.delighter", chipHtml + suffix, {
 				orderTag: this.orderTag,
 			});
 		},
@@ -1036,14 +1134,30 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 	moscowCould: {
 		id: "prio.moscow.could",
 		label: "MoSCoW - Could Have",
-		rules: { allowedOn: ["list"] },
-		render() {
-			const inner = chip({
+		hasParams: true,
+		paramsSchema: {
+			titles: { create: "MoSCoW - Could Have", edit: "Edit Could Have" },
+			description:
+				"Optionally add a short description that will appear after the header.",
+			fields: [
+				{
+					name: "details",
+					label: "Description",
+					type: "textarea",
+					placeholder: "Description...",
+				},
+			],
+		},
+		rules: { allowedOn: ["task"] },
+		render(params?: { details?: string }) {
+			const details = (params?.details ?? "").trim();
+			const chipHtml = chip({
 				id: "moscow-could",
-				text: `<strong>❓ Could Have</strong>`,
+				text: `<strong>❓ Could Have${details && `:`}</strong>`,
 				bg: colors.moscowCould,
 			});
-			return wrapTemplate("prio.moscow.could", inner, {
+			const suffix = details ? ` ${wrapVar("details", details)}` : "";
+			return wrapTemplate("prio.moscow.could", chipHtml + suffix, {
 				orderTag: this.orderTag,
 			});
 		},
@@ -1051,14 +1165,30 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 	moscowMust: {
 		id: "prio.moscow.must",
 		label: "MoSCoW - Must Have",
-		rules: { allowedOn: ["list"] },
-		render() {
-			const inner = chip({
+		hasParams: true,
+		paramsSchema: {
+			titles: { create: "MoSCoW - Must Have", edit: "Edit Must Have" },
+			description:
+				"Optionally add a short description that will appear after the header.",
+			fields: [
+				{
+					name: "details",
+					label: "Description",
+					type: "textarea",
+					placeholder: "Description...",
+				},
+			],
+		},
+		rules: { allowedOn: ["task"] },
+		render(params?: { details?: string }) {
+			const details = (params?.details ?? "").trim();
+			const chipHtml = chip({
 				id: "moscow-must",
-				text: `<strong>❗Must-Have</strong>`,
+				text: `<strong>❗Must-Have${details && `:`}</strong>`,
 				bg: colors.moscowMust,
 			});
-			return wrapTemplate("prio.moscow.must", inner, {
+			const suffix = details ? ` ${wrapVar("details", details)}` : "";
+			return wrapTemplate("prio.moscow.must", chipHtml + suffix, {
 				orderTag: this.orderTag,
 			});
 		},
@@ -1066,14 +1196,33 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 	moscowShould: {
 		id: "prio.moscow.should",
 		label: "MoSCoW - Should Have",
-		rules: { allowedOn: ["list"] },
-		render() {
-			const inner = chip({
+		hasParams: true,
+		paramsSchema: {
+			titles: {
+				create: "MoSCoW - Should Have",
+				edit: "Edit Should Have",
+			},
+			description:
+				"Optionally add a short description that will appear after the header.",
+			fields: [
+				{
+					name: "details",
+					label: "Description",
+					type: "textarea",
+					placeholder: "Description...",
+				},
+			],
+		},
+		rules: { allowedOn: ["task"] },
+		render(params?: { details?: string }) {
+			const details = (params?.details ?? "").trim();
+			const chipHtml = chip({
 				id: "moscow-should",
-				text: `<strong>🎁 Should Have</strong>`,
+				text: `<strong>🎁 Should Have${details && `:`}</strong>`,
 				bg: colors.moscowShould,
 			});
-			return wrapTemplate("prio.moscow.should", inner, {
+			const suffix = details ? ` ${wrapVar("details", details)}` : "";
+			return wrapTemplate("prio.moscow.should", chipHtml + suffix, {
 				orderTag: this.orderTag,
 			});
 		},
@@ -1081,14 +1230,33 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 	moscowWont: {
 		id: "prio.moscow.wont",
 		label: "MoSCoW - Won’t Have",
-		rules: { allowedOn: ["list"] },
-		render() {
-			const inner = chip({
+		hasParams: true,
+		paramsSchema: {
+			titles: {
+				create: "MoSCoW - Won’t Have",
+				edit: "Edit Won’t Have",
+			},
+			description:
+				"Optionally add a short description that will appear after the header.",
+			fields: [
+				{
+					name: "details",
+					label: "Description",
+					type: "textarea",
+					placeholder: "Description...",
+				},
+			],
+		},
+		rules: { allowedOn: ["task"] },
+		render(params?: { details?: string }) {
+			const details = (params?.details ?? "").trim();
+			const chipHtml = chip({
 				id: "moscow-wont",
-				text: `<strong>❌ Won’t Have</strong>`,
+				text: `<strong>❌ Won’t Have${details && `:`}</strong>`,
 				bg: colors.moscowWont,
 			});
-			return wrapTemplate("prio.moscow.wont", inner, {
+			const suffix = details ? ` ${wrapVar("details", details)}` : "";
+			return wrapTemplate("prio.moscow.wont", chipHtml + suffix, {
 				orderTag: this.orderTag,
 			});
 		},
