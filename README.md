@@ -73,7 +73,7 @@ Agile Obsidian is a plugin that transforms your Obsidian vault into a powerful, 
 | :--- | :--- | :--- | :--- |
 | Inbox Zero Task Snooze | Inbox zero functionality; delay tasks (hide from dashboard) until a specified date | Agile Dashboard, task metadata | Stable |
 | Task Assignment Cascade | Tasks may be implicitly assigned e.g., epic under assigned initiative. Maintains consistency when assignments are changed. | Automatic (on assignment change) | Stable |
-| Task Close Cascade | Completed or cancels nested & deeply nested subtasks when the parent is cancelled | Automatic (on task close) | Stable |
+| Task Close Cascade | When closing a parent task with incomplete subtasks, shows a floating toggle dialog (default OFF) to confirm cascading closure; only affects incomplete checkbox tasks. | Automatic (on task close, with dialog) | Stable |
 | Task Close Dates | Adds completed & cancelled data metadata on task close (complete or cancel) | Automatic (on task close) | Stable |
 | Agile Task Date Manager | Adds UI menu with date picker to manage start, scheduled, due & target dates | Command, Agile Dashboard, UI Menu | Experimental |
 | Agile Task Statuses | Additional preset task statuses & custom task checkboxes [ ] → [/] → [x] → [-] | Automatic (click to advance status, long-click to cancel) | Stable |
@@ -127,6 +127,7 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
 - **UX Shortcuts Module:** Handles editor-level interactions like double-enter to repeat templates and right-click context menu enhancements for template management.
 - **Settings Root Module:** Manages the loading, saving, and UI for the plugin's settings tab.
 - **Task Metadata Cleanup:** A service that periodically scans task-indexed lines across the vault to remove expired snooze markers (individual, global, snooze-all) and deprecated metadata. Configurable via settings toggles for on-start and midnight runs; supports manual vault-wide execution.
+- **Task Close Cascade:** A service that detects parent task closures and optionally cascades to incomplete subtasks via a floating confirmation dialog. Integrates with task close dates and status sequencing for consistent behavior.
 
 #### Data flow and major sequences
 * **User Assigns a Task:**
@@ -163,6 +164,14 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
     2. At local midnight (if enabled and Obsidian open): Same vault-wide scan, then schedules daily repeat.
     3. Manual trigger (via settings button): Fires "agile-metadata-cleanup-all" event; runs immediately regardless of toggles, with progress notice for large vaults.
     4. Settings changes (e.g., toggle off) immediately cancel/reschedule timers; only affects task lines from index (no full vault scan).
+
+* **User Closes a Parent Task with Subtasks:**
+    1. User clicks to complete (or long-clicks to cancel) a parent task with incomplete subtasks.
+    2. Task Close Manager adds the date marker (✅ or ❌ with today's date) and emits a "date-added" event.
+    3. Task Close Cascade detects the closure via observer or event; checks for incomplete descendants.
+    4. If incomplete subtasks exist, a floating dialog appears with a toggle (default OFF) asking to cascade.
+    5. If user toggles ON and confirms, cascade applies the same status/date to incomplete subtasks; otherwise, only the parent closes.
+    6. Obsidian modify event fires; Task Indexer re-parses, updating the dashboard.
 
 #### Storage schemas/models
 - **Settings:** Stored in `[VAULT]/.obsidian/plugins/agile-obsidian/data.json`.
@@ -533,6 +542,45 @@ Formatting is orchestrated per active editor view and coalesced/debounced for pe
   - Handles user-specific (💤⬇️<span>user</span> date) and global markers; preserves EOL whitespace.
   - Timers (setTimeout for midnight, setInterval for daily) reschedule on settings changes via "agile-settings-changed" event.
   - Errors swallowed silently; manual trigger via workspace event "agile-metadata-cleanup-all" with Notice feedback.
+
+#### Feature: Task Close Cascade
+
+- **What you can do:**
+  - When completing (click) or cancelling (long-click) a parent task with nested or deeply nested subtasks, a floating confirmation dialog appears if any incomplete checkbox subtasks would be affected.
+  - The dialog includes a toggle (default OFF) labeled "Also close all incomplete subtasks"; toggle ON to cascade the parent's status and date to incomplete descendants.
+  - If OFF or dismissed, only the parent task is closed—no changes to subtasks.
+  - The dialog only shows if there's at least one incomplete subtask; if all subtasks are already closed or there are no subtasks, closure happens normally without prompting.
+  - Works in both editor views and headless (file modify) scenarios; de-duplicates prompts to avoid double dialogs.
+
+- **When to use this feature:**
+  - Use this to control cascading closures in hierarchical task structures (e.g., Epics with Stories). It's ideal for avoiding accidental bulk closures while providing an opt-in for batch completion.
+
+- **Use Cases and Guided Workflows:**
+  - **Use Case U1: Complete an Epic with Incomplete Stories**
+    - **Prerequisites:** A parent task with indented, incomplete subtasks.
+    - **Step-by-step:**
+      1. Click the task's checkbox to complete it (or long-click to cancel).
+      2. Task Close Manager adds the ✅ date marker.
+      3. If incomplete subtasks exist, a centered floating dialog appears with description and toggle (default OFF).
+      4. Toggle ON if you want to close all incomplete subtasks with the same date; click "Apply" to confirm.
+      5. If OFF or "Dismiss," only the parent closes. Subtasks remain open.
+    - **Verification:** With toggle ON, subtasks update to [x] or [-] with the parent's date; dashboard reflects changes. No dialog if all subtasks were already closed.
+  - **Use Case U2: Close Without Cascade in Headless Mode**
+    - **Prerequisites:** Non-active file with parent/subtask structure; use external editor or command to toggle.
+    - **Step-by-step:**
+      1. Modify the parent task status via external means (e.g., another plugin toggles to [x]).
+      2. On file save, the observer detects the change and shows the dialog if applicable.
+      3. Toggle OFF to preserve subtasks; the file updates only for the parent.
+    - **Verification:** Subtasks unchanged; no double prompts even if date-added event fires.
+
+- **Configuration you're likely to touch:**
+  - No user configuration—enabled by default. Dialog styling uses Obsidian theme variables for consistency; dismisses on Escape, outside click, or Enter (respects toggle state).
+
+- **Implementation notes for maintainers:**
+  - Integrates with Task Close Manager (listens to "date-added" events and editor-change observer).
+  - Uses indentation to detect descendants; only targets incomplete checkbox tasks ([ ] or [/]).
+  - De-duping via per-(file:line) timestamp (1.5s window) prevents duplicates across paths.
+  - Headless support via vault.modify; preserves cursor in active editors.
 
 ### Configuration/Settings Reference
 
