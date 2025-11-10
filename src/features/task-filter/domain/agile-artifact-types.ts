@@ -48,6 +48,12 @@ function inferTypeFromKey(key: string): AgileArtifactType | undefined {
 
 	// Most specific first
 
+	// Product
+	// Recognize agile.product style keys as a distinct non-task artifact
+	if (has("agile.product") || has("agileproduct")) {
+		return "product";
+	}
+
 	// Personal Learning Initiative -> canonical "initiative"
 	if (
 		has("personallearninginitiative") ||
