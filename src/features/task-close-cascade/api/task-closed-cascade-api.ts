@@ -38,6 +38,10 @@ export interface CascadeError {
 	taskId?: TaskId;
 }
 
+/**
+ * Public facade for closed cascade orchestration (engine provided by DI).
+ * This API is transport-agnostic and wiring-agnostic.
+ */
 export interface ClosedCascadeAPI {
 	runCascade(
 		options?: CascadeOptions & { rootTaskId?: TaskId }
@@ -159,9 +163,5 @@ export function createTaskClosedCascadeAPI(deps: {
 		});
 	}
 
-	return {
-		runCascade,
-		markClosedAndCascade,
-		normalizeAll,
-	};
+	return { runCascade, markClosedAndCascade, normalizeAll };
 }
