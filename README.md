@@ -220,6 +220,7 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
   - Easily remove inserted templates via right-click context menu for quick iteration without disrupting your editing flow.
   - Leverage the templating engine and params editor for seamless parameter editing, schema modals, and JSON workflows with type-safe integration.
   - Sequence templates through predefined workflows (e.g., CRM stages) via click menus; map variables and collect additional params as needed.
+  - Add optional descriptions to prioritization headers (e.g., Kano - Basic, MoSCoW - Must Have) via the params modal; descriptions appear after the chip for editable context (e.g., "Kano - Basic: Enhances core usability").
 
 - **When to use this feature:**
   - Use this whenever you are creating a new piece of work that fits an Agile concept. Instead of typing out a title manually, use a template to get the correct formatting and icon automatically. Double-click to edit existing templates, use right-click removal for rapid prototyping or corrections, and click for sequencing to advance multi-stage artifacts.
@@ -237,8 +238,9 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
       7. To edit the Initiative title later, double-click directly on the template chip to open the edit modal with pre-filled values. Make changes and submit to update the source line.
       8. If you need to remove an incorrectly inserted template (e.g., wrong type), right-click directly on the template chip (the rendered span) and select "Remove Template" from the context menu. Your cursor will remain in place relative to the removal.
       9. For multi-stage progression (e.g., Initiative → Epic → Story), click the wrapper to open a sequencing menu; select the next template to map variables and overwrite seamlessly.
-    - **Verification:** Your note will contain a nested structure of tasks with formatted, clickable chips. Double-clicking a chip re-opens the modal to edit its parameters. Removed templates leave the task line clean, with preserved indentation and cursor position. Sequencing advances the workflow without data loss.
-
+      10. For prioritization, insert a header like `/kano-basic` and optionally add a description in the modal (e.g., "Focus on login flow"); it renders as `Kano - Basic: Focus on login flow` for contextual detail.
+    - **Verification:** Your note will contain a nested structure of tasks with formatted, clickable chips. Double-clicking a chip re-opens the modal to edit its parameters. Removed templates leave the task line clean, with preserved indentation and cursor position. Sequencing advances the workflow without data loss. Prioritization descriptions are editable via double-click and appear inline after the header chip.
+    
 #### Feature: Template Sequencing
 
 - **What you can do:**
