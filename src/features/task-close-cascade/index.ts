@@ -1,10 +1,10 @@
 // Public entry point for the task-closed-cascade feature.
-// Expose only the safe API surface; block deep imports from app/ internals.
+// Expose only the safe API surface; block deep imports from app internals.
 
 export {
 	wireTaskClosedCascade,
 	wireTaskClosedCascadeObserver,
-} from "./app/closed-cascade";
+} from "./app/wiring";
 
 // Thin public API facade (wiring-agnostic) for dashboards and other modules
 export { createTaskClosedCascadeAPI } from "./api/task-closed-cascade-api";

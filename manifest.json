@@ -1,7 +1,7 @@
 {
 	"id": "agile-project-management",
 	"name": "Agile Project Management",
-	"version": "1.1.1",
+	"version": "1.1.2",
 	"minAppVersion": "0.15.0",
 	"description": "Turns your vault into a powerful collaborative Agile productivity hub inspired by ClickUp, Jira, and Notion.",
 	"author": "danrfletcher",

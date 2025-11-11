@@ -163,3 +163,23 @@ export function findCurrentLineIndex(
 
 	return -1;
 }
+
+/**
+ * Replace the status character inside a Markdown task checkbox token on a list line.
+ * Normalizes to no inner spaces: "[x]" or "[-]".
+ * Returns the original line if it is not a list task with a checkbox.
+ */
+export function setCheckboxStatusChar(
+	line: string,
+	statusChar: "x" | "-"
+): string {
+	// Match: prefix (indent + list marker + space + "["), any inner content with spaces, closing "]", then the rest.
+	const m = line.match(
+		/^(\s*(?:[-*+]|\d+[.)])\s*\[)\s*([^\]]?)\s*(\])(.*)$/
+	);
+	if (!m) return line;
+	const prefix = m[1] ?? "";
+	const suffixBracket = m[3] ?? "]";
+	const tail = m[4] ?? "";
+	return `${prefix}${statusChar}${suffixBracket}${tail}`;
+}

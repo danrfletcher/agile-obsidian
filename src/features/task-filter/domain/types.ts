@@ -16,6 +16,7 @@ export type AgileArtifactType =
 	| "story"
 	| "okr"
 	| "recurring-responsibility"
+	| "product"
 	| "task";
 
 /**
