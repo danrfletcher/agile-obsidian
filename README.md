@@ -226,6 +226,7 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
   - Add metadata like version numbers, PR links, or status tags (e.g., "Blocked," "Review").
   - Ensure consistent formatting for all metadata.
   - Double-click on an inserted template wrapper to edit its parameters via a pre-populated modal (e.g., update an Initiative title).
+  - In the schema-based params modal (for insertion or editing), press Enter in any single-line field (inputs or selects) to submit and insert/update the template once all required fields are filled—textareas are excluded to preserve newline insertion, and blockSelect respects dropdown handling.
   - Easily remove inserted templates via right-click context menu for quick iteration without disrupting your editing flow.
   - Leverage the templating engine and params editor for seamless parameter editing, schema modals, and JSON workflows with type-safe integration.
   - Sequence templates through predefined workflows (e.g., CRM stages) via click menus; map variables and collect additional params as needed.
@@ -240,16 +241,16 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
     - **Step-by-step:**
       1. Create a new task line: `- [ ]`
       2. With the cursor on that line, type `/initiative` and press Enter, or run `Agile Obsidian: Insert Template` from the Command Palette and select "Initiative".
-      3. A modal will appear asking for the "Initiative Title." Enter your project name (e.g., "Q4 Website Redesign") and submit.
+      3. A modal will appear asking for the "Initiative Title." Enter your project name (e.g., "Q4 Website Redesign") and press Enter (or click "Insert") to submit.
       4. A formatted chip `🎖️ Initiative: Q4 Website Redesign` will be inserted.
       5. To create a child Epic, create a new indented task below it.
-      6. On the new line, type `/epic`, provide a title, and submit.
-      7. To edit the Initiative title later, double-click directly on the template chip to open the edit modal with pre-filled values. Make changes and submit to update the source line.
+      6. On the new line, type `/epic`, provide a title, and press Enter (or submit) to insert.
+      7. To edit the Initiative title later, double-click directly on the template chip to open the edit modal with pre-filled values. Make changes and press Enter in the field (or click "Update") to apply.
       8. If you need to remove an incorrectly inserted template (e.g., wrong type), right-click directly on the template chip (the rendered span) and select "Remove Template" from the context menu. Your cursor will remain in place relative to the removal.
       9. For multi-stage progression (e.g., Initiative → Epic → Story), click the wrapper to open a sequencing menu; select the next template to map variables and overwrite seamlessly.
       10. For prioritization, insert a header like `/kano-basic` and optionally add a description in the modal (e.g., "Focus on login flow"); it renders as `Kano - Basic: Focus on login flow` for contextual detail.
-    - **Verification:** Your note will contain a nested structure of tasks with formatted, clickable chips. Double-clicking a chip re-opens the modal to edit its parameters. Removed templates leave the task line clean, with preserved indentation and cursor position. Sequencing advances the workflow without data loss. Prioritization descriptions are editable via double-click and appear inline after the header chip.
-    
+    - **Verification:** Your note will contain a nested structure of tasks with formatted, clickable chips. Double-clicking a chip re-opens the modal to edit its parameters. Removed templates leave the task line clean, with preserved indentation and cursor position. Sequencing advances the workflow without data loss. Prioritization descriptions are editable via double-click and appear inline after the header chip. Enter key submission works in single-line fields of the modal, triggering validation and insertion/editing as expected.
+
 #### Feature: Template Sequencing
 
 - **What you can do:**
