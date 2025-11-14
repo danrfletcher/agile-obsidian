@@ -737,9 +737,12 @@ export async function showSchemaModal(
 				const okBtn = btnRow.createEl("button", {
 					text: isEdit ? "Update" : "Insert",
 				});
-				const cancelBtn = btnRow.createEl("button", { text: "Cancel" });
+				const cancelBtn = btnRow.createEl("button", {
+					text: "Cancel",
+				});
 
-				okBtn.addEventListener("click", () => {
+				// Shared OK handler so both click and Enter reuse the same logic
+				const handleOk = () => {
 					if (this.resolved) return;
 					const values: Record<string, unknown> = {};
 					let valid = true;
@@ -776,6 +779,10 @@ export async function showSchemaModal(
 					this.resolved = true;
 					this.close();
 					resolve(values);
+				};
+
+				okBtn.addEventListener("click", () => {
+					handleOk();
 				});
 
 				cancelBtn.addEventListener("click", () => {
@@ -784,6 +791,39 @@ export async function showSchemaModal(
 					this.close();
 					resolve(undefined);
 				});
+
+				// Allow Enter to submit when focused on any single-line field
+				const handleEnterKey = (evt: KeyboardEvent) => {
+					if (evt.key !== "Enter") return;
+					// Avoid interfering with IME composition or modifier shortcuts
+					if (
+						(evt as any).isComposing ||
+						evt.shiftKey ||
+						evt.altKey ||
+						evt.metaKey ||
+						evt.ctrlKey
+					) {
+						return;
+					}
+					// If a prior handler (e.g., blockSelect suggestions) already handled Enter,
+					// don't treat it as submit.
+					if (evt.defaultPrevented) return;
+
+					const target = evt.target as HTMLElement | null;
+					if (!target) return;
+
+					const tag = target.tagName.toLowerCase();
+					// Textareas should keep Enter as newline, not submit
+					if (tag === "textarea") return;
+
+					evt.preventDefault();
+					handleOk();
+				};
+
+				// Attach Enter handler to all input/select controls in this modal
+				for (const el of Object.values(this.inputs)) {
+					el.addEventListener("keydown", handleEnterKey);
+				}
 			}
 
 			onClose(): void {
