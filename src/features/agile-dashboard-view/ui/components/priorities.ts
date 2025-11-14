@@ -4,13 +4,14 @@ import { renderTaskTree } from "./task-renderer";
 import {
 	activeForMember,
 	isCancelled,
-	isInProgress,
-	isCompleted,
 	isSnoozed,
 	getAgileArtifactType,
 } from "@features/task-filter";
 import { isRelevantToday } from "@features/task-date-manager";
-import { stripListItems } from "@features/task-tree-builder";
+import {
+	buildPrunedMergedTrees,
+} from "@features/task-tree-builder";
+import { isShownByParams } from "../utils/filters";
 import { attachSectionFolding } from "@features/task-tree-fold";
 
 type RegisterDomEvent = (
@@ -21,9 +22,19 @@ type RegisterDomEvent = (
 ) => void;
 
 /**
-Process and render the Priorities section (time-relevant task trees).
-New: Enable folding on bottom-level items to allow further subtasks expansion.
-*/
+ * Process and render the Priorities section.
+ *
+ * New behavior:
+ * - Still starts from "priority root" tasks (open, relevant today, non-snoozed, etc.).
+ * - Defines the "priority area" as those roots plus all of their nested/deeply nested children.
+ * - Within that area, selects only tasks:
+ *   - Visible under current TaskParams (isShownByParams);
+ *   - Directly assigned/active for the selected member (activeForMember).
+ * - Uses buildPrunedMergedTrees to build pruned/merged trees from those tasks.
+ * - Clips the merged result back at the original priority roots so we only show
+ *   trees rooted at the priority roots (no ancestors above).
+ * - Enables folding on those priority trees.
+ */
 export function processAndRenderPriorities(
 	container: HTMLElement,
 	currentTasks: TaskItem[],
@@ -36,47 +47,12 @@ export function processAndRenderPriorities(
 	registerDomEvent?: RegisterDomEvent
 ) {
 	const { inProgress, completed, sleeping, cancelled } = taskParams;
+	void inProgress;
+	void completed;
+	void sleeping;
+	void cancelled;
 
-	const buildPriorityTree = (
-		task: TaskItem,
-		isRoot = false
-	): TaskItem | null => {
-		if (isSnoozed(task, taskMap, selectedAlias)) return null;
-
-		const allowedMarkers = ["🚀", "📦", "⚡", "⭐", "💝", "⬇️", "🪣"];
-		const disallowedMarkers = ["❌", "🛠️", "📂", "🏆", "📝", "🎖️"];
-
-		if (disallowedMarkers.some((m) => task.text.includes(m))) return null;
-		if (
-			getAgileArtifactType(task) === "learning-initiative" ||
-			getAgileArtifactType(task) === "learning-epic"
-		)
-			return null;
-
-		const hasAllowedMarker = allowedMarkers.some((m) =>
-			task.text.includes(m)
-		);
-		const hasAllowedStatus = task.status === "d" || task.status === "A";
-
-		if (!isRoot && !hasAllowedMarker && !hasAllowedStatus) return null;
-
-		const children = (task.children || [])
-			.map((child: TaskItem) => buildPriorityTree(child, false))
-			.filter((c): c is TaskItem => c !== null);
-
-		if (task.task === false) {
-			return children.length > 0 ? { ...task, children } : null;
-		}
-
-		const hasAllowed = hasAllowedMarker || hasAllowedStatus;
-		const assignedToMe = activeForMember(task, status, selectedAlias);
-		if (!hasAllowed && children.length === 0 && !assignedToMe) {
-			return null;
-		}
-
-		return { ...task, children };
-	};
-
+	// 1) Identify "priority root" tasks (same top-level criteria as before)
 	const priorityRoots = currentTasks.filter(
 		(task: TaskItem) =>
 			task.status === "O" &&
@@ -90,70 +66,170 @@ export function processAndRenderPriorities(
 			getAgileArtifactType(task) !== "recurring-responsibility"
 	);
 
-	const rawTreesPriorities = priorityRoots
-		.map((task: TaskItem) => buildPriorityTree(task, true))
-		.filter((tree): tree is TaskItem => tree !== null);
+	if (priorityRoots.length === 0 || !status) {
+		// No priority roots, or inactive view: nothing to render.
+		return;
+	}
 
-	const prunePriorities = (
-		node: TaskItem,
-		inherited = false
-	): TaskItem | null => {
-		const assignedToSelected = activeForMember(node, status, selectedAlias);
-		const isInherited = inherited || assignedToSelected;
-		const children = (node.children || [])
-			.map((child: TaskItem) => prunePriorities(child, isInherited))
-			.filter((c): c is TaskItem => c !== null);
-		if (isInherited || children.length > 0) {
-			return { ...node, children };
+	// 2) Build the "priority area" = all descendants of all priority roots
+	const priorityRootIds = new Set<string>();
+	for (const root of priorityRoots) {
+		if (root._uniqueId) priorityRootIds.add(root._uniqueId);
+	}
+
+	const priorityAreaIds = new Set<string>();
+	for (const rootId of priorityRootIds) {
+		if (!rootId) continue;
+		const queue: string[] = [rootId];
+		while (queue.length > 0) {
+			const id = queue.shift()!;
+			if (!id || priorityAreaIds.has(id)) continue;
+			priorityAreaIds.add(id);
+
+			const children = childrenMap.get(id) || [];
+			for (const child of children) {
+				const cid = child._uniqueId;
+				if (cid && !priorityAreaIds.has(cid)) {
+					queue.push(cid);
+				}
+			}
 		}
-		return null;
-	};
+	}
 
-	const priorityTasks = rawTreesPriorities
-		.map((tree: TaskItem) => prunePriorities(tree))
-		.filter((tree): tree is TaskItem => tree !== null)
-		.filter((tree: TaskItem) => {
-			if (!selectedAlias) return true;
-			const isSelected = activeForMember(tree, status, selectedAlias);
-			return isSelected || (tree.children?.length ?? 0) > 0;
-		});
+	if (priorityAreaIds.size === 0) {
+		return;
+	}
 
-	const strippedPriorityTasks = stripListItems(priorityTasks);
-
-	const filteredPriorityTasks = strippedPriorityTasks.filter((task) => {
-		return (
-			(inProgress && isInProgress(task, taskMap, selectedAlias)) ||
-			(completed && isCompleted(task)) ||
-			(sleeping && isSnoozed(task, taskMap, selectedAlias)) ||
-			(cancelled && isCancelled(task))
-		);
+	// 3) Within the priority area, pick tasks that are visible under current TaskParams
+	//    (same visibility logic used by artifacts.ts via isShownByParams)
+	const visiblePriorityAreaTasks = currentTasks.filter((task) => {
+		const id = task._uniqueId ?? "";
+		if (!id) return false;
+		if (!priorityAreaIds.has(id)) return false;
+		return isShownByParams(task, taskMap, selectedAlias, taskParams);
 	});
 
-	if (filteredPriorityTasks.length > 0 && status) {
-		container.createEl("h2", { text: "📂 Priorities" });
-		renderTaskTree(
-			filteredPriorityTasks,
-			container,
-			app,
-			0,
-			false,
-			"priorities",
-			selectedAlias
-		);
+	// 4) From those, select tasks directly assigned/active for the selected member
+	//    (mirrors artifacts.ts behavior for Tasks/Stories/Epics)
+	const directPriorityAssigned = visiblePriorityAreaTasks.filter((task) =>
+		activeForMember(task, status, selectedAlias)
+	);
 
-		// Add folding for bottom-level items
-		try {
-			attachSectionFolding(container, {
-				app,
-				taskMap,
-				childrenMap,
-				selectedAlias,
-				renderTaskTree,
-				registerDomEvent,
-				sectionName: "priorities",
-			});
-		} catch {
-			/* ignore */
+	if (directPriorityAssigned.length === 0) {
+		// No directly assigned tasks under priority roots → nothing to show.
+		return;
+	}
+
+	// 5) Build pruned/merged trees from the directly-assigned tasks in the priority area.
+	//    We pass childrenMap so tree-builder has full child relationships.
+	const mergedTrees = buildPrunedMergedTrees(
+		directPriorityAssigned,
+		taskMap,
+		undefined,
+		childrenMap
+	);
+
+	if (!mergedTrees || mergedTrees.length === 0) {
+		return;
+	}
+
+	// 6) Clip/anchor the merged result at the original priority roots.
+	//    We traverse the merged trees, and any node whose _uniqueId is in priorityRootIds
+	//    becomes a root of a priority tree. We dedupe by _uniqueId and preserve the
+	//    original priorityRoots order where possible.
+	const rootsById = new Map<string, TaskItem>();
+
+	const collectPriorityRootSubtrees = (node: TaskItem) => {
+		const id = node._uniqueId ?? "";
+		const isPriorityRoot = id && priorityRootIds.has(id);
+		if (isPriorityRoot) {
+			// Only keep first occurrence for each root to avoid duplicates.
+			if (!rootsById.has(id)) {
+				// Clone shallowly; children are already pruned/merged.
+				rootsById.set(id, {
+					...node,
+					children: node.children ? [...node.children] : [],
+				});
+			}
+			// Do not descend further from a root: its subtree is already captured.
+			return;
 		}
+		for (const child of node.children || []) {
+			collectPriorityRootSubtrees(child);
+		}
+	};
+
+	for (const tree of mergedTrees) {
+		collectPriorityRootSubtrees(tree);
+	}
+
+	// Order the final priority trees according to the original priorityRoots order.
+	const orderedPriorityTrees: TaskItem[] = [];
+	for (const root of priorityRoots) {
+		const id = root._uniqueId ?? "";
+		if (!id) continue;
+		const tree = rootsById.get(id);
+		if (tree) orderedPriorityTrees.push(tree);
+	}
+
+	if (orderedPriorityTrees.length === 0) {
+		return;
+	}
+
+	// 7) Render section with its own root wrapper (similar to artifacts.ts) and enable folding
+	const sectionRoot = container.createEl("div", {
+		cls: "agile-artifact-section",
+		attr: {
+			"data-section-root": "priorities",
+		},
+	});
+
+	// Heading
+	sectionRoot.createEl("h2", { text: "📂 Priorities" });
+
+	// Render pruned priority trees
+	renderTaskTree(
+		orderedPriorityTrees,
+		sectionRoot,
+		app,
+		0,
+		false,
+		"priorities",
+		selectedAlias
+	);
+
+	// Enable folding scoped to this section
+	try {
+		attachSectionFolding(sectionRoot, {
+			app,
+			taskMap,
+			childrenMap,
+			selectedAlias,
+			renderTaskTree,
+			registerDomEvent,
+			sectionName: "priorities",
+		});
+	} catch {
+		/* ignore */
+	}
+
+	// Optional: ensure correct data-section stamping within this section, like artifacts.ts
+	try {
+		const restamp = (rootEl: HTMLElement, value: string) => {
+			const uls = Array.from(
+				rootEl.querySelectorAll(
+					"ul.agile-dashboard.contains-task-list"
+				)
+			) as HTMLElement[];
+			uls.forEach((ul) => ul.setAttribute("data-section", value));
+
+			const lis = Array.from(
+				rootEl.querySelectorAll("li.task-list-item")
+			) as HTMLElement[];
+			lis.forEach((li) => li.setAttribute("data-section", value));
+		};
+		restamp(sectionRoot, "priorities");
+	} catch {
+		/* ignore */
 	}
 }
