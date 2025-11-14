@@ -188,7 +188,8 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
     -   See every task assigned to you from across your entire vault in one place.
     -   Filter the view to focus on specific teams or organizations.
     -   Quickly change a task's status, snooze it for later, or reassign it to someone else.
-    -   Understand your priorities at a glance with sections for Objectives, Responsibilities, and different task types.
+    -   Understand your priorities at a glance with sections for Objectives, Responsibilities, Priorities, and different task types.
+    -   In the Priorities section, view pruned task trees starting from "priority roots" (tasks with open status "O", relevant today, non-cancelled/non-snoozed, excluding certain indicators like initiatives/epics/stories and recurring responsibilities). It shows only subtrees of tasks directly assigned to the selected member, using visibility filtering (`isShownByParams` for status toggles) and merged/pruned subtrees (similar to the Artifacts section logic in `artifacts.ts`). Ancestors above priority roots are clipped, ensuring a focused view of your direct priorities.
     -   Drill down into project context by expanding parent Initiatives and Epics.
 
 ##### Notes on Personal Learning Artifacts
@@ -207,17 +208,18 @@ This guide will get you running with Agile Obsidian in under 5 minutes.
             2.  Run the command `Agile Obsidian: Open Agile Dashboard`.
             3.  In the "Teams selector" at the top, ensure the teams you're working on are selected.
             4.  Review the "Objectives" and "Responsibilities" sections first to address any high-level goals or blockers for your team.
-            5.  Work through the "Tasks," "Stories," and "Epics" sections. For each item:
+            5.  Check the "Priorities" section for a focused view of your direct assignments under priority roots (open, today-relevant tasks). Expand trees to see pruned subtrees of visible, assigned items only—status filters (e.g., in-progress) apply automatically.
+            6.  Work through the "Tasks," "Stories," and "Epics" sections. For each item:
                 -   If it's done, click the checkbox to mark it complete (`x`).
                 -   If you can't do it today, click the "Snooze" button to hide it until tomorrow. Long-press the button to pick a specific date.
                 -   If it's not your task, click the assignee chip (`@yourname`) to reassign it.
-        -   **Verification:** Your dashboard should be empty or contain only items you are actively working on. The source `.md` files will be updated automatically with the new statuses and metadata.
+        -   **Verification:** Your dashboard should be empty or contain only items you are actively working on. The source `.md` files will be updated automatically with the new statuses and metadata. The Priorities section will only show relevant, assigned subtrees without extraneous ancestors.
 
 -   **Configuration you're likely to touch:**
     -   **Teams Selector:** Controls which teams' tasks are visible. Your selection is saved automatically.
     -   **Member Filter:** Narrows the view to tasks assigned to a specific member of the selected teams.
-    -   **Section Toggles (in Settings):** You can hide entire sections (e.g., "Priorities") from the dashboard if you don't use them.
-    
+    -   **Section Toggles (in Settings):** You can hide entire sections (e.g., "Priorities") from the dashboard if you don't use them.  
+
 #### Feature: Templating Engine
 
 - **What you can do:**
@@ -590,7 +592,7 @@ The Agile Obsidian settings are accessible via **Settings > Agile Obsidian**.
 | Key | Type | Default | Scope | Effect |
 | :--- | :--- | :--- | :--- | :--- |
 | **Organizations** | `object[]` | `[]` | Global | Defines the hierarchy of teams, subteams, and members used for task assignment and dashboard filtering. |
-| **Dashboard Sections** | `object` | All `true` | Global | A series of toggles (e.g., `showObjectives`, `showResponsibilities`) that control which sections are visible in the Agile Dashboard. |
+| **Dashboard Sections** | `object` | All `true` | Global | A series of toggles (e.g., `showObjectives`, `showResponsibilities`, `showPriorities`) that control which sections are visible in the Agile Dashboard. |
 | **Load Sample Team** | `button` | N/A | Global | Creates a new folder in the vault with sample notes to demonstrate plugin features. |
 | **Update Teams** | `button` | N/A | Global | Forces a rebuild of the internal team/member index. Use this if the dashboard seems out of sync with your settings. |
 | **Enable Metadata Cleanup** | `boolean` | `true` | Global | Master toggle for automated metadata cleanup (expired snoozes, deprecated markers). Disables on-start and midnight runs when off. |
