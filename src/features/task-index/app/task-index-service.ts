@@ -133,10 +133,9 @@ export function createTaskIndexService(
 	const dispatchStatusChanged = (detail: StatusChangedDetail) => {
 		try {
 			document.dispatchEvent(
-				new CustomEvent<StatusChangedDetail>(
-					"agile:task-status-changed" as any,
-					{ detail }
-				)
+				new CustomEvent<StatusChangedDetail>("agile:task-status-changed", {
+					detail,
+				})
 			);
 		} catch (e) {
 			// Non-fatal
