@@ -27,14 +27,10 @@ export function normalizeTaskLine(
 		let assigneeHtml = extracted.assignments.assignee?.wrapperHtml ?? null;
 		let delegateHtml = extracted.assignments.delegate?.wrapperHtml ?? null;
 
-		const hasOverrideAssignee = Object.prototype.hasOwnProperty.call(
-			opts,
-			"newAssigneeInstanceHtml"
-		);
-		const hasOverrideDelegate = Object.prototype.hasOwnProperty.call(
-			opts,
-			"newDelegateInstanceHtml"
-		);
+		const hasOverrideAssignee =
+			"newAssigneeInstanceHtml" in opts;
+		const hasOverrideDelegate =
+			"newDelegateInstanceHtml" in opts;
 
 		if (hasOverrideAssignee)
 			assigneeHtml = opts.newAssigneeInstanceHtml ?? null;

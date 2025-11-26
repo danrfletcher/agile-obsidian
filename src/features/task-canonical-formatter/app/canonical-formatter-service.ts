@@ -154,7 +154,7 @@ export function createCanonicalFormatterService(
 			};
 
 			let changed = false;
-			const out: string[] = new Array(total);
+			const out: string[] = new Array<string>(total);
 
 			for (let i = 0; i < total; i++) {
 				if (checkCancelled()) {
@@ -214,8 +214,9 @@ export function createCanonicalFormatterService(
 				return;
 			}
 
-			if (typeof (port as any).replaceAllLines === "function") {
-				(port as any).replaceAllLines(out);
+			const replaceAllLines = port.replaceAllLines;
+			if (typeof replaceAllLines === "function") {
+				replaceAllLines(out);
 			} else {
 				for (let i = 0; i < out.length; i++) {
 					if (signal?.aborted) {

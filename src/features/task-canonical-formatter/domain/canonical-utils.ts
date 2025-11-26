@@ -53,7 +53,7 @@ export function extractBlockId(rest: string): {
 	// Remove all standalone ^id tokens, preserving any leading whitespace capture where present.
 	const restSansBlockId = rest.replace(
 		STANDALONE_BLOCKID_RE,
-		(_full, leading) => {
+		(_full: string, leading: string | undefined) => {
 			// Keep the leading whitespace (if any), drop the token.
 			return leading ?? "";
 		}
