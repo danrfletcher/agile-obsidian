@@ -96,7 +96,8 @@ export class AddTeamModal extends Modal {
 		const updateAlias = () => {
 			const teamName =
 				(nameInput.value.trim() || "sample") + (disableName ? "" : "");
-			aliasValue.textContent = buildTeamSlug(teamName, code, null as any);
+			// Pass a properly typed null instead of `null as any`
+			aliasValue.textContent = buildTeamSlug(teamName, code, null);
 		};
 		nameInput.addEventListener("input", updateAlias);
 		updateAlias();
@@ -116,7 +117,8 @@ export class AddTeamModal extends Modal {
 				new Notice("Please enter a team name.");
 				return;
 			}
-			const slug = buildTeamSlug(teamName, code, null as any);
+			// Pass a properly typed null instead of `null as any`
+			const slug = buildTeamSlug(teamName, code, null);
 			await this.onSubmit(teamName, parentPath, slug, code, {
 				seedWithSampleData: !!this.options?.seedWithSampleData,
 			});
