@@ -10,6 +10,14 @@
 
 import { escapeRegExp } from "@utils";
 import type { Editor } from "obsidian";
+import type { CmEditorViewLike } from "./scroll-preserver";
+
+type EditorPositionLike = { line: number; ch: number };
+
+type EditorWithCoords = Editor & {
+	cm?: CmEditorViewLike;
+	offsetToPos(offset: number): EditorPositionLike;
+};
 
 /**
  * Checks whether a line is an unchecked Markdown task "- [ ] ".
@@ -41,23 +49,40 @@ export function findTargetLineFromClick(
 	evt: MouseEvent,
 	alias: string
 ): number {
-	let lineNo = editor.getCursor().line; // fallback
+	const cursor = editor.getCursor();
+	let lineNo = typeof cursor.line === "number" ? cursor.line : 0; // fallback
+
 	try {
-		const cm: any = (editor as any).cm;
-		if (cm && typeof cm.posAtCoords === "function") {
+		const extendedEditor = editor as EditorWithCoords;
+		const cm = extendedEditor.cm;
+
+		if (cm?.posAtCoords) {
 			const posOrOffset = cm.posAtCoords({
 				x: evt.clientX,
 				y: evt.clientY,
 			});
+
 			if (posOrOffset != null) {
-				const pos =
-					typeof posOrOffset === "number"
-						? editor.offsetToPos(posOrOffset)
-						: "pos" in posOrOffset
-						? editor.offsetToPos((posOrOffset as any).pos)
-						: posOrOffset;
-				if (pos && typeof (pos as any).line === "number") {
-					lineNo = (pos as any).line;
+				let pos: EditorPositionLike | null = null;
+
+				if (typeof posOrOffset === "number") {
+					pos = extendedEditor.offsetToPos(posOrOffset);
+				} else if ("pos" in posOrOffset) {
+					pos = extendedEditor.offsetToPos(posOrOffset.pos);
+				} else if (
+					"line" in posOrOffset &&
+					typeof posOrOffset.line === "number" &&
+					"ch" in posOrOffset &&
+					typeof posOrOffset.ch === "number"
+				) {
+					pos = {
+						line: posOrOffset.line,
+						ch: posOrOffset.ch,
+					};
+				}
+
+				if (pos && typeof pos.line === "number") {
+					lineNo = pos.line;
 					return lineNo;
 				}
 			}
@@ -75,8 +100,9 @@ export function findTargetLineFromClick(
 		const lines = editor.getValue().split("\n");
 		const matches: number[] = [];
 		for (let i = 0; i < lines.length; i++) {
-			if (isUncheckedTaskLine(lines[i]) && signature.test(lines[i]))
+			if (isUncheckedTaskLine(lines[i]) && signature.test(lines[i])) {
 				matches.push(i);
+			}
 		}
 		if (matches.length === 1) return matches[0];
 	} catch {

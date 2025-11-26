@@ -1,4 +1,4 @@
-import type { App, CachedMetadata, TAbstractFile, TFile } from "obsidian";
+import { TFile, type App, type CachedMetadata, type TAbstractFile } from "obsidian";
 
 /**
  * Platform adapter for Obsidian's App. This is an infrastructure boundary
@@ -25,7 +25,7 @@ export interface AppAdapter {
  * Narrow a value to TFile when working with TAbstractFile events.
  */
 export function isTFile(f: TAbstractFile | null | undefined): f is TFile {
-	return !!f && typeof (f as any).extension === "string";
+	return f instanceof TFile;
 }
 
 /**

@@ -1,7 +1,8 @@
 /**
  * Utilities for gathering context around the current cursor in an Obsidian MarkdownView.
  */
-import { App, MarkdownView } from "obsidian";
+import { MarkdownView, type App, type Editor } from "obsidian";
+import type { CmEditorViewLike } from "./scroll-preserver";
 
 export type CursorContext = {
 	filePath: string;
@@ -18,30 +19,52 @@ export type CursorContext = {
 	wrapperOrderTag?: string | null;
 };
 
+/**
+ * Intersection-based helper type that augments MarkdownView with a richer
+ * editor shape (including an optional CM view) without "extending" it.
+ *
+ * Using a type alias with "&" avoids the "incorrectly extends" error that
+ * arises when trying to re-declare the "editor" property with a different
+ * type/optionality than the core MarkdownView interface.
+ */
+type MarkdownViewWithEditor = MarkdownView & {
+	editor?: Editor & { cm?: CmEditorViewLike };
+};
+
+type EditorWithCm = Editor & {
+	cm?: CmEditorViewLike;
+};
+
 function resolveContentRoot(
 	view: MarkdownView | undefined
 ): HTMLElement | null {
 	if (!view) return null;
-	const cmContent =
-		(view as any)?.editor?.cm?.contentDOM ||
-		view.containerEl.querySelector(".cm-content");
-	return (cmContent as HTMLElement) ?? null;
+
+	const viewWithEditor = view as MarkdownViewWithEditor;
+	const cmContent = viewWithEditor.editor?.cm?.contentDOM;
+	if (cmContent instanceof HTMLElement) {
+		return cmContent;
+	}
+
+	const fallback = view.containerEl.querySelector(".cm-content");
+	return fallback instanceof HTMLElement ? fallback : null;
 }
 
 export async function getCursorContext(
 	app: App,
 	viewParam?: MarkdownView,
-	editor?: any
+	editor?: Editor
 ): Promise<CursorContext> {
 	const view =
 		viewParam ??
 		(app.workspace.getActiveViewOfType(MarkdownView) as
 			| MarkdownView
 			| undefined);
+
 	const ctx: Partial<CursorContext> = {};
 	ctx.filePath = (view?.file?.path as string) ?? "";
 
-	let content: string | undefined = undefined;
+	let content: string | undefined;
 	if (editor && typeof editor.getValue === "function") {
 		try {
 			content = editor.getValue();
@@ -66,13 +89,16 @@ export async function getCursorContext(
 				const c = editor.getCursor();
 				lineNum = typeof c.line === "number" ? c.line : 0;
 				col = typeof c.ch === "number" ? c.ch : 0;
-			} else if (editor.cm && editor.cm.state) {
-				const sel = (editor.cm as any).state.selection.main;
-				lineNum =
-					(editor.cm as any).state.doc.lineAt(sel.from).number - 1;
-				col =
-					sel.from -
-					(editor.cm as any).state.doc.lineAt(sel.from).from;
+			} else {
+				const editorWithCm = editor as EditorWithCm;
+				const cm = editorWithCm.cm;
+				const selection = cm?.state?.selection?.main;
+				const doc = cm?.state?.doc;
+				if (selection && doc) {
+					const lineAt = doc.lineAt(selection.from);
+					lineNum = lineAt.number - 1;
+					col = selection.from - lineAt.from;
+				}
 			}
 		} catch {
 			lineNum = 0;

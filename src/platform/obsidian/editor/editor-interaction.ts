@@ -2,6 +2,22 @@
  * Editor/UI interaction helpers (hit testing, token ranges).
  */
 import type { Editor } from "obsidian";
+import type { CmEditorViewLike } from "./scroll-preserver";
+
+export interface EditorOffsetPosition {
+	line: number;
+	ch: number;
+}
+
+type PosFromCoords =
+	| number
+	| { pos: number }
+	| { line: number; ch: number };
+
+type EditorWithCoords = Editor & {
+	cm?: CmEditorViewLike;
+	offsetToPos(offset: number): EditorOffsetPosition;
+};
 
 /**
  * Map a pointer/mouse/keyboard event to an editor position.
@@ -10,13 +26,13 @@ import type { Editor } from "obsidian";
 export function findPosFromEvent(
 	editor: Editor,
 	evt: MouseEvent | KeyboardEvent | PointerEvent
-): { line: number; ch: number } | null {
+): EditorOffsetPosition | null {
 	let x: number | null = null;
 	let y: number | null = null;
 
-	if ("clientX" in evt && typeof (evt as MouseEvent).clientX === "number") {
-		x = (evt as MouseEvent).clientX;
-		y = (evt as MouseEvent).clientY;
+	if ("clientX" in evt && typeof evt.clientX === "number") {
+		x = evt.clientX;
+		y = evt.clientY;
 	} else {
 		const target = evt.target as HTMLElement | null;
 		if (target && target.getBoundingClientRect) {
@@ -27,37 +43,50 @@ export function findPosFromEvent(
 	}
 
 	try {
-		const cm: any = (editor as any).cm;
-		if (
-			cm &&
-			typeof cm.posAtCoords === "function" &&
-			x != null &&
-			y != null
-		) {
-			const posOrOffset = cm.posAtCoords({ x, y });
-			let pos: any = null;
+		const extendedEditor = editor as EditorWithCoords;
+		const cm = extendedEditor.cm;
+
+		if (cm && cm.posAtCoords && x != null && y != null) {
+			const posOrOffset = cm.posAtCoords({ x, y }) as PosFromCoords | null;
+			let pos: EditorOffsetPosition | null = null;
+
 			if (posOrOffset != null) {
-				pos =
-					typeof posOrOffset === "number"
-						? editor.offsetToPos(posOrOffset)
-						: "pos" in posOrOffset
-						? editor.offsetToPos((posOrOffset as any).pos)
-						: posOrOffset;
+				if (typeof posOrOffset === "number") {
+					pos = extendedEditor.offsetToPos(posOrOffset);
+				} else if ("pos" in posOrOffset) {
+					pos = extendedEditor.offsetToPos(posOrOffset.pos);
+				} else if (
+					"line" in posOrOffset &&
+					typeof posOrOffset.line === "number" &&
+					"ch" in posOrOffset &&
+					typeof posOrOffset.ch === "number"
+				) {
+					pos = {
+						line: posOrOffset.line,
+						ch: posOrOffset.ch,
+					};
+				}
 			}
-			if (
-				pos &&
-				typeof pos.line === "number" &&
-				typeof pos.ch === "number"
-			) {
-				return { line: pos.line, ch: pos.ch };
+
+			if (pos) {
+				return pos;
 			}
 		}
 	} catch {
 		/* ignore */
 	}
+
 	try {
 		const cur = editor.getCursor();
-		return { line: (cur as any).line ?? 0, ch: (cur as any).ch ?? 0 };
+		const line =
+			typeof cur.line === "number" && Number.isFinite(cur.line)
+				? cur.line
+				: 0;
+		const ch =
+			typeof cur.ch === "number" && Number.isFinite(cur.ch)
+				? cur.ch
+				: 0;
+		return { line, ch };
 	} catch {
 		return null;
 	}
@@ -69,7 +98,11 @@ export function findLineFromEvent(
 	evt: MouseEvent | KeyboardEvent
 ): number {
 	const p = findPosFromEvent(editor, evt);
-	return p?.line ?? (editor as any).getCursor().line ?? 0;
+	if (p && typeof p.line === "number") {
+		return p.line;
+	}
+	const cur = editor.getCursor();
+	return typeof cur.line === "number" ? cur.line : 0;
 }
 
 /**

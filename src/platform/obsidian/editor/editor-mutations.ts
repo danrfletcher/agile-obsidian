@@ -8,6 +8,32 @@ import {
 	restoreEditorScrollLater,
 } from "./scroll-preserver";
 
+interface EditorCursorLike {
+	line: number;
+	ch: number;
+}
+
+/**
+ * Helper type that augments the Obsidian Editor with selection-related APIs.
+ *
+ * We use an intersection type instead of "extends" so we can:
+ * - Keep getCursor/setSelection/setCursor as optional in this helper shape.
+ * - Widen getCursor's parameter union to match Obsidian's ("from" | "to" | "head" | "anchor").
+ *
+ * This avoids TypeScript compatibility errors with the core Editor interface
+ * while still letting us safely probe for and use these methods at runtime.
+ */
+type EditorWithSelection = Editor & {
+	getCursor?: (
+		which?: "from" | "to" | "head" | "anchor"
+	) => EditorCursorLike;
+	setSelection?(
+		anchor: EditorCursorLike,
+		head: EditorCursorLike
+	): void;
+	setCursor?(pos: EditorCursorLike): void;
+};
+
 /**
  * Apply a pure transformation to a single editor line.
  * Preserves:
@@ -28,19 +54,28 @@ export function applyLineTransform(
 
 	const scroll = captureEditorScroll(editor);
 
-	let fromSel: any = (editor as any).getCursor?.("from");
-	let toSel: any = (editor as any).getCursor?.("to");
+	const editorWithSelection = editor as EditorWithSelection;
+	const fromSel =
+		typeof editorWithSelection.getCursor === "function"
+			? editorWithSelection.getCursor("from")
+			: undefined;
+	const toSel =
+		typeof editorWithSelection.getCursor === "function"
+			? editorWithSelection.getCursor("to")
+			: undefined;
+
 	const hasCursorAPI =
-		fromSel &&
-		toSel &&
+		!!fromSel &&
+		!!toSel &&
 		typeof fromSel.line === "number" &&
 		typeof fromSel.ch === "number" &&
 		typeof toSel.line === "number" &&
 		typeof toSel.ch === "number";
+
 	const selectionOnLine =
 		hasCursorAPI &&
-		(fromSel.line === line0 || toSel.line === line0) &&
-		fromSel.line === toSel.line;
+		(fromSel!.line === line0 || toSel!.line === line0) &&
+		fromSel!.line === toSel!.line;
 
 	editor.replaceRange(
 		after,
@@ -48,23 +83,32 @@ export function applyLineTransform(
 		{ line: line0, ch: before.length }
 	);
 
-	if (selectionOnLine) {
+	if (selectionOnLine && fromSel && toSel) {
 		try {
 			const newLen = after.length;
-			const newFromCh = Math.max(0, Math.min(newLen, fromSel.ch));
+			const newFromCh = Math.max(
+				0,
+				Math.min(newLen, fromSel.ch)
+			);
 			const newToCh = Math.max(0, Math.min(newLen, toSel.ch));
-			if (typeof (editor as any).setSelection === "function") {
-				(editor as any).setSelection(
+
+			if (typeof editorWithSelection.setSelection === "function") {
+				editorWithSelection.setSelection(
 					{ line: line0, ch: newFromCh },
 					{ line: line0, ch: newToCh }
 				);
 			} else if (
 				newFromCh === newToCh &&
-				typeof (editor as any).setCursor === "function"
+				typeof editorWithSelection.setCursor === "function"
 			) {
-				(editor as any).setCursor({ line: line0, ch: newFromCh });
+				editorWithSelection.setCursor({
+					line: line0,
+					ch: newFromCh,
+				});
 			}
-		} catch {}
+		} catch {
+			// best-effort; ignore selection errors
+		}
 	}
 
 	restoreEditorScrollLater(scroll);

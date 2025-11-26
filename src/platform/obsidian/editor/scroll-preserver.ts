@@ -3,19 +3,55 @@
  */
 import type { Editor } from "obsidian";
 
+export interface CmDocLike {
+	lineAt(pos: number): { from: number; to: number; number: number };
+	line(line: number): { from: number; to: number; number: number };
+	readonly lines: number;
+}
+
+export interface CmViewportLike {
+	from: number;
+	to: number;
+}
+
+export interface CmBlockInfoLike {
+	top: number;
+}
+
+export interface CmEditorViewLike {
+	state?: {
+		doc: CmDocLike;
+		selection?: {
+			main: { from: number; to: number };
+		};
+	};
+	viewport?: CmViewportLike;
+	scrollDOM?: HTMLElement;
+	contentDOM?: HTMLElement;
+	lineBlockAt(pos: number): CmBlockInfoLike;
+	posAtCoords?(
+		coords: { x: number; y: number }
+	): number | { pos: number } | { line: number; ch: number } | null;
+}
+
 export function getEditorScroller(editor: Editor): HTMLElement | null {
 	try {
-		const cm: any = (editor as any).cm;
-		if (cm?.scrollDOM) return cm.scrollDOM as HTMLElement;
+		const editorWithCm = editor as Editor & { cm?: CmEditorViewLike };
+		const cm = editorWithCm.cm;
+		if (cm?.scrollDOM instanceof HTMLElement) {
+			return cm.scrollDOM;
+		}
 	} catch {
-		/* ignore */
+		/* ignore and fall through to DOM query */
 	}
 	try {
 		const active = document.querySelector(
 			".workspace-leaf.mod-active .cm-scroller"
-		) as HTMLElement | null;
-		if (active) return active;
-		return document.querySelector(".cm-scroller") as HTMLElement | null;
+		);
+		if (active instanceof HTMLElement) return active;
+
+		const anyScroller = document.querySelector(".cm-scroller");
+		return anyScroller instanceof HTMLElement ? anyScroller : null;
 	} catch {
 		return null;
 	}
@@ -26,7 +62,7 @@ export type ScrollSnapshot = {
 	top: number;
 	left: number;
 	// Optional CM6-based anchor info
-	view?: any;
+	view?: CmEditorViewLike;
 	anchorLine?: number;
 	anchorTop?: number;
 	scrollTop?: number;
@@ -36,29 +72,29 @@ export function captureEditorScroll(editor: Editor): ScrollSnapshot {
 	const el = getEditorScroller(editor);
 	const snap: ScrollSnapshot = {
 		el,
-		top: el ? el.scrollTop : 0,
-		left: el ? el.scrollLeft : 0,
+		top: el?.scrollTop ?? 0,
+		left: el?.scrollLeft ?? 0,
 	};
 
 	// Try to anchor to the first visible line using CM6 internals.
 	try {
-		const view: any = (editor as any).cm;
+		const editorWithCm = editor as Editor & { cm?: CmEditorViewLike };
+		const view = editorWithCm.cm;
 		if (
-			view?.state &&
-			view?.viewport &&
+			view?.state?.doc &&
+			view.viewport &&
 			typeof view.viewport.from === "number"
 		) {
 			const doc = view.state.doc;
 			const firstVisibleLineNo0 =
 				doc.lineAt(view.viewport.from).number - 1;
-			const block = view.lineBlockAt(
-				doc.line(firstVisibleLineNo0 + 1).from
-			);
+			const firstLine = doc.line(firstVisibleLineNo0 + 1);
+			const block = view.lineBlockAt(firstLine.from);
 			if (block && typeof block.top === "number") {
 				snap.view = view;
 				snap.anchorLine = firstVisibleLineNo0;
 				snap.anchorTop = block.top;
-				snap.scrollTop = el ? el.scrollTop : 0;
+				snap.scrollTop = el?.scrollTop ?? 0;
 			}
 		}
 	} catch {
@@ -68,50 +104,58 @@ export function captureEditorScroll(editor: Editor): ScrollSnapshot {
 	return snap;
 }
 
-export function restoreEditorScrollLater(snap: ScrollSnapshot) {
+export function restoreEditorScrollLater(snap: ScrollSnapshot): void {
 	const tryRestoreWithAnchor = () => {
 		try {
-			if (
-				!snap.el ||
-				!snap.view ||
-				snap.anchorLine == null ||
-				snap.anchorTop == null ||
-				snap.scrollTop == null
-			) {
-				if (snap.el) {
-					snap.el.scrollTop = snap.top;
-					snap.el.scrollLeft = snap.left;
+			const {
+				el,
+				view,
+				anchorLine,
+				anchorTop,
+				scrollTop,
+				top,
+				left,
+			} = snap;
+
+			if (!el || !view || anchorLine == null || anchorTop == null) {
+				if (el) {
+					el.scrollTop = top;
+					el.scrollLeft = left;
 				}
 				return;
 			}
-			const view = snap.view;
-			const el = snap.el;
+
 			const doc = view.state?.doc;
 			if (!doc) {
-				el.scrollTop = snap.top;
-				el.scrollLeft = snap.left;
+				el.scrollTop = top;
+				el.scrollLeft = left;
 				return;
 			}
-			const lineNo0 = Math.min(
-				Math.max(0, snap.anchorLine),
+
+			const clampedLine0 = Math.min(
+				Math.max(0, anchorLine),
 				doc.lines - 1
 			);
-			const blockNow = view.lineBlockAt(doc.line(lineNo0 + 1).from);
+			const lineInfo = doc.line(clampedLine0 + 1);
+			const blockNow = view.lineBlockAt(lineInfo.from);
 			if (!blockNow || typeof blockNow.top !== "number") {
-				el.scrollTop = snap.top;
-				el.scrollLeft = snap.left;
+				el.scrollTop = top;
+				el.scrollLeft = left;
 				return;
 			}
-			const delta = blockNow.top - snap.anchorTop;
-			const targetScrollTop = (snap.scrollTop ?? snap.top) + delta;
+
+			const delta = blockNow.top - anchorTop;
+			const targetScrollTop = (scrollTop ?? top) + delta;
 			el.scrollTop = targetScrollTop;
-			el.scrollLeft = snap.left;
+			el.scrollLeft = left;
 		} catch {
 			if (snap.el) {
 				try {
 					snap.el.scrollTop = snap.top;
 					snap.el.scrollLeft = snap.left;
-				} catch {}
+				} catch {
+					// ignore
+				}
 			}
 		}
 	};

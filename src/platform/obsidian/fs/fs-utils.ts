@@ -63,8 +63,11 @@ export async function safeRename(
 	const src = getAbstractFile(vault, oldPath);
 	if (!src) throw new Error(`Source not found: ${oldPath}`);
 	try {
-		// @ts-ignore Types don’t expose folder rename but Obsidian supports it
-		await vault.rename(src as any, normalizePath(newPath));
+		// Older typings may not declare folder-friendly rename, but the runtime supports it.
+		const vaultWithRename = vault as Vault & {
+			rename(file: TAbstractFile, newPath: string): Promise<void>;
+		};
+		await vaultWithRename.rename(src, normalizePath(newPath));
 	} catch {
 		await vault.adapter.rename(
 			normalizePath(oldPath),
