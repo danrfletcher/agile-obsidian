@@ -4,6 +4,7 @@ import type {
 	Plugin,
 	Editor,
 	EditorPosition,
+	Menu,
 } from "obsidian";
 import { processEnter } from "../app/enter-repeat-agile-template";
 
@@ -164,6 +165,47 @@ function removeWrapperOnLineWithCaret(
 	return { nextLine: next, nextCh };
 }
 
+type EditorWithPosAtMouseEvent = Editor & {
+	posAtMouseEvent?: (ev: MouseEvent) => EditorPosition | null | undefined;
+};
+
+interface Cm6LineInfo {
+	number?: number;
+	from?: number;
+}
+
+interface Cm6Like {
+	posAtCoords?: (coords: { x: number; y: number }) => number | null;
+	state?: {
+		doc?: {
+			lineAt?: (offset: number) => Cm6LineInfo | null;
+		};
+	};
+}
+
+type EditorWithCm6 = Editor & {
+	cm?: Cm6Like;
+};
+
+type MarkdownViewWithCm = MarkdownView & {
+	editor?: {
+		cm?: {
+			contentDOM?: HTMLElement;
+		};
+	};
+};
+
+interface TemplatingUxPlugin extends Plugin {
+	settings?: {
+		enableUxRepeatAgileTemplates?: boolean;
+	};
+	__tplUxMenuWired?: boolean;
+}
+
+interface EditorMenuInfo {
+	pos?: EditorPosition;
+}
+
 /**
  * Try to resolve editor position from a mouse event using typed Obsidian API.
  * Falls back to CM6 internals if necessary.
@@ -175,10 +217,8 @@ function getEditorPositionFromMouseEvent(
 ): EditorPosition | null {
 	// Preferred: Obsidian typed API (available in newer versions)
 	try {
-		const pos = (editor as any).posAtMouseEvent?.(ev) as
-			| EditorPosition
-			| null
-			| undefined;
+		const editorWithMouse = editor as EditorWithPosAtMouseEvent;
+		const pos = editorWithMouse.posAtMouseEvent?.(ev);
 		if (pos && typeof pos.line === "number" && typeof pos.ch === "number") {
 			return pos;
 		}
@@ -186,21 +226,27 @@ function getEditorPositionFromMouseEvent(
 		// ignore and fallback
 	}
 
-	// Fallback: CM6 internals (typed as any to avoid hard dependency)
+	// Fallback: CM6 internals (typed via a minimal structural type, no hard dependency)
 	try {
-		const cm: any = (editor as any)?.cm;
+		const editorWithCm = editor as EditorWithCm6;
+		const cm = editorWithCm.cm;
 		if (!cm || typeof cm.posAtCoords !== "function") return null;
-		const offset: number | null = cm.posAtCoords({
+
+		const offset = cm.posAtCoords({
 			x: ev.clientX,
 			y: ev.clientY,
 		});
 		if (typeof offset !== "number") return null;
-		const lineInfo = cm.state?.doc?.lineAt
-			? cm.state.doc.lineAt(offset)
-			: null;
+
+		const lineInfo = cm.state?.doc?.lineAt?.(offset) ?? null;
 		if (!lineInfo) return null;
-		const line = Math.max(0, (lineInfo.number ?? 1) - 1);
-		const ch = Math.max(0, offset - (lineInfo.from ?? 0));
+
+		const lineNumber =
+			typeof lineInfo.number === "number" ? lineInfo.number : 1;
+		const from = typeof lineInfo.from === "number" ? lineInfo.from : 0;
+
+		const line = Math.max(0, lineNumber - 1);
+		const ch = Math.max(0, offset - from);
 		return { line, ch };
 	} catch {
 		return null;
@@ -218,21 +264,22 @@ export function wireTemplatingUxShortcutsDomHandlers(
 	plugin: Plugin
 ) {
 	// Resolve content root for the editor
-	const cmHolder = view as unknown as {
-		editor?: { cm?: { contentDOM?: HTMLElement } };
-	};
+	const cmHolder = view as MarkdownViewWithCm;
 	const cmContent = cmHolder.editor?.cm?.contentDOM;
 	const contentRoot = (cmContent ??
 		view.containerEl.querySelector(".cm-content")) as HTMLElement | null;
 	const targetEl: HTMLElement = contentRoot ?? view.containerEl;
+
+	const uxPlugin = plugin as TemplatingUxPlugin;
 
 	// 1) Double-Enter repeat (existing behavior)
 	const onKeyDown = (evt: KeyboardEvent) => {
 		if (evt.key !== "Enter") return;
 
 		// Gate on setting (checked live for immediate effect)
-		const enabled = !!(plugin as any)?.settings
-			?.enableUxRepeatAgileTemplates;
+		const enabled = Boolean(
+			uxPlugin.settings?.enableUxRepeatAgileTemplates
+		);
 		if (!enabled) return;
 
 		// Pass the event so processEnter can preventDefault on the second press (when applicable)
@@ -260,23 +307,25 @@ export function wireTemplatingUxShortcutsDomHandlers(
 
 	// 3) Right-click "Remove Template" in the regular Obsidian editor context menu.
 	// Register only once per plugin instance to avoid duplicate menu items.
-	const MENU_FLAG = "__tplUxMenuWired";
-	if (!(plugin as any)[MENU_FLAG]) {
-		(plugin as any)[MENU_FLAG] = true;
+	if (!uxPlugin.__tplUxMenuWired) {
+		uxPlugin.__tplUxMenuWired = true;
 
 		const off = app.workspace.on(
 			"editor-menu",
-			// support both legacy and new signatures (menu, editor, view[, info])
-			(...args: any[]) => {
+			(
+				menu: Menu,
+				editor: Editor,
+				_view: MarkdownView,
+				info?: EditorMenuInfo
+			) => {
 				try {
-					const menu = args[0];
-					const editor = args[1] as Editor | undefined;
 					if (!editor) return;
 
 					// Prefer position from recent DOM right-click, fall back to caret or info.pos.
 					const now = Date.now();
 					let pos: EditorPosition | null =
-						lastContextClick && now - lastContextClick.ts < 1000
+						lastContextClick &&
+						now - lastContextClick.ts < 1000
 							? {
 									line: lastContextClick.line,
 									ch: lastContextClick.ch,
@@ -284,9 +333,8 @@ export function wireTemplatingUxShortcutsDomHandlers(
 							: null;
 
 					// If Obsidian provides info.pos in newer versions, prefer it
-					const infoMaybe = args[3] ?? args[2];
-					if (!pos && infoMaybe && infoMaybe.pos) {
-						const p = infoMaybe.pos;
+					if (!pos && info?.pos) {
+						const p = info.pos;
 						if (
 							typeof p.line === "number" &&
 							typeof p.ch === "number"
@@ -321,7 +369,7 @@ export function wireTemplatingUxShortcutsDomHandlers(
 					);
 					const target = covering[0];
 
-					menu.addItem((item: any) => {
+					menu.addItem((item) => {
 						item.setIcon?.("trash");
 						item.setTitle("Remove Template");
 						item.onClick(() => {
@@ -337,7 +385,10 @@ export function wireTemplatingUxShortcutsDomHandlers(
 									editor.replaceRange(
 										nextLine,
 										{ line: lineNo, ch: 0 },
-										{ line: lineNo, ch: lineText.length }
+										{
+											line: lineNo,
+											ch: lineText.length,
+										}
 									);
 									// Place caret as computed to preserve the user's relative position
 									editor.setCursor?.({

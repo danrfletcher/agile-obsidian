@@ -185,7 +185,7 @@ async function openTemplateModalFromContext(
 		return;
 	}
 
-	const def = findTemplateById(found.templateKey) as any;
+	const def = findTemplateById(found.templateKey);
 	if (!def || !def.hasParams) return;
 	if (def.hiddenFromDynamicCommands) return;
 
@@ -193,7 +193,9 @@ async function openTemplateModalFromContext(
 		? {
 				...def.paramsSchema,
 				fields:
-					def.paramsSchema.fields?.map((f: any) => ({ ...f })) ?? [],
+					def.paramsSchema.fields?.map((field) => ({
+						...field,
+					})) ?? [],
 		  }
 		: undefined;
 	if (!schema) return;
@@ -202,15 +204,11 @@ async function openTemplateModalFromContext(
 
 	try {
 		const ports: ParamsTemplatingPorts = {
-			findTemplateById: (tid) => findTemplateById(tid) as any,
+			findTemplateById,
 			showSchemaModal: (tid, sch, isEdit) =>
-				showSchemaModal(app, tid, sch as any, isEdit) as Promise<
-					Record<string, unknown> | undefined
-				>,
+				showSchemaModal(app, tid, sch, isEdit),
 			showJsonModal: (tid, initialJson) =>
-				showJsonModal(app, tid, initialJson) as Promise<
-					Record<string, unknown> | undefined
-				>,
+				showJsonModal(app, tid, initialJson),
 		};
 
 		const params = await requestTemplateParams(
@@ -224,7 +222,7 @@ async function openTemplateModalFromContext(
 
 		insertTemplateAtCursor(
 			found.templateKey,
-			editor as any,
+			editor,
 			filePath,
 			params as Record<string, unknown> | undefined
 		);
