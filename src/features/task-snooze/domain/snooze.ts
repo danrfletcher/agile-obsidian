@@ -90,14 +90,17 @@ function applySnoozeToText(
 	let out = text;
 
 	// Replace expired global snooze with user-specific
-	out = out.replace(globalSnoozeRegex, (match, date) => {
-		const d = new Date(date);
-		d.setHours(0, 0, 0, 0);
-		if (!isNaN(d.getTime()) && d <= today) {
-			return userSnooze; // convert expired global snooze to user-specific one
+	out = out.replace(
+		globalSnoozeRegex,
+		(match: string, matchedDate: string): string => {
+			const d = new Date(matchedDate);
+			d.setHours(0, 0, 0, 0);
+			if (!Number.isNaN(d.getTime()) && d <= today) {
+				return userSnooze; // convert expired global snooze to user-specific one
+			}
+			return match; // keep active global snooze
 		}
-		return match; // keep active global snooze
-	});
+	);
 
 	// Remove any existing user snoozes for this user (dedupe)
 	out = out.replace(userSnoozeRegex, "").trim();
