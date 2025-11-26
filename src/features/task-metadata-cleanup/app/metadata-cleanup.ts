@@ -5,6 +5,29 @@ import { cleanupExpiredSnoozes } from "@features/task-snooze";
 import { getCurrentUserDisplayName } from "@settings/index";
 import { slugifyName } from "@shared/identity";
 
+// Module augmentation: add a strongly-typed custom workspace event
+declare module "obsidian" {
+	interface Workspace {
+		on(
+			name: "agile-settings-changed",
+			callback: () => void,
+			ctx?: Component
+		): EventRef;
+	}
+}
+
+type NoticeWithElement = Notice & {
+	noticeEl: HTMLElement;
+};
+
+interface MetadataCleanupSettings {
+	enableMetadataCleanup?: boolean;
+	enableMetadataCleanupOnStart?: boolean;
+	enableMetadataCleanupAtMidnight?: boolean;
+}
+
+type CleanupExpiredSnoozesTasks = Parameters<typeof cleanupExpiredSnoozes>[1];
+
 // Local helper: compute ms until the next local midnight
 function msUntilNextLocalMidnight(): number {
 	const now = new Date();
@@ -85,8 +108,13 @@ class GlobalProgressNotice {
 		wrapper.appendChild(barOuter);
 		wrapper.appendChild(label);
 
-		(this.notice as any).noticeEl?.empty?.();
-		(this.notice as any).noticeEl?.appendChild(wrapper);
+		const noticeEl = (this.notice as NoticeWithElement).noticeEl;
+
+		// Clear any existing children without relying on non-standard `.empty()`
+		while (noticeEl.firstChild) {
+			noticeEl.removeChild(noticeEl.firstChild);
+		}
+		noticeEl.appendChild(wrapper);
 
 		this.wrapper = wrapper;
 		this.bar = barInner;
@@ -280,7 +308,11 @@ async function runMetadataCleanupOnce(
 	};
 
 	// 1) Use existing cleanup for per-user single-task snoozes (💤<span>user</span> date)
-	await cleanupExpiredSnoozes(app, tasks as any, userDisplayName || "");
+	await cleanupExpiredSnoozes(
+		app,
+		tasks as CleanupExpiredSnoozesTasks,
+		userDisplayName || ""
+	);
 	// Check if we need to show a notice after this stage
 	maybeStartProgress();
 
@@ -339,17 +371,26 @@ export function registerTaskMetadataCleanup(container: Container) {
 	let midnightTimeout: number | null = null;
 	let dailyInterval: number | null = null;
 
-	const getSettingsSnapshot = () => {
+	const getSettingsSnapshot = (): MetadataCleanupSettings => {
 		try {
-			const svc: any = settingsService as any;
-			if (svc && typeof svc.getRaw === "function") return svc.getRaw();
-			if (svc && typeof svc.get === "function") return svc.get();
-		} catch {}
-		return container.settings as any;
+			const svc = settingsService as {
+				getRaw?: () => MetadataCleanupSettings;
+				get?: () => MetadataCleanupSettings;
+			};
+			if (svc && typeof svc.getRaw === "function") {
+				return svc.getRaw();
+			}
+			if (svc && typeof svc.get === "function") {
+				return svc.get();
+			}
+		} catch {
+			// ignore and fall back to container.settings
+		}
+		return (container.settings ?? {}) as MetadataCleanupSettings;
 	};
 
 	const getFlags = () => {
-		const s: any = getSettingsSnapshot();
+		const s = getSettingsSnapshot();
 		return {
 			master: !!s.enableMetadataCleanup,
 			onStart: !!s.enableMetadataCleanupOnStart,
@@ -424,7 +465,7 @@ export function registerTaskMetadataCleanup(container: Container) {
 
 	// React to settings changes immediately (enable/disable and schedules)
 	const offSettingsChanged = app.workspace.on(
-		"agile-settings-changed" as any,
+		"agile-settings-changed",
 		() => {
 			// Re-schedule timers to reflect toggles immediately
 			scheduleFromSettings();
