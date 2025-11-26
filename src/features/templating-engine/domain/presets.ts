@@ -9,6 +9,10 @@ import {
 import { currencyDropdownOptions } from "../app/constants";
 import type { AgileArtifactType } from "@features/task-filter";
 
+type HasOrderTag = {
+	orderTag?: string;
+};
+
 // Derive from JSON
 const colors = tokensData.colors as Record<string, string>;
 const emojis = tokensData.emojis as Record<string, string>;
@@ -41,7 +45,7 @@ function chip(opts: {
  * Agile Artifacts — tasks only
  * orderTag: "artifact-item-type", except Parent Link which is "parent-link"
  */
-export const Agile: Record<string, TemplateDefinition<any>> = {
+export const Agile: Record<string, TemplateDefinition> = {
 	initiative: {
 		orderTag: "artifact-item-type",
 		id: "agile.initiative",
@@ -68,7 +72,10 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["task"] },
-		render(params: { title: string; details?: string }) {
+		render(
+			this: HasOrderTag,
+			params: { title: string; details?: string }
+		) {
 			const title = params?.title?.trim() ?? "";
 			const details = params?.details?.trim() ?? "";
 
@@ -113,7 +120,7 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["task"] },
-		render(params?: { title?: string; details?: string }) {
+		render(this: HasOrderTag, params?: { title?: string; details?: string }) {
 			const title = params?.title?.trim() ?? "";
 			const details = params?.details?.trim() ?? "";
 			const text = `<strong>${emojis.epic} ${wrapVar("title", title)}${
@@ -156,7 +163,10 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["task"] },
-		render(params: { title: string; details?: string }) {
+		render(
+			this: HasOrderTag,
+			params: { title: string; details?: string }
+		) {
 			const title = params?.title?.trim() ?? "";
 			const details = params?.details?.trim() ?? "";
 			const text = `<strong>${emojis.feature} ${wrapVar(
@@ -200,7 +210,10 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["task"] },
-		render(params: { title: string; details?: string }) {
+		render(
+			this: HasOrderTag,
+			params: { title: string; details?: string }
+		) {
 			const title = params?.title?.trim() ?? "";
 			const details = params?.details?.trim() ?? "";
 			const main = title
@@ -261,12 +274,15 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 			return extractParamsFromWrapperEl(wrapperEl);
 		},
 
-		render(params: {
-			title: string;
-			persona?: string;
-			desire?: string;
-			outcome?: string;
-		}) {
+		render(
+			this: HasOrderTag,
+			params: {
+				title: string;
+				persona?: string;
+				desire?: string;
+				outcome?: string;
+			}
+		) {
 			const title = params?.title?.trim() ?? "";
 			const persona = params?.persona?.trim() ?? "";
 			const desire = params?.desire?.trim() ?? "";
@@ -322,7 +338,10 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["task"] },
-		render(params: { title: string; details?: string }) {
+		render(
+			this: HasOrderTag,
+			params: { title: string; details?: string }
+		) {
 			const title = params?.title?.trim() ?? "";
 			const details = params?.details?.trim() ?? "";
 			const text = `<strong>${emojis.accept} ${wrapVar(
@@ -363,7 +382,10 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["task"] },
-		render(params: { title: string; details?: string }) {
+		render(
+			this: HasOrderTag,
+			params: { title: string; details?: string }
+		) {
 			const title = params?.title?.trim() ?? "";
 			const details = params?.details?.trim() ?? "";
 			const text = `<strong>${emojis.kpi} ${wrapVar(
@@ -404,7 +426,10 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["task"] },
-		render(params: { title: string; details?: string }) {
+		render(
+			this: HasOrderTag,
+			params: { title: string; details?: string }
+		) {
 			const title = params?.title?.trim() ?? "";
 			const details = params?.details?.trim() ?? "";
 			const text = `<strong>${emojis.okr} ${wrapVar(
@@ -440,7 +465,7 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["task"] },
-		render(params: { blockRef: string }) {
+		render(this: HasOrderTag, params: { blockRef: string }) {
 			const blockRef = params?.blockRef?.trim() ?? "";
 			const inner = `<a class="internal-link" ${attrVar(
 				"href",
@@ -458,7 +483,10 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 		id: "agile.personalLearningInitiative",
 		label: "Agile (Personal) - Learning Initiative",
 		rules: { allowedOn: ["task"] },
-		render(params?: { title?: string; details?: string }) {
+		render(
+			this: HasOrderTag,
+			params?: { title?: string; details?: string }
+		) {
 			const title = params?.title?.trim() ?? "";
 			const details = params?.details?.trim() ?? "";
 			const main = title
@@ -484,7 +512,10 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 		id: "agile.personalLearningEpic",
 		label: "Agile (Personal) - Learning Epic",
 		rules: { allowedOn: ["task"] },
-		render(params?: { title?: string; details?: string }) {
+		render(
+			this: HasOrderTag,
+			params?: { title?: string; details?: string }
+		) {
 			const title = params?.title?.trim() ?? "";
 			const details = params?.details?.trim() ?? "";
 			const main = title
@@ -509,13 +540,13 @@ export const Agile: Record<string, TemplateDefinition<any>> = {
 /**
  * CRM
  */
-export const CRM: Record<string, TemplateDefinition<any>> = {
+export const CRM: Record<string, TemplateDefinition> = {
 	abandoned: {
 		orderTag: "crm-payment",
 		id: "crm.abandoned",
 		label: "CRM - Abandoned",
 		rules: { allowedOn: ["task"] },
-		render() {
+		render(this: HasOrderTag) {
 			const inner = chip({
 				id: "crm-abandoned",
 				text: `<strong>Abandoned</strong>`,
@@ -532,7 +563,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 		id: "crm.awaitingDeposit",
 		label: "CRM - Awaiting Deposit",
 		rules: { allowedOn: ["task"] },
-		render() {
+		render(this: HasOrderTag) {
 			const inner = chip({
 				id: "crm-awaiting-deposit",
 				text: `<strong>Awaiting Deposit</strong>`,
@@ -581,11 +612,14 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["task"] },
-		render(params?: {
-			currency?: string;
-			paidAmount?: string;
-			totalAmount?: string;
-		}) {
+		render(
+			this: HasOrderTag,
+			params?: {
+				currency?: string;
+				paidAmount?: string;
+				totalAmount?: string;
+			}
+		) {
 			const currency = (params?.currency ?? "$").trim();
 			const paidAmount = (params?.paidAmount ?? "").trim();
 			const totalAmount = (params?.totalAmount ?? "").trim();
@@ -644,11 +678,14 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["task"] },
-		render(params?: {
-			currency?: string;
-			paidAmount?: string;
-			totalAmount?: string;
-		}) {
+		render(
+			this: HasOrderTag,
+			params?: {
+				currency?: string;
+				paidAmount?: string;
+				totalAmount?: string;
+			}
+		) {
 			const currency = (params?.currency ?? "$").trim();
 			const paidAmount = (params?.paidAmount ?? "").trim();
 			const totalAmount = (params?.totalAmount ?? "").trim();
@@ -699,11 +736,14 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["task"] },
-		render(params?: {
-			currency?: string;
-			paidAmount?: string;
-			totalAmount?: string;
-		}) {
+		render(
+			this: HasOrderTag,
+			params?: {
+				currency?: string;
+				paidAmount?: string;
+				totalAmount?: string;
+			}
+		) {
 			const currency = (params?.currency ?? "$").trim();
 			const totalAmount = (params?.totalAmount ?? "").trim();
 
@@ -761,11 +801,14 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["task"] },
-		render(params?: {
-			currency?: string;
-			paidAmount?: string;
-			totalAmount?: string;
-		}) {
+		render(
+			this: HasOrderTag,
+			params?: {
+				currency?: string;
+				paidAmount?: string;
+				totalAmount?: string;
+			}
+		) {
 			const currency = (params?.currency ?? "$").trim();
 			const paidAmount = (params?.paidAmount ?? "").trim();
 			const totalAmount = (params?.totalAmount ?? "").trim();
@@ -837,13 +880,16 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["task"] },
-		render(params?: {
-			months?: string;
-			endDate?: string;
-			currency?: string;
-			paidAmount?: string;
-			totalAmount?: string;
-		}) {
+		render(
+			this: HasOrderTag,
+			params?: {
+				months?: string;
+				endDate?: string;
+				currency?: string;
+				paidAmount?: string;
+				totalAmount?: string;
+			}
+		) {
 			const months = (params?.months ?? "").trim();
 			const endDate = (params?.endDate ?? "").trim();
 			const currency = (params?.currency ?? "$").trim();
@@ -874,7 +920,7 @@ export const CRM: Record<string, TemplateDefinition<any>> = {
 /**
  * Members — tasks only
  */
-export const Members: Record<string, TemplateDefinition<any>> = {
+export const Members: Record<string, TemplateDefinition> = {
 	assignee: {
 		orderTag: "assignment",
 		id: "members.assignee",
@@ -882,17 +928,20 @@ export const Members: Record<string, TemplateDefinition<any>> = {
 		hiddenFromDynamicCommands: true,
 		hasParams: true,
 		rules: { allowedOn: ["task"] },
-		render(params: {
-			memberName: string;
-			memberSlug: string;
-			assignmentState: "active" | "inactive";
-			memberType:
-				| "teamMember"
-				| "delegateTeam"
-				| "delegateTeamMember"
-				| "delegateExternal"
-				| "special";
-		}) {
+		render(
+			this: HasOrderTag,
+			params: {
+				memberName: string;
+				memberSlug: string;
+				assignmentState: "active" | "inactive";
+				memberType:
+					| "teamMember"
+					| "delegateTeam"
+					| "delegateTeamMember"
+					| "delegateExternal"
+					| "special";
+			}
+		) {
 			const memberName = params.memberName.trim();
 			const memberType = params.memberType.trim();
 			const memberSlug = params.memberSlug.trim();
@@ -956,7 +1005,7 @@ export const Members: Record<string, TemplateDefinition<any>> = {
 /**
  * Prioritization
  */
-export const Prioritization: Record<string, TemplateDefinition<any>> = {
+export const Prioritization: Record<string, TemplateDefinition> = {
 	kanoDissatisfier: {
 		orderTag: "priority",
 		id: "prio.kano.dissatisfier",
@@ -979,11 +1028,13 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["task"] },
-		render(params?: { details?: string }) {
+		render(this: HasOrderTag, params?: { details?: string }) {
 			const details = (params?.details ?? "").trim();
 			const chipHtml = chip({
 				id: "kano-dissatisfier",
-				text: `<strong>${emojis.kanoLeft} Kano - Dissatisfier${details && `:`}</strong>`,
+				text: `<strong>${emojis.kanoLeft} Kano - Dissatisfier${
+					details && `:`
+				}</strong>`,
 				bg: colors.kanoDissatisfier,
 			});
 			const suffix = details ? ` ${wrapVar("details", details)}` : "";
@@ -1010,7 +1061,7 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["task"] },
-		render(params?: { details?: string }) {
+		render(this: HasOrderTag, params?: { details?: string }) {
 			const details = (params?.details ?? "").trim();
 			const chipHtml = chip({
 				id: "kano-indifferent",
@@ -1043,7 +1094,7 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["task"] },
-		render(params?: { details?: string }) {
+		render(this: HasOrderTag, params?: { details?: string }) {
 			const details = (params?.details ?? "").trim();
 			const chipHtml = chip({
 				id: "kano-basic",
@@ -1079,7 +1130,7 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["task"] },
-		render(params?: { details?: string }) {
+		render(this: HasOrderTag, params?: { details?: string }) {
 			const details = (params?.details ?? "").trim();
 			const chipHtml = chip({
 				id: "kano-performant-header",
@@ -1116,7 +1167,7 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["task"] },
-		render(params?: { details?: string }) {
+		render(this: HasOrderTag, params?: { details?: string }) {
 			const details = (params?.details ?? "").trim();
 			const chipHtml = chip({
 				id: "kano-delighter",
@@ -1149,7 +1200,7 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["task"] },
-		render(params?: { details?: string }) {
+		render(this: HasOrderTag, params?: { details?: string }) {
 			const details = (params?.details ?? "").trim();
 			const chipHtml = chip({
 				id: "moscow-could",
@@ -1180,7 +1231,7 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["task"] },
-		render(params?: { details?: string }) {
+		render(this: HasOrderTag, params?: { details?: string }) {
 			const details = (params?.details ?? "").trim();
 			const chipHtml = chip({
 				id: "moscow-must",
@@ -1214,7 +1265,7 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["task"] },
-		render(params?: { details?: string }) {
+		render(this: HasOrderTag, params?: { details?: string }) {
 			const details = (params?.details ?? "").trim();
 			const chipHtml = chip({
 				id: "moscow-should",
@@ -1248,7 +1299,7 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["task"] },
-		render(params?: { details?: string }) {
+		render(this: HasOrderTag, params?: { details?: string }) {
 			const details = (params?.details ?? "").trim();
 			const chipHtml = chip({
 				id: "moscow-wont",
@@ -1267,7 +1318,7 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		id: "prio.nalap.adhoc",
 		label: "NALAp - Adhoc",
 		rules: { allowedOn: ["list"] },
-		render() {
+		render(this: HasOrderTag) {
 			const inner = `📂 <strong>Adhoc</strong>`;
 			return wrapTemplate("prio.nalap.adhoc", inner, {
 				orderTag: this.orderTag,
@@ -1278,7 +1329,7 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		id: "prio.nalap.always",
 		label: "NALAp - Always",
 		rules: { allowedOn: ["list"] },
-		render() {
+		render(this: HasOrderTag) {
 			const inner = `📍 <strong>Always</strong>`;
 			return wrapTemplate("prio.nalap.always", inner, {
 				orderTag: this.orderTag,
@@ -1289,7 +1340,7 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		id: "prio.nalap.done",
 		label: "NALAp - Done",
 		rules: { allowedOn: ["list"] },
-		render() {
+		render(this: HasOrderTag) {
 			const inner = `✅ <strong>Done</strong>`;
 			return wrapTemplate("prio.nalap.done", inner, {
 				orderTag: this.orderTag,
@@ -1300,7 +1351,7 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		id: "prio.nalap.dropped",
 		label: "NALAp - Dropped",
 		rules: { allowedOn: ["list"] },
-		render() {
+		render(this: HasOrderTag) {
 			const inner = `❌ <strong>Dropped</strong>`;
 			return wrapTemplate("prio.nalap.dropped", inner, {
 				orderTag: this.orderTag,
@@ -1311,7 +1362,7 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		id: "prio.nalap.later",
 		label: "NALAp - Later",
 		rules: { allowedOn: ["list"] },
-		render() {
+		render(this: HasOrderTag) {
 			const inner = `🛠️ <strong>Later</strong>`;
 			return wrapTemplate("prio.nalap.later", inner, {
 				orderTag: this.orderTag,
@@ -1322,7 +1373,7 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 		id: "prio.nalap.now",
 		label: "NALAp - Now",
 		rules: { allowedOn: ["list"] },
-		render() {
+		render(this: HasOrderTag) {
 			const inner = `🚀 <strong>Now</strong>`;
 			return wrapTemplate("prio.nalap.now", inner, {
 				orderTag: this.orderTag,
@@ -1334,14 +1385,14 @@ export const Prioritization: Record<string, TemplateDefinition<any>> = {
 /**
  * Workflows — tasks only
  */
-export const Workflows: Record<string, TemplateDefinition<any>> = {
+export const Workflows: Record<string, TemplateDefinition> = {
 	// Metadata
 	pr: {
 		orderTag: "metadata",
 		id: "workflows.metadata.pr",
 		label: "Workflow - PR",
 		rules: { allowedOn: ["task"] },
-		render(params?: { href?: string }) {
+		render(this: HasOrderTag, params?: { href?: string }) {
 			const href = (params?.href ?? "").trim();
 			const anchorOpen = href ? `<a href="${href}">` : `<a href="">`;
 			const inner = chip({
@@ -1360,7 +1411,7 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 		id: "workflows.metadata.branch",
 		label: "Workflow - Branch",
 		rules: { allowedOn: ["task"] },
-		render(params?: { href?: string }) {
+		render(this: HasOrderTag, params?: { href?: string }) {
 			const href = (params?.href ?? "").trim();
 			const anchorOpen = href ? `<a href="${href}">` : `<a href="">`;
 			const inner = chip({
@@ -1398,10 +1449,13 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["task"] },
-		render(params: {
-			blockRef: string;
-			linkedArtifactType?: AgileArtifactType;
-		}) {
+		render(
+			this: HasOrderTag,
+			params: {
+				blockRef: string;
+				linkedArtifactType?: AgileArtifactType;
+			}
+		) {
 			const blockRef = params.blockRef?.trim?.() ?? "";
 			const type = params.linkedArtifactType;
 
@@ -1468,7 +1522,7 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["task", "list"] },
-		render(params?: { version?: string }) {
+		render(this: HasOrderTag, params?: { version?: string }) {
 			const version = (params?.version ?? "").trim();
 
 			const inner = chip({
@@ -1478,7 +1532,6 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 					version
 				)}</strong>`,
 				bg: `linear-gradient(to right, ${colors.versionFrom}, ${colors.versionTo})`,
-				// No explicit text color to keep it similar to your example
 			});
 
 			return wrapTemplate("workflows.metadata.version", inner, {
@@ -1514,7 +1567,10 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["task"] },
-		render(params?: { details?: string; href?: string }) {
+		render(
+			this: HasOrderTag,
+			params?: { details?: string; href?: string }
+		) {
 			const details = (params?.details ?? "").trim();
 			const href = (params?.href ?? "").trim();
 			const anchorOpen = `<a class="internal-link" ${attrVar(
@@ -1540,7 +1596,7 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 		id: "workflows.states.pending",
 		label: "Workflow - State: Pending",
 		rules: { allowedOn: ["task"] },
-		render(params?: { resumes?: string }) {
+		render(this: HasOrderTag, params?: { resumes?: string }) {
 			const resumes = (params?.resumes ?? "").trim();
 			const inner = chip({
 				id: "state-pending",
@@ -1569,7 +1625,7 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["task"] },
-		render(params?: { for?: string }) {
+		render(this: HasOrderTag, params?: { for?: string }) {
 			const forWhat = (params?.for ?? "").trim();
 			const inner = chip({
 				id: "state-waiting",
@@ -1598,7 +1654,7 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["task"] },
-		render(params: { teamMember: string }) {
+		render(this: HasOrderTag, params: { teamMember: string }) {
 			const teamMember = params?.teamMember?.trim() ?? "";
 			const inner = chip({
 				id: "agile-review",
@@ -1619,7 +1675,7 @@ export const Workflows: Record<string, TemplateDefinition<any>> = {
 /**
  * Obsidian Extensions — can be inserted on tasks, lists, or outside both
  */
-export const ObsidianExtensions: Record<string, TemplateDefinition<any>> = {
+export const ObsidianExtensions: Record<string, TemplateDefinition> = {
 	internalInlineLink: {
 		orderTag: "internal-link",
 		id: "obsidian.internalInlineLink",
@@ -1643,7 +1699,10 @@ export const ObsidianExtensions: Record<string, TemplateDefinition<any>> = {
 			],
 		},
 		rules: { allowedOn: ["any"] },
-		render(params: { href: string; linkContent: string }) {
+		render(
+			this: HasOrderTag,
+			params: { href: string; linkContent: string }
+		) {
 			const href = params?.href?.trim() ?? "";
 			const linkContent = params?.linkContent?.trim() ?? "";
 			const inner = chip({
@@ -1665,7 +1724,7 @@ export const ObsidianExtensions: Record<string, TemplateDefinition<any>> = {
 		id: "obsidian.timestamp",
 		label: "Obsidian - Timestamp",
 		rules: { allowedOn: ["any"] },
-		render() {
+		render(this: HasOrderTag) {
 			const inner = chip({
 				id: "obsidian-timestamp",
 				text: `<strong>${emojis.timestamp} {{date:YYYY-MM-DD HH:MM:SS}}</strong>`,
@@ -1681,7 +1740,7 @@ export const ObsidianExtensions: Record<string, TemplateDefinition<any>> = {
 		id: "obsidian.datestamp",
 		label: "Obsidian - Datestamp",
 		rules: { allowedOn: ["any"] },
-		render() {
+		render(this: HasOrderTag) {
 			const inner = chip({
 				id: "obsidian-datestamp",
 				text: `<strong>${emojis.datestamp} {{date:YYYY-MM-DD}}</strong>`,

@@ -1,5 +1,6 @@
 // templating-event-manager.ts
 import type { App, MarkdownView, Plugin } from "obsidian";
+import { TFile } from "obsidian";
 import type { TaskIndexPort } from "./templating-ports";
 
 import {
@@ -12,12 +13,23 @@ import {
 	renderTemplateOnly as realRenderTemplateOnly,
 	findTemplateById as realFindTemplateById,
 } from "./templating-service";
-import { showSchemaModal as realShowSchemaModal } from "@features/templating-params-editor";
-import { showJsonModal as realShowJsonModal } from "@features/templating-params-editor";
+import {
+	showSchemaModal as realShowSchemaModal,
+	showJsonModal as realShowJsonModal,
+} from "@features/templating-params-editor";
 
 // Workflows and type inference
 import { runTemplateWorkflows } from "../domain/template-workflows";
+import type { ParamsSchema } from "../domain/types";
 import { getAgileArtifactType } from "@features/task-filter";
+import type { AgileArtifactType } from "@features/task-filter";
+
+type WorkflowAugmentedParams = Record<string, unknown> & {
+	blockRef?: unknown;
+	linkedArtifactType?: AgileArtifactType;
+};
+
+type TaskIndexResolvedTask = ReturnType<TaskIndexPort["getTaskByBlockRef"]>;
 
 /**
  * Wire editor DOM handlers for templating, including slash-command insertion modal.
@@ -61,24 +73,26 @@ export function wireTemplatingDomHandlers(
 		return `${p}.md`;
 	}
 
-	function tryResolveTaskSync(blockRef: string) {
+	function tryResolveTaskSync(blockRef: string): TaskIndexResolvedTask | undefined {
+		const taskIndex = _ports?.taskIndex;
+		if (!taskIndex?.getTaskByBlockRef) return undefined;
+
 		// 1) Try exact
-		let t =
-			_ports?.taskIndex?.getTaskByBlockRef?.(blockRef ?? "") ?? undefined;
+		let t = taskIndex.getTaskByBlockRef(blockRef ?? "") as TaskIndexResolvedTask;
 		if (t) return t;
 
 		// 2) Try "#^<id>" only (if we can parse a blockId)
 		const { filePart, blockId } = parseBlockRef(blockRef);
 		if (blockId) {
 			const ref2 = `#^${blockId}`;
-			t = _ports?.taskIndex?.getTaskByBlockRef?.(ref2) ?? undefined;
+			t = taskIndex.getTaskByBlockRef(ref2) as TaskIndexResolvedTask;
 			if (t) return t;
 		}
 
 		// 3) If filePart lacks ".md", try "<file>.md#^<id>"
 		if (filePart && blockId && !/\.[a-zA-Z0-9]+$/.test(filePart)) {
 			const augmented = `${ensureMdSuffix(filePart)}#^${blockId}`;
-			t = _ports?.taskIndex?.getTaskByBlockRef?.(augmented) ?? undefined;
+			t = taskIndex.getTaskByBlockRef(augmented) as TaskIndexResolvedTask;
 			if (t) return t;
 		}
 
@@ -111,18 +125,17 @@ export function wireTemplatingDomHandlers(
 		// Must be synchronous per ports typing
 		prefillTemplateParams: (templateId, wrapperEl) => {
 			// Get base params from the existing service (sync)
-			const baseParams = realPrefillTemplateParams(templateId, wrapperEl);
+			const baseParams =
+				realPrefillTemplateParams(templateId, wrapperEl);
 
 			// If the template declares insertWorkflows, run them in background and cache
-			const def = realFindTemplateById(templateId) as
-				| { id: string; insertWorkflows?: string[] }
-				| undefined;
+			const def = realFindTemplateById(templateId);
 
 			if (def?.insertWorkflows && def.insertWorkflows.length) {
 				void (async () => {
 					try {
 						const nextParams = await runTemplateWorkflows(
-							def as any,
+							def,
 							(baseParams ?? {}) as Record<string, unknown>,
 							{ taskIndex: _ports?.taskIndex }
 						);
@@ -133,7 +146,7 @@ export function wireTemplatingDomHandlers(
 				})();
 			}
 
-			return baseParams as any;
+			return baseParams;
 		},
 
 		// Must remain synchronous per ports typing.
@@ -143,45 +156,53 @@ export function wireTemplatingDomHandlers(
 			templateId: string,
 			params?: Record<string, unknown>
 		) => {
-			const def = realFindTemplateById(templateId) as
-				| { id: string; insertWorkflows?: string[] }
-				| undefined;
+			const def = realFindTemplateById(templateId);
 
 			const cached = workflowCache.get(templateId);
 			if (cached) {
 				workflowCache.delete(templateId);
 			}
 
-			// Workflow-derived values take precedence over base params if overlapping.
-			let merged = cached
-				? { ...(params ?? {}), ...cached }
-				: params ?? {};
+			let merged: WorkflowAugmentedParams;
+			if (cached) {
+				merged = {
+					...(params ?? {}),
+					...cached,
+				} as WorkflowAugmentedParams;
+			} else {
+				merged = (params ?? {}) as WorkflowAugmentedParams;
+			}
 
-			// If this template declares the artifact-type inference workflow and the value is still missing,
-			// do a synchronous best-effort inference using TaskIndex (no Vault fallback).
 			if (
 				def?.insertWorkflows?.includes(
 					"resolveArtifactTypeFromBlockRef"
 				)
 			) {
-				const hasLinkedType =
-					merged &&
-					Object.prototype.hasOwnProperty.call(
-						merged,
-						"linkedArtifactType"
-					);
-				const blockRef = String((merged as any)?.blockRef ?? "").trim();
+				// NOTE: 'in' is used instead of Object.prototype.hasOwnProperty.call(...)
+				// to avoid the Function.prototype.call -> any return type, which trips
+				// @typescript-eslint/no-unsafe-assignment.
+				const hasLinkedType = "linkedArtifactType" in merged;
+
+				const source = merged.blockRef;
+				const rawBlockRef =
+					source === undefined || source === null
+						? ""
+						: String(source);
+				const blockRef = rawBlockRef.trim();
 
 				if (!hasLinkedType && blockRef) {
 					try {
 						const task = tryResolveTaskSync(blockRef);
 						if (task) {
-							const inferred = getAgileArtifactType(task);
+							const inferred =
+								getAgileArtifactType(task) as
+									| AgileArtifactType
+									| undefined;
 							if (inferred) {
 								merged = {
 									...merged,
 									linkedArtifactType: inferred,
-								};
+								} as WorkflowAugmentedParams;
 							}
 						}
 					} catch {
@@ -193,37 +214,50 @@ export function wireTemplatingDomHandlers(
 			return realRenderTemplateOnly(templateId, merged);
 		},
 
-		showSchemaModal: (templateId, schema, isEdit) => {
-			// Keep signature synchronous for the editor port; cast Promise as any
+		showSchemaModal: (
+			templateId: string,
+			schema: ParamsSchema,
+			isEdit: boolean
+		) => {
+			const normalizedSchema: ParamsSchema = {
+				...schema,
+				fields:
+					schema.fields?.map((f) => ({
+						...f,
+					})) ?? [],
+			};
+
 			return realShowSchemaModal(
 				app,
 				templateId,
-				{
-					...schema,
-					fields:
-						schema.fields?.map((f) => ({
-							...f,
-						})) ?? [],
-				} as any,
+				normalizedSchema,
 				isEdit
-			) as any;
+			);
 		},
 
-		showJsonModal: (templateId, initialJson) =>
-			realShowJsonModal(app, templateId, initialJson) as any,
+		showJsonModal: (
+			templateId: string,
+			initialJson: string
+		) => realShowJsonModal(app, templateId, initialJson),
 	};
 
 	// Vault adapter for file I/O (used by params-editor for wrapper replacement)
 	const vault = {
-		readFile: async (path: string) => {
-			const af = (app.vault as any).getAbstractFileByPath(path);
+		readFile: async (path: string): Promise<string> => {
+			const af = app.vault.getAbstractFileByPath(path);
 			if (!af) throw new Error(`File not found: ${path}`);
-			return (app.vault as any).read(af);
+			if (!(af instanceof TFile)) {
+				throw new Error(`Not a file: ${path}`);
+			}
+			return app.vault.read(af);
 		},
-		writeFile: async (path: string, content: string) => {
-			const af = (app.vault as any).getAbstractFileByPath(path);
+		writeFile: async (path: string, content: string): Promise<void> => {
+			const af = app.vault.getAbstractFileByPath(path);
 			if (!af) throw new Error(`File not found: ${path}`);
-			await (app.vault as any).modify(af, content);
+			if (!(af instanceof TFile)) {
+				throw new Error(`Not a file: ${path}`);
+			}
+			await app.vault.modify(af, content);
 		},
 	};
 
@@ -234,9 +268,9 @@ export function wireTemplatingDomHandlers(
 
 	// Determine file path and line hint resolver for the current view
 	const filePath = view.file?.path || "";
-	const getLineHint0 = () => {
+	const getLineHint0 = (): number | null => {
 		try {
-			const ln = (view as any)?.editor?.getCursor?.()?.line;
+			const ln = view.editor?.getCursor?.().line;
 			return typeof ln === "number" ? ln : null;
 		} catch {
 			return null;
@@ -247,13 +281,38 @@ export function wireTemplatingDomHandlers(
 	attachEditorTemplatingHandler({
 		app,
 		viewContainer: targetEl,
-		registerDomEvent: (el, type, handler, options) => {
-			(plugin.registerDomEvent as any)(
-				el as any,
-				type as any,
-				handler as any,
-				options as any
-			);
+		registerDomEvent: (
+			el: HTMLElement | Document | Window,
+			type: string,
+			handler: (evt: MouseEvent) => void,
+			options?: boolean | AddEventListenerOptions
+		) => {
+			// Bridge to Obsidian's overloaded registerDomEvent without using `any`.
+			// All overloads expect a callback with `this: HTMLElement`, so we cast
+			// the handler accordingly and, in the HTMLElement case, explicitly
+			// narrow `el` to HTMLElement to avoid union overload ambiguity.
+			if (el === window) {
+				plugin.registerDomEvent(
+					window,
+					type as keyof WindowEventMap,
+					handler as (this: HTMLElement, ev: MouseEvent) => unknown,
+					options
+				);
+			} else if (el instanceof Document) {
+				plugin.registerDomEvent(
+					el,
+					type as keyof DocumentEventMap,
+					handler as (this: HTMLElement, ev: MouseEvent) => unknown,
+					options
+				);
+			} else {
+				plugin.registerDomEvent(
+					el as HTMLElement,
+					type as keyof HTMLElementEventMap,
+					handler as (this: HTMLElement, ev: MouseEvent) => unknown,
+					options
+				);
+			}
 		},
 		deps: {
 			templating,

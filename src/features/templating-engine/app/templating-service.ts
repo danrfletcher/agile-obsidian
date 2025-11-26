@@ -8,7 +8,11 @@ import type {
 } from "../domain/types";
 import { TemplateInsertError } from "../domain/types";
 import { presetTemplates } from "../domain/presets";
-import { evaluateRules, normalizeRules } from "../domain/rules";
+import {
+	evaluateRules,
+	normalizeRules,
+	RulesViolationError,
+} from "../domain/rules";
 import { getArtifactParentChainTemplateIds } from "../domain/task-template-parent-chain";
 import { getLineKind } from "@platform/obsidian";
 import { extractParamsFromWrapperEl } from "../domain/template-parameter-helpers";
@@ -151,11 +155,14 @@ export function insertTemplate<TParams = unknown>(
 	const rules = tpl.rules;
 	try {
 		evaluateRules(ctx, rules, getArtifactParentChainTemplateIds);
-	} catch (e: any) {
+	} catch (e) {
+		const violation =
+			e instanceof RulesViolationError ? e : undefined;
+
 		const details: TemplateInsertErrorDetails = {
 			code: "NOT_ALLOWED_HERE",
-			messages: e?.messages ?? [],
-			foundAncestors: e?.ancestors,
+			messages: violation?.messages ?? [],
+			foundAncestors: violation?.ancestors,
 		};
 		const r0 = coerceRuleObject(rules);
 		if (Array.isArray(r0?.parent)) {
@@ -178,9 +185,11 @@ export function insertTemplate<TParams = unknown>(
 			  } as TParams)
 			: params;
 		return tpl.render(finalParams);
-	} catch (err: any) {
+	} catch (err) {
+		const message =
+			err instanceof Error ? err.message : String(err);
 		throw new TemplateInsertError(
-			`Render failed for ${templateId}: ${err?.message ?? String(err)}`,
+			`Render failed for ${templateId}: ${message}`,
 			{ code: "RENDER_FAILED" }
 		);
 	}
@@ -203,7 +212,7 @@ export function insertTemplateAtCursor<TParams = unknown>(
 		line: lineText,
 		file: editor.getValue(),
 		path: filePath,
-		editor: editor as any,
+		// editor intentionally omitted to keep this helper decoupled from Obsidian's Editor type
 	};
 
 	const tpl = findTemplateById(templateId) as TemplateDefinition | undefined;
@@ -347,9 +356,9 @@ export function prefillTemplateParams(
  * - Fall back to current-line, by data-template-key, only when no instance id is provided.
  * - Uses a deterministic span-matching scanner (single-line assumption for wrappers).
  */
-export async function replaceTemplateWrapperOnCurrentLine(
-	app: any,
-	view: any,
+export async function replaceTemplateWrapperOnCurrentLine<TApp, TView>(
+	_app: TApp,
+	_view: TView,
 	editor: MinimalEditor,
 	templateKey: string,
 	newHtml: string,
@@ -370,7 +379,13 @@ export async function replaceTemplateWrapperOnCurrentLine(
 		let targetLineNo = -1;
 		if (wrapperInstanceId && wrapperInstanceId.trim()) {
 			for (let i = 0; i < lines.length; i++) {
-				if (hasAttrWithValue(lines[i] ?? "", "data-template-wrapper", wrapperInstanceId)) {
+				if (
+					hasAttrWithValue(
+						lines[i] ?? "",
+						"data-template-wrapper",
+						wrapperInstanceId
+					)
+				) {
 					targetLineNo = i;
 					break;
 				}
@@ -467,7 +482,10 @@ export async function replaceTemplateWrapperOnCurrentLine(
 		);
 		editor.setCursor?.({ line: targetLineNo, ch: updatedLine.length });
 	} catch (e) {
-		console.error("[templating] replaceTemplateWrapperOnCurrentLine error", e);
+		console.error(
+			"[templating] replaceTemplateWrapperOnCurrentLine error",
+			e
+		);
 	}
 }
 

@@ -7,11 +7,11 @@
  * - Keep an "allowed templates" set up-to-date using a debounced, guarded evaluation triggered by cursor and content changes.
  *
  * Notes:
- * - Uses getCursorContext from @platform/obsidian to gather context (no direct Editor type imports).
+ * - Uses getCursorContext from @platform/obsidian to gather context.
  * - Debounce: ~250ms after typing stops; also immediate when changing line/file, or when the current line changes length by more than 1 char (e.g., paste).
  */
 
-import type { App, Plugin } from "obsidian";
+import type { App, Editor, Plugin } from "obsidian";
 import { MarkdownView, Notice } from "obsidian";
 import { getCursorContext } from "@platform/obsidian";
 import { presetTemplates } from "../domain/presets";
@@ -19,8 +19,7 @@ import type { TemplateDefinition, TemplateContext } from "../domain/types";
 import { isAllowedInContext } from "../domain/rules";
 import { getArtifactParentChainTemplateIds } from "../domain/task-template-parent-chain";
 import { insertTemplateAtCursor, findTemplateById } from "./templating-service";
-import { showSchemaModal } from "@features/templating-params-editor";
-import { showJsonModal } from "@features/templating-params-editor";
+import { showSchemaModal, showJsonModal } from "@features/templating-params-editor";
 
 // New: unify param collection via templating-params-editor
 import {
@@ -39,9 +38,10 @@ function collectTemplates(): Array<{ id: string; def: TemplateDefinition }> {
 		Record<string, TemplateDefinition>
 	>;
 	for (const [group, defs] of Object.entries(groups)) {
-		for (const [key, def] of Object.entries(defs)) {
+		for (const key of Object.keys(defs)) {
+			const def = defs[key];
 			const id = `${group}.${key}`;
-			if ((def as any)?.hiddenFromDynamicCommands) continue;
+			if (def.hiddenFromDynamicCommands) continue;
 			out.push({ id, def });
 		}
 	}
@@ -105,7 +105,8 @@ export async function registerTemplatingDynamicCommands(
 
 		const view = getActiveView();
 		if (!view) return;
-		const editor: any = (view as any).editor;
+		const editor: Editor = view.editor;
+
 		try {
 			const ctx = await getCursorContext(app, view, editor);
 			const filePath = ctx.filePath || "";
@@ -119,7 +120,7 @@ export async function registerTemplatingDynamicCommands(
 				line: lineText,
 				file: ctx.fileContent ?? "",
 				path: filePath,
-				editor: editor as any,
+				editor,
 			};
 
 			const nextAllowed = new Set<string>();
@@ -133,7 +134,7 @@ export async function registerTemplatingDynamicCommands(
 			}
 
 			allowed.clear();
-			for (const id of nextAllowed) allowed.add(id);
+			for (const allowedId of nextAllowed) allowed.add(allowedId);
 			lastCtxKey = key;
 			lastLineLen = lineText.length;
 		} catch {
@@ -144,15 +145,14 @@ export async function registerTemplatingDynamicCommands(
 	function scheduleRecompute(reason: "cursor" | "edit" | "leaf" | "file") {
 		const view = getActiveView();
 		if (!view) return;
-		const editor: any = (view as any).editor;
+		const editor: Editor = view.editor;
 
-		const filePath = (view.file?.path ?? "") as string;
-		const cursor = editor?.getCursor?.() ?? { line: 0 };
-		const lineNo = typeof cursor.line === "number" ? cursor.line : 0;
+		const filePath = view.file?.path ?? "";
+		const cursor = editor.getCursor();
+		const lineNo = cursor.line;
 		const key = makeCtxKey(filePath, lineNo);
-		const currentLineText =
-			typeof editor?.getLine === "function" ? editor.getLine(lineNo) : "";
-		const curLen = (currentLineText ?? "").length;
+		const currentLineText = editor.getLine(lineNo) ?? "";
+		const curLen = currentLineText.length;
 
 		let delay = DEBOUNCE_MS;
 
@@ -178,7 +178,7 @@ export async function registerTemplatingDynamicCommands(
 				pending = false;
 				await recomputeAllowedIfNeeded("pending");
 			}
-		}, delay) as unknown as number;
+		}, delay);
 	}
 
 	for (const { id, def } of templates) {
@@ -204,7 +204,7 @@ export async function registerTemplatingDynamicCommands(
 					new Notice("No active Markdown view.");
 					return true;
 				}
-				const editor: any = (view as any).editor;
+				const editor: Editor = view.editor;
 
 				void (async () => {
 					try {
@@ -213,25 +213,11 @@ export async function registerTemplatingDynamicCommands(
 						if (def.hasParams) {
 							// Delegate to templating-params-editor for param collection
 							const paramPorts: ParamsTemplatingPorts = {
-								findTemplateById: (tid) =>
-									findTemplateById(tid) as any,
+								findTemplateById: (tid) => findTemplateById(tid),
 								showSchemaModal: (tid, schema, isEdit) =>
-									showSchemaModal(
-										app,
-										tid,
-										schema as any,
-										isEdit
-									) as Promise<
-										Record<string, unknown> | undefined
-									>,
+									showSchemaModal(app, tid, schema, isEdit),
 								showJsonModal: (tid, initialJson) =>
-									showJsonModal(
-										app,
-										tid,
-										initialJson
-									) as Promise<
-										Record<string, unknown> | undefined
-									>,
+									showJsonModal(app, tid, initialJson),
 							};
 
 							params = await requestTemplateParams(
@@ -257,11 +243,11 @@ export async function registerTemplatingDynamicCommands(
 						const filePath = ctx.filePath || "";
 						insertTemplateAtCursor(id, editor, filePath, params);
 					} catch (err) {
-						new Notice(
-							`Insert failed: ${String(
-								(err as Error)?.message ?? err
-							)}`
-						);
+						const message =
+							err instanceof Error
+								? err.message
+								: String(err);
+						new Notice(`Insert failed: ${message}`);
 					}
 				})();
 

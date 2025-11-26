@@ -1,3 +1,4 @@
+import type { Editor } from "obsidian";
 import {
 	findCurrentLineIndex,
 	getEditorLines,
@@ -20,11 +21,11 @@ function detectTemplateIdOnLine(line: string): string | undefined {
  * - A parent must have strictly less indentation than the nearest child selected so far.
  * - Immediate parent is first.
  *
- * Note: Accepts a minimal editor shape (typed as any) to avoid direct Obsidian Editor imports.
+ * Note: Accepts an Obsidian Editor (or compatible subset).
  */
-function getAncestorTemplateIdsAtCursor(editor: any): string[] {
-	const lines = getEditorLines(editor as any);
-	const curIdx = findCurrentLineIndex(editor as any);
+function getAncestorTemplateIdsAtCursor(editor: Editor): string[] {
+	const lines = getEditorLines(editor);
+	const curIdx = findCurrentLineIndex(editor);
 	if (curIdx < 0 || curIdx >= lines.length) return [];
 
 	const curLine = lines[curIdx];
@@ -53,13 +54,11 @@ function getAncestorTemplateIdsAtCursor(editor: any): string[] {
 /**
  * Provide a context-compatible function to fetch parent chain for the current ctx.
  * If ctx.editor exists, use it. Otherwise, attempt a best-effort using ctx.file text.
- *
- * Avoids importing the Obsidian Editor type directly.
  */
 export function getArtifactParentChainTemplateIds(ctx: {
 	line: string;
 	file: unknown;
-	editor?: any;
+	editor?: Editor;
 }): string[] {
 	const editor = ctx.editor;
 	if (editor) return getAncestorTemplateIdsAtCursor(editor);

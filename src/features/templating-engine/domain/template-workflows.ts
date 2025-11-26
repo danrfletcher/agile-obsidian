@@ -15,6 +15,7 @@
 
 import type { TemplateDefinition } from "./types";
 import type { TaskIndexPort } from "../app/templating-ports";
+import type { TaskItem } from "@features/task-index";
 import { getAgileArtifactType } from "@features/task-filter";
 
 // Optional typing hint only; not required at runtime
@@ -31,7 +32,7 @@ export type AgileArtifactType =
 export type WorkflowPorts = {
 	taskIndex?: TaskIndexPort & {
 		// Some implementations may support this optional method
-		getTaskByBlockId?: (blockId: string) => any | undefined;
+		getTaskByBlockId?: (blockId: string) => TaskItem | undefined;
 	};
 };
 
@@ -41,6 +42,10 @@ export type WorkflowStep = (args: {
 }) =>
 	| Promise<Record<string, unknown> | void>
 	| (Record<string, unknown> | void);
+
+type BlockRefParams = { blockRef?: unknown };
+type TaskItemScratchParams = { __wf_taskItem?: TaskItem | null };
+type WorkflowParams = Record<string, unknown>;
 
 // ------------------------
 // Helpers (no Vault; normalization only)
@@ -74,7 +79,7 @@ function ensureMdSuffix(path: string): string {
 /**
  * Step: resolveTaskItemFromBlockRef
  * Input: params.blockRef: string
- * Output: { __wf_taskItem?: any } // stashed for later steps
+ * Output: { __wf_taskItem?: TaskItem | null } // stashed for later steps
  *
  * Strategy: normalize the provided blockRef and try multiple TaskIndex keys:
  *  1) exact input
@@ -87,7 +92,12 @@ export const resolveTaskItemFromBlockRef: WorkflowStep = async ({
 	ports,
 }) => {
 	try {
-		const raw = String((params as any)?.blockRef ?? "").trim();
+		const source = (params as BlockRefParams).blockRef;
+		const raw =
+			source === undefined || source === null
+				? ""
+				: String(source).trim();
+
 		const ti = ports.taskIndex;
 		if (!raw || !ti?.getTaskByBlockRef) return {};
 
@@ -106,7 +116,8 @@ export const resolveTaskItemFromBlockRef: WorkflowStep = async ({
 			attempts.push(`${ensureMdSuffix(filePart)}#^${blockId}`);
 		}
 
-		let task: any | undefined;
+		let task: TaskItem | null | undefined;
+
 		for (const key of attempts) {
 			try {
 				task = ti.getTaskByBlockRef(key) ?? undefined;
@@ -138,9 +149,10 @@ export const resolveTaskItemFromBlockRef: WorkflowStep = async ({
  */
 export const resolveArtifactFromTask: WorkflowStep = async ({ params }) => {
 	try {
-		const t: any = (params as any).__wf_taskItem;
-		if (!t) return {};
-		const inferred = getAgileArtifactType(t);
+		const scratch = params as TaskItemScratchParams;
+		const task = scratch.__wf_taskItem;
+		if (!task) return {};
+		const inferred = getAgileArtifactType(task);
 		return inferred ? { linkedArtifactType: inferred } : {};
 	} catch {
 		return {};
@@ -183,7 +195,7 @@ export async function runTemplateWorkflows(
 	ports: WorkflowPorts
 ): Promise<Record<string, unknown>> {
 	const names = def.insertWorkflows ?? [];
-	let params = { ...initialParams };
+	let params: WorkflowParams = { ...initialParams };
 
 	for (const name of names) {
 		const steps = WORKFLOWS[name];
@@ -206,9 +218,9 @@ export async function runTemplateWorkflows(
 	}
 
 	// Strip internal workflow scratch fields
-	for (const k of Object.keys(params)) {
-		if (k.startsWith("__wf_")) {
-			delete (params as any)[k];
+	for (const key of Object.keys(params)) {
+		if (key.startsWith("__wf_")) {
+			delete params[key];
 		}
 	}
 
