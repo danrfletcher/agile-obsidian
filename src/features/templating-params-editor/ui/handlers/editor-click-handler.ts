@@ -11,7 +11,7 @@ import type { AppDeps, RefreshPort } from "../../app/ports";
 type RegisterDomEvent = (
 	el: HTMLElement | Window | Document,
 	type: string,
-	handler: (evt: any) => void,
+	handler: (evt: MouseEvent) => void,
 	options?: AddEventListenerOptions | boolean
 ) => void;
 
@@ -93,9 +93,11 @@ export function attachEditorTemplatingHandler(
 			// @ts-ignore
 			evt.stopImmediatePropagation?.();
 
-			const instanceId = wrapper.getAttribute("data-template-wrapper") || undefined;
+			const instanceId =
+				wrapper.getAttribute("data-template-wrapper") || undefined;
 
-			const lineHint0 = typeof getLineHint0 === "function" ? getLineHint0() : null;
+			const lineHint0 =
+				typeof getLineHint0 === "function" ? getLineHint0() : null;
 
 			await editTemplateParamsOnDashboard(
 				{
@@ -113,7 +115,9 @@ export function attachEditorTemplatingHandler(
 				}
 			);
 		} catch (err) {
-			const msg = `Template edit failed: ${String((err as Error)?.message ?? err)}`;
+			const msg = `Template edit failed: ${String(
+				(err as Error)?.message ?? err
+			)}`;
 			if (useObsidianNotice) new Notice(msg);
 			else deps.notices?.error?.(msg);
 		}

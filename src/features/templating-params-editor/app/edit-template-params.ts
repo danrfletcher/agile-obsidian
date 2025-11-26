@@ -95,7 +95,7 @@ export async function editTemplateParamsOnDashboard(
 		// Merge defaults into the schema for nicer UX; For dropdowns, normalize prefill to an option value.
 		const schema = {
 			...def.paramsSchema,
-			fields: def.paramsSchema.fields.map((f: any) => {
+			fields: def.paramsSchema.fields.map((f) => {
 				const pre = prefill[f.name];
 				let nextDefault = pre != null ? String(pre) : f.defaultValue;
 
@@ -127,10 +127,7 @@ export async function editTemplateParamsOnDashboard(
 	if (!params) return; // user cancelled
 
 	// Validate/sanitize params
-	const validation = validateAndSanitizeParams(
-		params,
-		def.paramsSchema as any
-	);
+	const validation = validateAndSanitizeParams(params, def.paramsSchema);
 	if (!validation.ok) {
 		notices?.error?.(
 			`Invalid parameters: ${validation.error ?? "Unknown error"}`

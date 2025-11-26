@@ -1,8 +1,9 @@
-import { App, Modal, Notice } from "obsidian";
+import { App, Modal, Notice, TFile } from "obsidian";
 import type {
 	ParamsSchema,
 	ParamsSchemaField,
 } from "@features/templating-engine";
+import type { TemplateParams } from "../../domain/types";
 import { resolveModalTitleFromSchema } from "../../app/params-editor-service";
 import { escapeHtml } from "@utils";
 
@@ -53,7 +54,7 @@ function toDisplayPath(filePath: string): string {
 	return filePath;
 }
 
-function makeFileCandidate(file: any): FileCandidate {
+function makeFileCandidate(file: TFile): FileCandidate {
 	const filePath = String(file.path ?? "");
 	const basename = String(file.basename ?? filePath);
 	return {
@@ -86,13 +87,13 @@ function makeBlockCandidate(
 }
 
 async function buildVaultIndex(app: App): Promise<VaultIndex> {
-	const files = (app.vault as any).getMarkdownFiles?.() ?? [];
+	const files = app.vault.getMarkdownFiles();
 	const fileCandidates: FileCandidate[] = files.map(makeFileCandidate);
 
 	const blocks: BlockCandidate[] = [];
 	for (const f of files) {
 		try {
-			const content: string = await (app.vault as any).read(f);
+			const content: string = await app.vault.read(f);
 			const lines = content.split(/\r?\n/);
 			for (let i = 0; i < lines.length; i++) {
 				const raw = lines[i];
@@ -127,13 +128,16 @@ async function ensureBlockIdOnLine(
 	filePath: string,
 	lineIndex: number
 ): Promise<string> {
-	const abstractFile: any = (app.vault as any).getAbstractFileByPath(
-		filePath
-	);
+	const abstractFile = app.vault.getAbstractFileByPath(filePath);
 	if (!abstractFile) {
 		throw new Error(`File not found: ${filePath}`);
 	}
-	const content: string = await (app.vault as any).read(abstractFile);
+
+	if (!(abstractFile instanceof TFile)) {
+		throw new Error(`Not a file: ${filePath}`);
+	}
+
+	const content: string = await app.vault.read(abstractFile);
 	const lines = content.split(/\r?\n/);
 	if (lineIndex < 0 || lineIndex >= lines.length) {
 		throw new Error(`Invalid line index ${lineIndex} for ${filePath}`);
@@ -156,7 +160,7 @@ async function ensureBlockIdOnLine(
 	lines[lineIndex] = `${line} ^${newId}`;
 
 	const nextContent = lines.join("\n");
-	await (app.vault as any).modify(abstractFile, nextContent);
+	await app.vault.modify(abstractFile, nextContent);
 
 	return newId;
 }
@@ -314,7 +318,7 @@ function renderSuggestionItem(
 	li.style.background = highlight
 		? "var(--background-modifier-hover)"
 		: "transparent";
-	li.setAttr("data-kind", item.kind);
+	(li as HTMLElement).setAttr("data-kind", item.kind);
 
 	if (item.kind === "file") {
 		li.innerHTML = `📄 ${escapeHtml(item.display)}`;
@@ -530,16 +534,20 @@ function attachBlockSelectInput(
 		if (t === ul || ul.contains(t)) return;
 		closePortal();
 	};
-	document.addEventListener("mousedown", onDocMouseDown, { capture: true });
+
+	const captureOptions: AddEventListenerOptions = { capture: true };
+	document.addEventListener("mousedown", onDocMouseDown, captureOptions);
 
 	// Cleanup when input wrapper is detached (modal close)
 	const cleanup = () => {
 		try {
 			window.removeEventListener("scroll", onViewportChange, true);
 			window.removeEventListener("resize", onViewportChange);
-			document.removeEventListener("mousedown", onDocMouseDown, {
-				capture: true as any,
-			} as any);
+			document.removeEventListener(
+				"mousedown",
+				onDocMouseDown,
+				captureOptions
+			);
 			if (ul && ul.parentNode) ul.parentNode.removeChild(ul);
 		} catch {
 			// ignore
@@ -557,12 +565,16 @@ function attachBlockSelectInput(
 	return inputEl;
 }
 
+type KeyboardEventWithComposition = KeyboardEvent & {
+	isComposing?: boolean;
+};
+
 export async function showSchemaModal(
 	app: App,
 	templateId: string,
 	schema: ParamsSchema,
 	isEdit = false
-): Promise<Record<string, unknown> | undefined> {
+): Promise<TemplateParams | undefined> {
 	return new Promise((resolve) => {
 		const modal = new (class extends Modal {
 			private resolved = false;
@@ -778,7 +790,7 @@ export async function showSchemaModal(
 					if (!valid) return;
 					this.resolved = true;
 					this.close();
-					resolve(values);
+					resolve(values as TemplateParams);
 				};
 
 				okBtn.addEventListener("click", () => {
@@ -793,11 +805,11 @@ export async function showSchemaModal(
 				});
 
 				// Allow Enter to submit when focused on any single-line field
-				const handleEnterKey = (evt: KeyboardEvent) => {
+				const handleEnterKey = (evt: KeyboardEventWithComposition) => {
 					if (evt.key !== "Enter") return;
 					// Avoid interfering with IME composition or modifier shortcuts
 					if (
-						(evt as any).isComposing ||
+						evt.isComposing ||
 						evt.shiftKey ||
 						evt.altKey ||
 						evt.metaKey ||

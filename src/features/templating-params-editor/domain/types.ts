@@ -3,18 +3,25 @@
  */
 
 export interface EventBusLike {
-	dispatch<N extends string>(name: N, payload: any): void;
+	dispatch<N extends string, P = unknown>(name: N, payload: P): void;
 }
 
 export interface ParamField {
 	name: string;
-	type?: "string" | "number" | "boolean" | "any";
+	label?: string;
+	type?: "string" | "number" | "boolean" | "any" | string;
+	placeholder?: string;
+	defaultValue?: string | number | boolean | null;
+	description?: string;
 	required?: boolean;
-	defaultValue?: string;
+	options?: Array<{ label: string; value: string }>;
 }
 
 export interface ParamsSchema {
-	fields: ParamField[];
+	title?: string;
+	description?: string;
+	fields?: ParamField[];
+	titles?: { create?: string; edit?: string };
 }
 
 export interface TemplateDef {

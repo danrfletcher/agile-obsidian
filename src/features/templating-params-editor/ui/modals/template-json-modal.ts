@@ -1,10 +1,11 @@
 import { App, Modal, Notice } from "obsidian";
+import type { TemplateParams } from "../../domain/types";
 
 export async function showJsonModal(
 	app: App,
 	templateId: string,
 	initialJson?: string
-): Promise<unknown | undefined> {
+): Promise<TemplateParams | undefined> {
 	return new Promise((resolve) => {
 		const modal = new (class extends Modal {
 			private textarea!: HTMLTextAreaElement;
@@ -41,7 +42,7 @@ export async function showJsonModal(
 						return;
 					}
 					try {
-						const parsed = JSON.parse(v);
+						const parsed = JSON.parse(v) as TemplateParams;
 						this.close();
 						resolve(parsed);
 					} catch (e) {

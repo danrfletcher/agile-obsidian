@@ -14,7 +14,7 @@ export interface AttachHandlerOptions {
 	registerDomEvent: (
 		el: HTMLElement | Window | Document,
 		type: string,
-		handler: (evt: any) => void,
+		handler: (evt: MouseEvent) => void,
 		options?: AddEventListenerOptions | boolean
 	) => void;
 
@@ -78,7 +78,9 @@ export function attachDashboardTemplatingHandler(
 			// @ts-ignore
 			evt.stopImmediatePropagation?.();
 
-			const li = wrapper.closest("li[data-file-path]") as HTMLElement | null;
+			const li = wrapper.closest(
+				"li[data-file-path]"
+			) as HTMLElement | null;
 			const filePath = li?.getAttribute("data-file-path") || "";
 			if (!filePath) return;
 
@@ -104,7 +106,9 @@ export function attachDashboardTemplatingHandler(
 				}
 			);
 		} catch (err) {
-			const msg = `Template edit failed: ${String((err as Error)?.message ?? err)}`;
+			const msg = `Template edit failed: ${String(
+				(err as Error)?.message ?? err
+			)}`;
 			if (useObsidianNotice) new Notice(msg);
 			else deps.notices?.error?.(msg);
 		}

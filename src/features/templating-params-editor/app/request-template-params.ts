@@ -1,53 +1,28 @@
 import type { NoticePort } from "./ports";
-import type { TemplateParams } from "../domain/types";
+import type {
+	TemplateParams,
+	ParamsSchema as EditorParamsSchema,
+} from "../domain/types";
+import type {
+	ParamsSchema as EngineParamsSchema,
+} from "@features/templating-engine";
 import { validateAndSanitizeParams } from "../domain/validation";
 
 export type ParamsTemplatingPorts = {
-	findTemplateById: (id: string) =>
+	findTemplateById: (
+		id: string
+	) =>
 		| {
 				id: string;
 				hasParams?: boolean;
 				hiddenFromDynamicCommands?: boolean;
-				paramsSchema?:
-					| {
-							title?: string;
-							description?: string;
-							fields?: Array<{
-								name: string;
-								label?: string;
-								type?: string;
-								placeholder?: string;
-								defaultValue?: string | number | boolean | null;
-								description?: string;
-								required?: boolean;
-								options?: Array<{
-									label: string;
-									value: string;
-								}>;
-							}>;
-							titles?: { create?: string; edit?: string };
-					  }
-					| undefined;
+				paramsSchema?: EngineParamsSchema;
 		  }
 		| undefined;
 
 	showSchemaModal: (
 		templateId: string,
-		schema: {
-			title?: string;
-			description?: string;
-			fields: Array<{
-				name: string;
-				label?: string;
-				type?: "string" | "number" | "boolean" | "any" | string;
-				placeholder?: string;
-				defaultValue?: string | number | boolean | null;
-				description?: string;
-				required?: boolean;
-				options?: Array<{ label: string; value: string }>;
-			}>;
-			titles?: { create?: string; edit?: string };
-		},
+		schema: EngineParamsSchema,
 		isEdit: boolean
 	) => Promise<TemplateParams | undefined>;
 
@@ -56,6 +31,30 @@ export type ParamsTemplatingPorts = {
 		initialJson: string
 	) => Promise<TemplateParams | undefined>;
 };
+
+function toEditorParamsSchema(
+	schema?: EngineParamsSchema
+): EditorParamsSchema | undefined {
+	if (!schema) return undefined;
+
+	return {
+		title: schema.title,
+		description: schema.description,
+		titles: schema.titles,
+		fields: schema.fields?.map((field) => ({
+			name: field.name,
+			label: field.label,
+			// Validation uses this `type` to decide coercion; we keep it generic
+			// so values are treated as-is (string-ish) by default.
+			type: "any",
+			placeholder: field.placeholder,
+			defaultValue: field.defaultValue,
+			description: field.description,
+			required: field.required,
+			options: field.options,
+		})),
+	};
+}
 
 /**
  * Unified parameter request flow for both "create" and "edit".
@@ -97,7 +96,7 @@ export async function requestTemplateParams(
 		def.paramsSchema.fields.length > 0
 	) {
 		// Merge defaults into schema for better UX (editing shows current values)
-		const merged = {
+		const merged: EngineParamsSchema = {
 			...def.paramsSchema,
 			fields: def.paramsSchema.fields.map((f) => ({
 				...f,
@@ -108,11 +107,7 @@ export async function requestTemplateParams(
 			})),
 		};
 
-		params = await ports.showSchemaModal(
-			templateKey,
-			merged as any,
-			isEdit
-		);
+		params = await ports.showSchemaModal(templateKey, merged, isEdit);
 	} else {
 		const json = JSON.stringify(prefillObj, null, 2);
 		params = await ports.showJsonModal(templateKey, json);
@@ -123,7 +118,7 @@ export async function requestTemplateParams(
 	// Validate/sanitize if there is a schema. Otherwise accept as-is.
 	const validation = validateAndSanitizeParams(
 		params,
-		def.paramsSchema as any
+		toEditorParamsSchema(def.paramsSchema)
 	);
 	if (!validation.ok) {
 		notices?.error?.(
