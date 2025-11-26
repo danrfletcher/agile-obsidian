@@ -12,7 +12,7 @@ Lifecycle-aware event registration. Use Obsidian's registerDomEvent underneath.
 export type RegisterDomEvent = (
 	el: HTMLElement | Window | Document,
 	type: string,
-	handler: (evt: any) => void,
+	handler: (evt: Event) => void,
 	options?: AddEventListenerOptions | boolean
 ) => void;
 
@@ -48,11 +48,11 @@ function safeLoadFoldSet(): Set<string> {
 	try {
 		const raw = window.sessionStorage?.getItem(SESSION_STORE_KEY);
 		if (!raw) return new Set<string>();
-		const arr = JSON.parse(raw);
-		if (Array.isArray(arr)) {
-			return new Set(arr.map((s) => String(s)));
-		}
-		return new Set<string>();
+
+		// We only ever store an array of strings in SESSION_STORE_KEY via safeSaveFoldSet.
+		const arr = JSON.parse(raw) as string[];
+
+		return new Set(arr);
 	} catch {
 		return new Set<string>();
 	}
@@ -95,6 +95,32 @@ function unmarkExpanded(sectionName: string, uid: string): void {
 	safeSaveFoldSet(set);
 }
 
+interface TaskWithPosition {
+	position?: {
+		start?: {
+			line?: number | null;
+		} | null;
+	} | null;
+}
+
+interface TaskWithLine {
+	line?: number | null;
+}
+
+function getTaskLine(task: TaskItem): number | null {
+	const withPosition = task as TaskItem & TaskWithPosition;
+	if (typeof withPosition.position?.start?.line === "number") {
+		return withPosition.position.start.line;
+	}
+
+	const withLine = task as TaskItem & TaskWithLine;
+	if (typeof withLine.line === "number") {
+		return withLine.line;
+	}
+
+	return null;
+}
+
 /**
 Resolve a TaskItem for a given LI:
 - Prefer data-task-uid lookups
@@ -120,12 +146,7 @@ function resolveTaskFromLi(
 			try {
 				const tPath =
 					t.link?.path || (t._uniqueId?.split(":")[0] ?? "");
-				const tLine =
-					typeof (t as any)?.position?.start?.line === "number"
-						? (t as any).position.start.line
-						: typeof (t as any)?.line === "number"
-						? (t as any).line
-						: null;
+				const tLine = getTaskLine(t);
 				if (tPath === filePath && tLine === line) return t;
 			} catch {
 				/* ignore */
@@ -177,14 +198,14 @@ export function attachChevronSet(
 	const on = (
 		el: HTMLElement | Window | Document,
 		type: string,
-		handler: (evt: any) => void,
+		handler: (evt: Event) => void,
 		opts?: AddEventListenerOptions | boolean
 	) => {
 		if (registerDomEvent) {
 			registerDomEvent(el, type, handler, opts);
 		} else {
 			// Fallback if not provided. Prefer providing registerDomEvent from the plugin for lifecycle cleanup.
-			el.addEventListener(type, handler as EventListener, opts as any);
+			el.addEventListener(type, handler as EventListener, opts);
 		}
 	};
 
@@ -247,12 +268,8 @@ export function attachChevronSet(
 
 			const stableKey = (t: TaskItem): string => {
 				const fp = (t.link?.path || "").toLowerCase();
-				const line =
-					typeof (t as any)?.position?.start?.line === "number"
-						? String((t as any).position.start.line)
-						: typeof (t as any)?.line === "number"
-						? String((t as any).line)
-						: "";
+				const taskLine = getTaskLine(t);
+				const line = taskLine != null ? String(taskLine) : "";
 				const txt = (t.text || t.visual || "").trim();
 				return `${fp}::${line}::${txt}`;
 			};
@@ -313,7 +330,7 @@ export function attachChevronSet(
 		hit.style.cursor = "pointer";
 		hit.style.userSelect = "none";
 		hit.style.touchAction = "manipulation";
-		(hit.style as any).webkitTapHighlightColor = "transparent";
+		hit.style.setProperty("-webkit-tap-highlight-color", "transparent");
 		hit.style.zIndex = "9999";
 		hit.style.pointerEvents = "auto";
 		hit.style.background = "transparent";
@@ -497,7 +514,7 @@ export function attachChevronSet(
 			suppress(ev);
 			toggle();
 		});
-		on(hit as unknown as HTMLElement, "keydown", (ev: any) => {
+		on(hit, "keydown", (ev) => {
 			const kev = ev as KeyboardEvent;
 			if (kev.key === "Enter" || kev.key === " ") {
 				suppress(kev);
