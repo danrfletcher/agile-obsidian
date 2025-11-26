@@ -2,16 +2,12 @@ import { TaskItem } from "@features/task-index";
 import { attachFilteredChildren } from "./top-down-builder";
 import { stripListItems } from "./task-tree-utils";
 
-const cloneTaskNode = <T extends object>(obj: T): T => {
-	// @ts-ignore
-	if (typeof structuredClone === "function") return structuredClone(obj);
-	const anyObj: any = obj;
-	const cloned: any = { ...anyObj };
-	if (Array.isArray(anyObj.children)) {
-		cloned.children = anyObj.children.map((c: any) => cloneTaskNode(c));
-	}
-	return cloned;
-};
+const cloneTaskNode = (obj: TaskItem): TaskItem => ({
+	...obj,
+	children: Array.isArray(obj.children)
+		? obj.children.map((child) => cloneTaskNode(child))
+		: obj.children,
+});
 
 /**
  * Climbs the task hierarchy from the given task to find the first ancestor that matches the provided predicate.
@@ -26,7 +22,8 @@ const cloneTaskNode = <T extends object>(obj: T): T => {
 export const findAncestor = (
 	task: TaskItem,
 	taskMap: Map<string, TaskItem>,
-	predicate: (t: TaskItem) => boolean = (t) => (t as any).parent < 0
+	predicate: (t: TaskItem) => boolean = (t: TaskItem) =>
+		typeof t.parent === "number" && t.parent < 0
 ): TaskItem | null => {
 	if (!task) return null;
 	if (predicate(task)) return task;
