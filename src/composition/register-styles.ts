@@ -8,7 +8,7 @@ import type { Container } from "./container";
 export function applyCheckboxStylesSetting(container: Container) {
 	// Defensive sanitize for scope (already sanitized manifestId in container).
 	const scopeId = container.manifestId;
-	if ((container.settings as any)?.useBundledCheckboxes) {
+	if (container.settings?.useBundledCheckboxes) {
 		injectCheckboxStyles(scopeId);
 	} else {
 		removeCheckboxStyles(scopeId);

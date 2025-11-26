@@ -33,7 +33,7 @@ export interface Container {
 		getOrgStructure: () => OrgStructureResult;
 		getTeamMembersForPath: (path: string) => {
 			members: TeamInfo["members"];
-			buckets: any;
+			buckets: unknown;
 			team: TeamInfo | null;
 		};
 	};
@@ -46,22 +46,22 @@ export interface Container {
 export function createContainer(
 	plugin: Plugin & { settings: AgileObsidianSettings }
 ): Container {
-	const app = (plugin as any).app as App;
+	const app = plugin.app as App;
 
-	const settingsService = createSettingsService(
-		() => (plugin as any).settings
-	);
+	const settingsService = createSettingsService(() => plugin.settings);
 
-	const container: any = {
+	type ContainerWithoutSettings = Omit<Container, "settings">;
+
+	const container: ContainerWithoutSettings = {
 		plugin,
 		app,
 		settingsService,
-		manifestId: sanitizeScopeId((plugin as any).manifest?.id ?? ""),
+		manifestId: sanitizeScopeId(plugin.manifest?.id ?? ""),
 	};
 
 	Object.defineProperty(container, "settings", {
 		get() {
-			return (plugin as any).settings as AgileObsidianSettings;
+			return plugin.settings;
 		},
 		set(_v: AgileObsidianSettings) {
 			// No-op to prevent external mutation; settings are plugin-owned.

@@ -1,6 +1,6 @@
 import { createDefaultSettings, createSettingsTab } from "@settings";
 import type { AgileObsidianSettings } from "@settings";
-import type { Plugin } from "obsidian";
+import type { Plugin, PluginSettingTab } from "obsidian";
 import type { Container } from "./container";
 import { registerOrgStructureSettings } from "@features/org-structure";
 import { registerCustomCheckboxesSettings } from "@styles/custom-checkboxes";
@@ -17,7 +17,9 @@ export async function initSettings(
 		saveSettings?: () => Promise<void>;
 	}
 ): Promise<AgileObsidianSettings> {
-	const stored = await plugin.loadData?.();
+	const stored = (await plugin.loadData?.()) as
+		| Partial<AgileObsidianSettings>
+		| null;
 	const settings: AgileObsidianSettings = createDefaultSettings(
 		stored ?? null
 	);
@@ -28,21 +30,27 @@ export async function initSettings(
 /**
  * Registers the plugin settings tab and hooks feature-specific settings sub-systems.
  */
-export async function registerSettings(container: Container) {
+export async function registerSettings(container: Container): Promise<void> {
 	const { app, plugin, settings } = container;
 	const p = plugin as Plugin & {
 		saveSettings?: () => Promise<void>;
 		saveData?: (data: AgileObsidianSettings) => Promise<void>;
-		addSettingTab: (tab: any) => void;
 	};
 
 	const saveSettingsLocal = async (): Promise<void> => {
-		if (typeof p.saveSettings === "function") await p.saveSettings();
-		else if (typeof p.saveData === "function") await p.saveData(settings);
+		if (typeof p.saveSettings === "function") {
+			await p.saveSettings();
+		} else if (typeof p.saveData === "function") {
+			await p.saveData(settings);
+		}
 
 		try {
-			// @ts-ignore - Obsidian Workspace supports custom events via trigger
-			app.workspace.trigger("agile-settings-changed");
+			interface WorkspaceWithTrigger {
+				trigger(name: string, ...data: unknown[]): void;
+			}
+			(app.workspace as unknown as WorkspaceWithTrigger).trigger(
+				"agile-settings-changed"
+			);
 		} catch (e) {
 			console.warn(
 				"[settings] Failed to trigger agile-settings-changed",
@@ -75,6 +83,6 @@ export async function registerSettings(container: Container) {
 			saveSettings: saveSettingsLocal,
 			applyCheckboxStyles: async () =>
 				await checkbox.applyCheckboxStyles(),
-		}) as any
+		}) as PluginSettingTab
 	);
 }

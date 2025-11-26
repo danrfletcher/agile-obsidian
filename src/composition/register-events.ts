@@ -1,5 +1,6 @@
 import type { Container } from "./container";
-import { MarkdownView, Notice as ObsidianNotice } from "obsidian";
+import { MarkdownView, Notice as ObsidianNotice, App, Plugin } from "obsidian";
+import type { OrgStructurePort } from "@features/org-structure";
 import { wireTaskIndex } from "./wire/task-index";
 import { wireCanonicalFormatterForView } from "./wire/canonical-formatter";
 import { wireTemplatingForView } from "./wire/templating";
@@ -25,7 +26,7 @@ export async function registerEvents(container: Container) {
 		if (currentCanonicalDisposer) {
 			try {
 				currentCanonicalDisposer();
-			} catch {}
+			} catch { }
 			currentCanonicalDisposer = null;
 		}
 		currentView = null;
@@ -80,7 +81,7 @@ export async function registerEvents(container: Container) {
 
 					const lines = content.split(/\r?\n/);
 					let fileChanged = false;
-					const out: string[] = new Array(lines.length);
+					const out: string[] = new Array(lines.length) as string[];
 
 					for (let i = 0; i < lines.length; i++) {
 						const oldLine = lines[i] ?? "";
@@ -114,8 +115,7 @@ export async function registerEvents(container: Container) {
 				);
 			} catch (e) {
 				new ObsidianNotice(
-					`Canonical formatting failed: ${
-						e instanceof Error ? e.message : String(e)
+					`Canonical formatting failed: ${e instanceof Error ? e.message : String(e)
 					}`
 				);
 			}
@@ -137,7 +137,14 @@ export async function registerEvents(container: Container) {
 		try {
 			const {
 				wireTaskAssignmentDomHandlers,
-			} = require("@features/task-assignment");
+			} = require("@features/task-assignment") as {
+				wireTaskAssignmentDomHandlers: (
+					app: App,
+					view: MarkdownView,
+					plugin: Plugin,
+					orgPorts: { orgStructure: OrgStructurePort }
+				) => void;
+			};
 			wireTaskAssignmentDomHandlers(app, view, plugin, orgPorts);
 		} catch {
 			// Feature may not expose dom wiring in this runtime, ignore.

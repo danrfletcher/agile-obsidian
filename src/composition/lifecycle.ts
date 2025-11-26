@@ -30,9 +30,9 @@ export class DisposableStack {
 			const d = this.stack.pop()!;
 			try {
 				const ret = d();
-				if (ret && typeof (ret as any).then === "function") {
+				if (ret instanceof Promise) {
 					// Fire and forget; composition unloading doesn't need to await
-					(ret as Promise<void>).catch(() => void 0);
+					ret.catch(() => void 0);
 				}
 			} catch {
 				// swallow on dispose path

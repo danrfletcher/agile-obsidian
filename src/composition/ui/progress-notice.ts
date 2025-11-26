@@ -28,11 +28,12 @@ export class ProgressNotice {
 	private started = false;
 	private ended = false;
 	private rafId: number | null = null;
-	private pendingPct: number = 0;
-	private pendingText: string = "";
+	private pendingPct = 0;
+	private pendingText = "";
 
-	private ensureElements(title: string) {
+	private ensureElements(title: string): void {
 		if (this.notice && this.wrapper && this.bar && this.label) return;
+
 		this.notice = new ObsidianNotice("", 0);
 		const wrapper = document.createElement("div");
 		wrapper.style.minWidth = "260px";
@@ -40,35 +41,45 @@ export class ProgressNotice {
 		wrapper.style.display = "flex";
 		wrapper.style.flexDirection = "column";
 		wrapper.style.gap = "8px";
+
 		const titleEl = document.createElement("div");
 		titleEl.textContent = title;
 		titleEl.style.fontWeight = "600";
 		titleEl.style.fontSize = "12px";
 		wrapper.appendChild(titleEl);
+
 		const barOuter = document.createElement("div");
 		barOuter.style.height = "6px";
 		barOuter.style.background = "var(--background-modifier-border)";
 		barOuter.style.borderRadius = "3px";
 		barOuter.style.overflow = "hidden";
+
 		const barInner = document.createElement("div");
 		barInner.style.height = "100%";
 		barInner.style.width = "0%";
 		barInner.style.background = "var(--interactive-accent)";
 		barInner.style.transition = "width 140ms linear";
 		barOuter.appendChild(barInner);
+
 		const label = document.createElement("div");
 		label.style.fontSize = "11px";
 		label.style.opacity = "0.8";
+
 		wrapper.appendChild(barOuter);
 		wrapper.appendChild(label);
-		(this.notice as any).noticeEl?.empty?.();
-		(this.notice as any).noticeEl?.appendChild(wrapper);
+
+		const noticeWithEl = this.notice as ObsidianNotice & {
+			noticeEl?: HTMLElement & { empty?: () => void };
+		};
+		noticeWithEl.noticeEl?.empty?.();
+		noticeWithEl.noticeEl?.appendChild(wrapper);
+
 		this.wrapper = wrapper;
 		this.bar = barInner;
 		this.label = label;
 	}
 
-	private schedulePaint() {
+	private schedulePaint(): void {
 		if (this.rafId != null) return;
 		this.rafId = requestAnimationFrame(() => {
 			this.rafId = null;
@@ -77,7 +88,7 @@ export class ProgressNotice {
 		});
 	}
 
-	start(title: string, total: number) {
+	start(title: string, total: number): void {
 		if (this.ended || this.started) return;
 		this.started = true;
 		this.ensureElements(title);
@@ -86,7 +97,7 @@ export class ProgressNotice {
 		this.schedulePaint();
 	}
 
-	update(current: number, total: number, message?: string) {
+	update(current: number, total: number, message?: string): void {
 		if (!this.started || this.ended) return;
 		const clampedTotal = Math.max(1, total);
 		const clampedCur = Math.max(0, Math.min(current, clampedTotal));
@@ -97,14 +108,14 @@ export class ProgressNotice {
 		this.schedulePaint();
 	}
 
-	end() {
+	end(): void {
 		if (this.ended) return;
 		this.ended = true;
 		if (this.notice) this.notice.hide();
 		this.cleanup();
 	}
 
-	private cleanup() {
+	private cleanup(): void {
 		if (this.rafId != null) {
 			cancelAnimationFrame(this.rafId);
 			this.rafId = null;

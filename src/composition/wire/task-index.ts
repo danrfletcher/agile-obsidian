@@ -61,7 +61,9 @@ export async function wireTaskIndex(container: Container): Promise<{
 			getItemAtCursor: (cursor) =>
 				taskIndexService.getItemAtCursor(cursor),
 			getTaskByBlockRef: (ref) =>
-				taskIndexService.getTaskByBlockRef(ref) as any,
+				taskIndexService.getTaskByBlockRef(ref) as ReturnType<
+					TaskIndexPort["getTaskByBlockRef"]
+				>,
 		},
 	};
 

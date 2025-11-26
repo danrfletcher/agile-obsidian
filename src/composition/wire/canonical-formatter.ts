@@ -1,11 +1,34 @@
+import type { Editor } from "obsidian";
 import { MarkdownView } from "obsidian";
 import type { Container } from "../container";
-import { ProgressNotice } from "../ui/progress-notice";
+import { ProgressNotice } from "src/composition/ui/progress-notice";
 import {
 	createCanonicalFormatterService,
 	createCanonicalFormatterOrchestrator,
 } from "@features/task-canonical-formatter";
 import type { CanonicalFormatterPort } from "@features/task-canonical-formatter";
+
+type CanonicalFormatterSettings = {
+	enableTaskCanonicalFormatter?: boolean;
+	enableCanonicalOnLineCommit?: boolean;
+	enableCanonicalOnLeafChange?: boolean;
+};
+
+type SettingsServiceLike = {
+	getRaw?: () => CanonicalFormatterSettings;
+	get?: () => CanonicalFormatterSettings;
+};
+
+type EditorWithDom = Editor & {
+	cm?: {
+		contentDOM?: HTMLElement;
+	};
+};
+
+type EditorWithSetters = Editor & {
+	setValue?: (content: string) => void;
+	setCursor?: (pos: { line: number; ch: number }) => void;
+};
 
 /**
  * Wires canonical formatter for a specific MarkdownView.
@@ -15,8 +38,11 @@ export function wireCanonicalFormatterForView(
 	view: MarkdownView,
 	container: Container
 ): () => void {
-	const editor = view.editor;
+	const editor = view.editor as Editor | null;
 	if (!editor) return () => void 0;
+
+	const editorWithDom = editor as EditorWithDom;
+	const editorWithSetters = editor as EditorWithSetters;
 
 	// Mutation barrier to avoid re-entrancy from our own writes.
 	let isMutating = false;
@@ -26,17 +52,23 @@ export function wireCanonicalFormatterForView(
 	const progress = ProgressNotice.getOrCreateForView(view);
 	const { app } = container;
 
-	const getSettingsSnapshot = () => {
+	const getSettingsSnapshot = (): CanonicalFormatterSettings => {
 		try {
-			const svc: any = container.settingsService as any;
-			if (svc && typeof svc.getRaw === "function") return svc.getRaw();
-			if (svc && typeof svc.get === "function") return svc.get();
-		} catch {}
-		return container.settings;
+			const svc = container.settingsService as unknown as SettingsServiceLike;
+			if (svc && typeof svc.getRaw === "function") {
+				return svc.getRaw();
+			}
+			if (svc && typeof svc.get === "function") {
+				return svc.get();
+			}
+		} catch {
+			// ignore and fall back to container.settings
+		}
+		return container.settings as unknown as CanonicalFormatterSettings;
 	};
 
 	const getFlags = () => {
-		const s: any = getSettingsSnapshot();
+		const s = getSettingsSnapshot();
 		return {
 			master: !!s.enableTaskCanonicalFormatter,
 			onLineCommit: !!s.enableCanonicalOnLineCommit,
@@ -50,10 +82,18 @@ export function wireCanonicalFormatterForView(
 			const lineNumber = cursor.line;
 			const line = editor.getLine(lineNumber);
 			if (typeof line !== "string") return null;
+
 			const from = editor.getCursor("from");
 			const to = editor.getCursor("to");
 			const hasRange = from.line !== to.line || from.ch !== to.ch;
-			let selection: { start: number; end: number } | undefined;
+
+			let selection:
+				| {
+						start: number;
+						end: number;
+				  }
+				| undefined;
+
 			if (
 				hasRange &&
 				from.line === lineNumber &&
@@ -63,8 +103,10 @@ export function wireCanonicalFormatterForView(
 			} else if (!hasRange && cursor.line === lineNumber) {
 				selection = { start: cursor.ch, end: cursor.ch };
 			}
+
 			return { line, lineNumber, selection };
 		},
+
 		getLineAt: (lineNumber: number) => {
 			if (
 				typeof lineNumber !== "number" ||
@@ -76,6 +118,7 @@ export function wireCanonicalFormatterForView(
 			const line = editor.getLine(lineNumber);
 			return typeof line === "string" ? line : null;
 		},
+
 		replaceLineWithSelection: (lineNumber, newLine, newSel) => {
 			const oldLine = editor.getLine(lineNumber);
 			if (oldLine === newLine) return;
@@ -94,6 +137,7 @@ export function wireCanonicalFormatterForView(
 				isMutating = false;
 			}
 		},
+
 		replaceLine: (lineNumber, newLine) => {
 			const oldLine = editor.getLine(lineNumber);
 			if (oldLine === newLine) return;
@@ -108,6 +152,7 @@ export function wireCanonicalFormatterForView(
 				isMutating = false;
 			}
 		},
+
 		replaceAllLines: (newLines: string[]) => {
 			try {
 				const current = editor.getValue();
@@ -118,8 +163,8 @@ export function wireCanonicalFormatterForView(
 				const cur = editor.getCursor();
 				isMutating = true;
 				try {
-					if (typeof (editor as any).setValue === "function") {
-						(editor as any).setValue(next);
+					if (typeof editorWithSetters.setValue === "function") {
+						editorWithSetters.setValue(next);
 					} else {
 						const lineCount = editor.lineCount();
 						const lastLineLen =
@@ -130,12 +175,14 @@ export function wireCanonicalFormatterForView(
 							{ line: lineCount - 1, ch: lastLineLen }
 						);
 					}
+
 					const maxLine = Math.max(0, editor.lineCount() - 1);
 					const line = Math.min(cur.line, maxLine);
 					const lineLen = editor.getLine(line)?.length ?? 0;
 					const ch = Math.max(0, Math.min(cur.ch, lineLen));
-					if (typeof (editor as any).setCursor === "function") {
-						(editor as any).setCursor({ line, ch });
+
+					if (typeof editorWithSetters.setCursor === "function") {
+						editorWithSetters.setCursor({ line, ch });
 					}
 				} finally {
 					isMutating = false;
@@ -144,13 +191,18 @@ export function wireCanonicalFormatterForView(
 				// swallow
 			}
 		},
+
 		getCursorLine: () => editor.getCursor().line,
+
 		getAllLines: () => {
 			const lc = editor.lineCount();
 			const lines: string[] = [];
-			for (let i = 0; i < lc; i++) lines.push(editor.getLine(i));
+			for (let i = 0; i < lc; i++) {
+				lines.push(editor.getLine(i));
+			}
 			return lines;
 		},
+
 		onProgressStart: ({ title, total }) => progress.start(title, total),
 		onProgressUpdate: ({ current, total, message }) =>
 			progress.update(current, total, message),
@@ -159,8 +211,8 @@ export function wireCanonicalFormatterForView(
 		onLineCommitted: (cb) => {
 			let detachDom: (() => void) | null = null;
 
-			const cmContent: HTMLElement | undefined = (editor as any)?.cm
-				?.contentDOM;
+			const cmContent: HTMLElement | undefined =
+				editorWithDom.cm?.contentDOM;
 			const queriedContent = view.containerEl.querySelector(
 				".cm-content"
 			) as HTMLElement | null;
@@ -203,7 +255,9 @@ export function wireCanonicalFormatterForView(
 				if (detachDom) {
 					try {
 						detachDom();
-					} catch {}
+					} catch {
+						// ignore
+					}
 				}
 				app.workspace.offref(off);
 			};
@@ -212,8 +266,8 @@ export function wireCanonicalFormatterForView(
 		onCursorLineChanged: (cb) => {
 			let detachFns: Array<() => void> = [];
 
-			const cmContent: HTMLElement | undefined = (editor as any)?.cm
-				?.contentDOM;
+			const cmContent: HTMLElement | undefined =
+				editorWithDom.cm?.contentDOM;
 			const queriedContent = view.containerEl.querySelector(
 				".cm-content"
 			) as HTMLElement | null;
@@ -243,7 +297,9 @@ export function wireCanonicalFormatterForView(
 					if (!flags.master || !flags.onLineCommit) return;
 					try {
 						cb({ prevLine, nextLine });
-					} catch {}
+					} catch {
+						// swallow
+					}
 				}
 			};
 
@@ -261,7 +317,9 @@ export function wireCanonicalFormatterForView(
 							);
 						if (active === view) scheduleNotify();
 					}
-				} catch {}
+				} catch {
+					// swallow
+				}
 			};
 			document.addEventListener(
 				"selectionchange",
@@ -326,12 +384,16 @@ export function wireCanonicalFormatterForView(
 				for (const off of detachFns) {
 					try {
 						off();
-					} catch {}
+					} catch {
+						// ignore
+					}
 				}
 				if (rafId != null) {
 					try {
 						cancelAnimationFrame(rafId);
-					} catch {}
+					} catch {
+						// ignore
+					}
 					rafId = null;
 				}
 				detachFns = [];
@@ -370,7 +432,9 @@ export function wireCanonicalFormatterForView(
 		debounceMs: 300,
 		shouldRun: () => getFlags(),
 	});
-	(view as any).__canonicalProbe = () => {
+
+	(view as MarkdownView & { __canonicalProbe?: () => void })
+		.__canonicalProbe = () => {
 		orchestrator.triggerOnceNow("manual", "line");
 		// Optional: could log or notify here.
 	};
@@ -389,12 +453,19 @@ export function wireCanonicalFormatterForView(
 	return () => {
 		try {
 			orchestrator.dispose();
-		} catch {}
-		const lingering = (ProgressNotice as any).activeForView?.get?.(view);
-		if (lingering) {
+		} catch {
+			// ignore
+		}
+		const progressNoticeCtor = ProgressNotice as unknown as {
+			activeForView?: WeakMap<MarkdownView, { end?: () => void }>;
+		};
+		const lingering = progressNoticeCtor.activeForView?.get(view);
+		if (lingering && typeof lingering.end === "function") {
 			try {
-				(lingering as any).end?.();
-			} catch {}
+				lingering.end();
+			} catch {
+				// ignore
+			}
 		}
 	};
 }

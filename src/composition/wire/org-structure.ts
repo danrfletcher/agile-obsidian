@@ -38,8 +38,14 @@ export async function wireOrgStructure(container: Container): Promise<{
 		getTeamMembersForFile: orgStructureService.getTeamMembersForPath,
 	};
 
-	(container as any).orgStructureService = orgStructureService;
-	(container as any).orgStructurePorts = { orgStructure: orgStructurePort };
+	type ContainerWithOrg = Container & {
+		orgStructureService: typeof orgStructureService;
+		orgStructurePorts: { orgStructure: OrgStructurePort };
+	};
+	(container as ContainerWithOrg).orgStructureService = orgStructureService;
+	(container as ContainerWithOrg).orgStructurePorts = {
+		orgStructure: orgStructurePort,
+	};
 
 	try {
 		await registerTaskAssignmentDynamicCommands(
