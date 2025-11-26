@@ -1,6 +1,7 @@
 import { TaskItem } from "@features/task-index";
 import { getTemplateKeysFromTask } from "@features/templating-engine";
 import type { AgileArtifactType } from "./types";
+import { TaskStatusCode } from "./types";
 
 /**
  * Fallback: extract template keys directly from HTML wrappers if present.
@@ -147,6 +148,27 @@ function heuristicRecurringResponsibility(
 }
 
 /**
+ * Helper: determine whether a task should fall back to "task" based on its status.
+ * Uses the known TaskStatusCode enum to avoid `any` and to keep semantics explicit.
+ */
+function shouldFallbackToTask(task: TaskItem): boolean {
+	// TaskItem in @features/task-index does not expose `status` in its type,
+	// but it is present at runtime. We assert a refined view here using our
+	// domain-level TaskStatusCode to avoid `any`.
+	type TaskWithStatus = TaskItem & {
+		status?: TaskStatusCode | null;
+	};
+
+	const { status } = task as TaskWithStatus;
+
+	return (
+		status !== TaskStatusCode.Open &&
+		status !== TaskStatusCode.Done &&
+		status !== TaskStatusCode.Category
+	);
+}
+
+/**
  * Resolve the first matching canonical type from present template keys, if any.
  * If no recognized template is present:
  * - returns "task" for non-open/done/archived items (legacy rule)
@@ -188,15 +210,9 @@ export const getAgileArtifactType = (
 		}
 
 		// 3) No template detected -> preserve original rule
-		const status = (task as any)?.status;
-		return status !== "O" && status !== "d" && status !== "A"
-			? "task"
-			: null;
+		return shouldFallbackToTask(task) ? "task" : null;
 	} catch {
 		// Safe fallback
-		const status = (task as any)?.status;
-		return status !== "O" && status !== "d" && status !== "A"
-			? "task"
-			: null;
+		return shouldFallbackToTask(task) ? "task" : null;
 	}
 };
