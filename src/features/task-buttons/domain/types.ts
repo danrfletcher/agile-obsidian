@@ -1,10 +1,48 @@
 import type { TaskItem } from "@features/task-index";
 
 /**
+ * TaskItem plus extra runtime metadata used by the task-buttons feature.
+ *
+ * These fields are attached by other parts of the system but are not part of the
+ * core TaskItem type.
+ */
+export type TaskWithMetadata = TaskItem & {
+	/**
+	 * Stable unique identifier for DOM attributes and events.
+	 * Typically `${filePath}:${line}`.
+	 */
+	_uniqueId?: string;
+	position?: {
+		start?: {
+			line?: number;
+		};
+	};
+	/**
+	 * Fallback line index used by some sources.
+	 */
+	line?: number;
+	/**
+	 * Alternative visual representation of the task text.
+	 */
+	visual?: string;
+};
+
+/**
  * Simple event bus for optimistic updates and notifications.
  */
 export interface EventBusLike {
-	dispatch<N extends string>(name: N, payload: any): void;
+	dispatch(
+		name: "agile:prepare-optimistic-file-change",
+		payload: { filePath: string }
+	): void;
+	dispatch(
+		name: "agile:task-snoozed",
+		payload: { uid: string; filePath: string; date: string }
+	): void;
+	/**
+	 * Fallback signature for other events emitted by the host application.
+	 */
+	dispatch(name: string, payload: Record<string, unknown>): void;
 }
 
 /**

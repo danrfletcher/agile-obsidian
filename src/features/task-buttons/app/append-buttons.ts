@@ -1,5 +1,5 @@
 import type { TaskItem } from "@features/task-index";
-import { TaskButtonsDeps } from "../domain/types";
+import type { TaskButtonsDeps, TaskWithMetadata } from "../domain/types";
 import {
 	shouldShowSnoozeButton,
 	shouldShowSnoozeAll,
@@ -11,8 +11,15 @@ import {
 	removeExistingControls,
 } from "../ui/utils/dom";
 import { createSnoozeButton } from "../ui/components/snooze-button";
-import { createSnoozeAllButton } from "../ui/components/snooze-all-button"
+import { createSnoozeAllButton } from "../ui/components/snooze-all-button";
 import { getTaskFilePath } from "../domain/utils/task";
+
+/**
+ * Get the stable unique ID for a task, if present.
+ */
+function getTaskUniqueId(task: TaskItem): string | undefined {
+	return (task as TaskWithMetadata)._uniqueId;
+}
 
 /**
  * Factory returning the public API for appending snooze buttons to task lines.
@@ -51,9 +58,13 @@ export function createTaskButtonsAPI(deps: TaskButtonsDeps) {
 			return;
 		}
 
-		if ((task as any)._uniqueId)
-			liEl.setAttribute("data-task-uid", (task as any)._uniqueId);
-		if (filePath) liEl.setAttribute("data-file-path", filePath);
+		const uid = getTaskUniqueId(task);
+		if (uid) {
+			liEl.setAttribute("data-task-uid", uid);
+		}
+		if (filePath) {
+			liEl.setAttribute("data-file-path", filePath);
+		}
 
 		removeExistingControls(liEl, [
 			".agile-snooze-btn",
@@ -69,9 +80,11 @@ export function createTaskButtonsAPI(deps: TaskButtonsDeps) {
 					});
 				}
 				await snoozeSingleTask(task, dateISO, userSlug);
-				if ((task as any)._uniqueId && filePath && eventBus) {
+
+				const uidInner = getTaskUniqueId(task);
+				if (uidInner && filePath && eventBus) {
 					eventBus.dispatch("agile:task-snoozed", {
-						uid: (task as any)._uniqueId,
+						uid: uidInner,
 						filePath,
 						date: dateISO,
 					});
@@ -101,9 +114,13 @@ export function createTaskButtonsAPI(deps: TaskButtonsDeps) {
 
 		if (!shouldShowSnoozeAll(task, normalized, artifactClassifier)) return;
 
-		if ((task as any)._uniqueId)
-			liEl.setAttribute("data-task-uid", (task as any)._uniqueId);
-		if (filePath) liEl.setAttribute("data-file-path", filePath);
+		const uid = getTaskUniqueId(task);
+		if (uid) {
+			liEl.setAttribute("data-task-uid", uid);
+		}
+		if (filePath) {
+			liEl.setAttribute("data-file-path", filePath);
+		}
 
 		const btnAll = createSnoozeAllButton({
 			getTomorrowISO: () => time.tomorrowISO(),
@@ -145,9 +162,10 @@ export function createTaskButtonsAPI(deps: TaskButtonsDeps) {
 					/* ignore */
 				}
 
-				if ((task as any)._uniqueId && filePath && eventBus) {
+				const uidInner = getTaskUniqueId(task);
+				if (uidInner && filePath && eventBus) {
 					eventBus.dispatch("agile:task-snoozed", {
-						uid: (task as any)._uniqueId,
+						uid: uidInner,
 						filePath,
 						date: dateISO,
 					});

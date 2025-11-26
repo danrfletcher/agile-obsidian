@@ -1,5 +1,5 @@
 import type { TaskItem } from "@features/task-index";
-import type { FileRepository } from "../types";
+import type { FileRepository, TaskWithMetadata } from "../types";
 import {
 	normalizeVisibleText,
 	sanitizeUserSlug,
@@ -35,7 +35,7 @@ function updateLineWithSnoozeAllMarker(
 	let out = line.replace(userMarkerRegex, "").trimRight();
 
 	// If a global inherited snooze exists but is expired, replace with user-specific
-	out = out.replace(globalInheritedRegex, (match, date) => {
+	out = out.replace(globalInheritedRegex, (match: string, date: string) => {
 		const d = parseYyyyMmDd(date);
 		if (d && d.getTime() > today.getTime()) return match;
 		return `💤⬇️${userSpan} ${dateStr}`;
@@ -68,9 +68,9 @@ export async function snoozeAllSubtasks(
 		return m ? normalizeVisibleText(m[1]) : null;
 	};
 
-	const targetTextNorm = normalizeVisibleText(
-		(task.text || (task as any).visual || "").trim()
-	);
+	const taskWithMeta = task as TaskWithMetadata;
+	const targetTextSource = (task.text ?? taskWithMeta.visual ?? "").trim();
+	const targetTextNorm = normalizeVisibleText(targetTextSource);
 
 	// Attempt matching around the guessed line for robustness
 	const baseIdx = guessTaskLineIndex(task);

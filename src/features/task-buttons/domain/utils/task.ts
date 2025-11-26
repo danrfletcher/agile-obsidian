@@ -1,4 +1,12 @@
 import type { TaskItem } from "@features/task-index";
+import type { TaskWithMetadata } from "../types";
+
+/**
+ * Internal helper to access runtime-only metadata on TaskItem.
+ */
+function asTaskWithMetadata(task: TaskItem): TaskWithMetadata {
+	return task as TaskWithMetadata;
+}
 
 /**
  * Check if task has no children.
@@ -12,9 +20,10 @@ export function isLeafTask(task: TaskItem): boolean {
  * Uses link.path if present; falls back to _uniqueId's prefix (before ':').
  */
 export function getTaskFilePath(task: TaskItem): string {
-	const uid = (task as any)._uniqueId || "";
-	const fromUid = uid.split(":")[0] || "";
-	const linkPath = task.link?.path || "";
+	const taskWithMeta = asTaskWithMetadata(task);
+	const uid = taskWithMeta._uniqueId ?? "";
+	const fromUid = uid.split(":")[0] ?? "";
+	const linkPath = task.link?.path ?? "";
 	return linkPath || fromUid || "";
 }
 
@@ -22,8 +31,9 @@ export function getTaskFilePath(task: TaskItem): string {
  * Try to guess the task's primary line index in the file.
  */
 export function guessTaskLineIndex(task: TaskItem): number {
-	const pos = (task as any)?.position?.start?.line;
+	const taskWithMeta = asTaskWithMetadata(task);
+	const pos = taskWithMeta.position?.start?.line;
 	if (typeof pos === "number") return pos;
-	if (typeof (task as any).line === "number") return (task as any).line;
+	if (typeof taskWithMeta.line === "number") return taskWithMeta.line;
 	return -1;
 }
