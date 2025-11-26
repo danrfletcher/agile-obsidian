@@ -1,4 +1,4 @@
-import type { App, Plugin } from "obsidian";
+import type { App, Editor, Plugin } from "obsidian";
 import { MarkdownView, Notice } from "obsidian";
 import { insertTemplateAtCursor } from "@features/templating-engine";
 import type {
@@ -36,7 +36,7 @@ function getActiveMarkdownView(app: App): MarkdownView | null {
 async function isAssigneeAllowedHere(app: App): Promise<boolean> {
 	const view = getActiveMarkdownView(app);
 	if (!view) return false;
-	const editor: any = (view as any).editor;
+	const editor = view.editor;
 	if (!editor) return false;
 
 	try {
@@ -118,7 +118,7 @@ function makeDelegateNewMemberCommandName(
 }
 
 function clearExistingOfTypeOnCurrentLine(
-	editor: any,
+	editor: Editor,
 	assignType: "assignee" | "delegate"
 ) {
 	try {
@@ -134,14 +134,18 @@ function clearExistingOfTypeOnCurrentLine(
 			);
 			editor.setCursor?.({ line: lineNo, ch: updated.length });
 		}
-	} catch {}
+	} catch {
+		// ignore
+	}
 }
 
 // Resolve the preferred DOM target for events (content root) plus global fallback
 function getEventTargets(app: App): EventTarget[] {
 	const targets: EventTarget[] = [];
-	const globalDoc = (window as any)?.document ?? document;
-	if (globalDoc) targets.push(globalDoc);
+
+	if (typeof document !== "undefined") {
+		targets.push(document);
+	}
 
 	const view = getActiveMarkdownView(app);
 	const cmHolder = view as unknown as {
@@ -152,6 +156,7 @@ function getEventTargets(app: App): EventTarget[] {
 		view?.containerEl?.querySelector?.(".cm-content") ??
 		null;
 	if (cmContent) targets.unshift(cmContent);
+
 	return targets;
 }
 
@@ -170,6 +175,20 @@ function kindToMemberType(
 	}
 }
 
+type AssigneeChangedDetail = {
+	filePath: string;
+	parentLine0: number;
+	beforeLines: string[];
+	newAssigneeSlug: string | null;
+	oldAssigneeSlug: string | null;
+};
+
+type AppWithCommands = App & {
+	commands?: {
+		removeCommand?: (id: string) => void;
+	};
+};
+
 export async function registerTaskAssignmentDynamicCommands(
 	app: App,
 	plugin: Plugin,
@@ -179,10 +198,15 @@ export async function registerTaskAssignmentDynamicCommands(
 	const currentIds = new Set<string>();
 	let debounceTimer: number | null = null;
 
-	const removeCommand = (id: string) => {
+	const removeCommand = (id: string): void => {
 		try {
-			(app as any)?.commands?.removeCommand?.(id);
-		} catch {}
+			const appWithCommands = app as AppWithCommands;
+			const commands = appWithCommands.commands;
+			if (!commands?.removeCommand) return;
+			commands.removeCommand(id);
+		} catch {
+			// ignore
+		}
 	};
 
 	const clearAll = () => {
@@ -251,11 +275,12 @@ export async function registerTaskAssignmentDynamicCommands(
 
 						if (checking) {
 							const vnow = getActiveMarkdownView(app);
-							if (!vnow || !(vnow as any).editor) return false;
+							const editor = vnow?.editor;
+							if (!vnow || !editor) return false;
 
 							try {
-								const editor: any = (vnow as any).editor;
-								const lineNo = editor.getCursor().line ?? 0;
+								const lineNo =
+									editor.getCursor().line ?? 0;
 								const text = editor.getLine(lineNo) ?? "";
 								if (text.trim().length === 0) return true;
 								// Allow any status task via shared util
@@ -271,7 +296,7 @@ export async function registerTaskAssignmentDynamicCommands(
 							new Notice("No active Markdown view.");
 							return true;
 						}
-						const editor: any = (vnow as any).editor;
+						const editor = vnow.editor;
 						if (!editor) {
 							new Notice("Editor not available.");
 							return true;
@@ -308,7 +333,7 @@ export async function registerTaskAssignmentDynamicCommands(
 
 								insertTemplateAtCursor(
 									ASSIGNEE_TEMPLATE_ID,
-									editor as any,
+									editor,
 									pathNow,
 									{
 										memberName: t.memberName,
@@ -319,16 +344,18 @@ export async function registerTaskAssignmentDynamicCommands(
 								);
 
 								if (assignType === "assignee") {
-									const targets = getEventTargets(app);
-									const detail = {
+									const targetsForEvent =
+										getEventTargets(app);
+									const detail: AssigneeChangedDetail = {
 										filePath: pathNow,
 										parentLine0,
 										beforeLines,
 										newAssigneeSlug: t.memberSlug,
+										oldAssigneeSlug: null,
 									};
-									for (const target of targets) {
-										(target as any).dispatchEvent?.(
-											new CustomEvent(
+									for (const target of targetsForEvent) {
+										target.dispatchEvent(
+											new CustomEvent<AssigneeChangedDetail>(
 												"agile:assignee-changed",
 												{ detail }
 											)
@@ -336,7 +363,10 @@ export async function registerTaskAssignmentDynamicCommands(
 									}
 								}
 							} catch (err) {
-								console.error("[assign] unexpected error", err);
+								console.error(
+									"[assign] unexpected error",
+									err
+								);
 								new Notice(
 									`Insert failed: ${String(
 										(err as Error)?.message ?? err
@@ -372,8 +402,9 @@ export async function registerTaskAssignmentDynamicCommands(
 
 					if (checking) {
 						try {
-							const editor: any = (v as any).editor;
-							const lineNo = editor.getCursor().line ?? 0;
+							const editor = v.editor;
+							const lineNo =
+								editor.getCursor().line ?? 0;
 							const text = editor.getLine(lineNo) ?? "";
 							if (text.trim().length === 0) return true;
 							return isTaskLine(text);
@@ -382,7 +413,7 @@ export async function registerTaskAssignmentDynamicCommands(
 						}
 					}
 
-					const editor: any = (v as any).editor;
+					const editor = v.editor;
 					if (!editor) {
 						new Notice("Editor not available.");
 						return true;
@@ -405,7 +436,8 @@ export async function registerTaskAssignmentDynamicCommands(
 							const beforeLines = (
 								editor.getValue?.() ?? ""
 							).split(/\r?\n/);
-							const parentLine0 = editor.getCursor?.().line ?? 0;
+							const parentLine0 =
+								editor.getCursor?.().line ?? 0;
 
 							clearExistingOfTypeOnCurrentLine(
 								editor,
@@ -414,7 +446,7 @@ export async function registerTaskAssignmentDynamicCommands(
 
 							insertTemplateAtCursor(
 								ASSIGNEE_TEMPLATE_ID,
-								editor as any,
+								editor,
 								pathNow,
 								{
 									memberName: "Everyone",
@@ -424,25 +456,31 @@ export async function registerTaskAssignmentDynamicCommands(
 								}
 							);
 
-							const targets = getEventTargets(app);
-							const detail = {
+							const targetsForEvent = getEventTargets(app);
+							const detail: AssigneeChangedDetail = {
 								filePath: pathNow,
 								parentLine0,
 								beforeLines,
 								newAssigneeSlug: "everyone",
+								oldAssigneeSlug: null,
 							};
-							for (const target of targets) {
+							for (const target of targetsForEvent) {
 								try {
-									(target as any).dispatchEvent?.(
-										new CustomEvent(
+									target.dispatchEvent(
+										new CustomEvent<AssigneeChangedDetail>(
 											"agile:assignee-changed",
 											{ detail }
 										)
 									);
-								} catch {}
+								} catch {
+									// ignore
+								}
 							}
 						} catch (err) {
-							console.error("[assign] unexpected error", err);
+							console.error(
+								"[assign] unexpected error",
+								err
+							);
 							new Notice(
 								`Insert failed: ${String(
 									(err as Error)?.message ?? err
@@ -478,8 +516,9 @@ export async function registerTaskAssignmentDynamicCommands(
 
 					if (checking) {
 						try {
-							const editor: any = (v as any).editor;
-							const lineNo = editor.getCursor().line ?? 0;
+							const editor = v.editor;
+							const lineNo =
+								editor.getCursor().line ?? 0;
 							const text = editor.getLine(lineNo) ?? "";
 							if (text.trim().length === 0) return true;
 							return isTaskLine(text);
@@ -488,7 +527,7 @@ export async function registerTaskAssignmentDynamicCommands(
 						}
 					}
 
-					const editor: any = (v as any).editor;
+					const editor = v.editor;
 					if (!editor) {
 						new Notice("Editor not available.");
 						return true;
@@ -555,7 +594,7 @@ export async function registerTaskAssignmentDynamicCommands(
 
 									insertTemplateAtCursor(
 										ASSIGNEE_TEMPLATE_ID,
-										editor as any,
+										editor,
 										pathNow,
 										{
 											memberName,
@@ -571,16 +610,18 @@ export async function registerTaskAssignmentDynamicCommands(
 										).split(/\r?\n/);
 										const parentLine0 =
 											editor.getCursor?.().line ?? 0;
-										const targets = getEventTargets(app);
-										const detail = {
+										const targetsForEvent =
+											getEventTargets(app);
+										const detail: AssigneeChangedDetail = {
 											filePath: pathNow,
 											parentLine0,
 											beforeLines,
 											newAssigneeSlug: memberAlias,
+											oldAssigneeSlug: null,
 										};
-										for (const target of targets) {
-											(target as any).dispatchEvent?.(
-												new CustomEvent(
+										for (const target of targetsForEvent) {
+											target.dispatchEvent(
+												new CustomEvent<AssigneeChangedDetail>(
 													"agile:assignee-changed",
 													{ detail }
 												)

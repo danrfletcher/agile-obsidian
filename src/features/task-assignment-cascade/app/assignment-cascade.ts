@@ -79,6 +79,28 @@ type PseudoNode = {
 	children: PseudoNode[];
 };
 
+interface CascadeEditor {
+	getValue(): string;
+	getLine(n: number): string;
+	replaceRange(
+		newText: string,
+		from: { line: number; ch: number },
+		to: { line: number; ch: number }
+	): void;
+}
+
+// Types for TaskIndex snapshot structure
+type TaskIndexItem = {
+	line?: number;
+	_parentId?: string | null;
+	_uniqueId?: string;
+	children?: TaskIndexItem[];
+};
+
+type TaskIndexEntry = {
+	lists?: TaskIndexItem[];
+};
+
 function buildOutlineFromLines(lines: string[]) {
 	const byLine = new Map<number, PseudoNode>();
 	const byId = new Map<string, PseudoNode>();
@@ -110,7 +132,7 @@ function buildOutlineFromLines(lines: string[]) {
 export async function applyAssigneeCascade(
 	app: App,
 	filePath: string,
-	editor: any,
+	editor: CascadeEditor,
 	parentLine0: number,
 	oldAlias: string | null,
 	newAlias: string | null,
@@ -122,26 +144,28 @@ export async function applyAssigneeCascade(
 
 		const afterLines = editor.getValue().split(/\r?\n/);
 
-		let fileEntry: any | null = null;
+		let fileEntry: TaskIndexEntry | null = null;
 		let byLine: Map<number, PseudoNode> = new Map();
 		let byId: Map<string, PseudoNode> = new Map();
 
 		const buildMapsFromIndex = () => {
 			if (!ports.taskIndex) return;
-			const idx = ports.taskIndex.getSnapshot?.();
-			const entry = (idx as any)?.[filePath];
+			const idx = ports.taskIndex.getSnapshot?.() as
+				| Record<string, TaskIndexEntry>
+				| undefined;
+			const entry = idx?.[filePath];
 			if (!entry) return;
 			fileEntry = entry;
 
 			byLine = new Map<number, PseudoNode>();
 			byId = new Map<string, PseudoNode>();
-			const collect = (items: any[]) => {
+			const collect = (items: TaskIndexItem[]) => {
 				for (const it of items) {
 					const l0 = (it.line ?? 1) - 1;
 					const node: PseudoNode = {
-						line: (it.line ?? 1) as number,
-						_parentId: (it._parentId ?? null) as string | null,
-						_uniqueId: (it._uniqueId ?? `L${l0}`) as string,
+						line: it.line ?? 1,
+						_parentId: it._parentId ?? null,
+						_uniqueId: it._uniqueId ?? `L${l0}`,
 						children: [],
 					};
 					byLine.set(l0, node);
@@ -150,12 +174,12 @@ export async function applyAssigneeCascade(
 				}
 			};
 			collect(entry.lists || []);
-			const wireChildren = (items: any[]) => {
+			const wireChildren = (items: TaskIndexItem[]) => {
 				for (const it of items) {
 					const childNode = byId.get(
-						(it._uniqueId ?? `L${(it.line ?? 1) - 1}`) as string
+						it._uniqueId ?? `L${(it.line ?? 1) - 1}`
 					);
-					const parentId = (it._parentId ?? null) as string | null;
+					const parentId = it._parentId ?? null;
 					if (childNode && parentId) {
 						const parentNode = byId.get(parentId);
 						if (parentNode) parentNode.children.push(childNode);
@@ -169,8 +193,8 @@ export async function applyAssigneeCascade(
 		try {
 			if (ports.taskIndex) {
 				const af = app.vault.getAbstractFileByPath(filePath);
-				if (af && (af as any).extension === "md") {
-					await ports.taskIndex.updateFile(af as unknown as TFile);
+				if (af instanceof TFile && af.extension === "md") {
+					await ports.taskIndex.updateFile(af);
 				}
 			}
 		} catch {
@@ -179,7 +203,7 @@ export async function applyAssigneeCascade(
 		buildMapsFromIndex();
 
 		// Descendants
-		let descendants: number[] = [];
+		const descendants: number[] = [];
 		if (fileEntry && byLine.size > 0 && byLine.has(parentLine0)) {
 			const parentItem = byLine.get(parentLine0)!;
 			const dfs = (it: PseudoNode) => {
@@ -248,11 +272,11 @@ export async function applyAssigneeCascade(
 
 		const explicitAfter: (string | null)[] = buildExplicitMap(afterLines);
 
-		let explicitBefore: (string | null)[] = beforeLines
+		const explicitBefore: (string | null)[] = beforeLines
 			? buildExplicitMap(before)
 			: explicitAfter.slice();
 
-		// If oldAlias still missing, infer from descendants’ effective "before" by majority vote
+		// If oldAlias still missing, infer from descendants' effective "before" by majority vote
 		const nearestUpExplicitRaw: NearestUpFn = (l0, map) => {
 			let cur = byLine.get(l0) ?? null;
 			while (cur) {
@@ -270,7 +294,8 @@ export async function applyAssigneeCascade(
 		const effBeforeAt = effectiveWith(explicitBefore);
 		// const effAfterAt = effectiveWith(explicitAfter);
 
-		if (!oldAlias) {
+		let inferredOldAlias = oldAlias;
+		if (!inferredOldAlias) {
 			const counts = new Map<string, number>();
 			for (const d of descendants) {
 				const ln = before[d] || "";
@@ -284,13 +309,13 @@ export async function applyAssigneeCascade(
 				if (!best || n > best.n) best = { slug, n };
 			}
 			if (best) {
-				oldAlias = best.slug;
+				inferredOldAlias = best.slug;
 			}
 		}
 
-		// Force the parent’s old explicit in the "before" model so prevEff computes correctly
-		if (typeof oldAlias === "string" && oldAlias.length > 0) {
-			explicitBefore[parentLine0] = oldAlias;
+		// Force the parent's old explicit in the "before" model so prevEff computes correctly
+		if (typeof inferredOldAlias === "string" && inferredOldAlias.length > 0) {
+			explicitBefore[parentLine0] = inferredOldAlias;
 		}
 
 		const nearestUpExplicit: NearestUpFn = (l0, map) => {
@@ -335,12 +360,12 @@ export async function applyAssigneeCascade(
 			if (d === parentLine0) continue;
 			const ln = afterLines[d] || "";
 			if (!isReassignableTaskLine(ln)) continue;
-			if (!oldAlias) continue;
+			if (!inferredOldAlias) continue;
 
 			const prevEff = effectiveBeforeAt(d);
 			const newEff = effectiveAfterAt(d);
 
-			if (prevEff === oldAlias && newEff !== oldAlias) {
+			if (prevEff === inferredOldAlias && newEff !== inferredOldAlias) {
 				affected.push({ line0: d, prevEff, newEff });
 			}
 		}
@@ -368,11 +393,11 @@ export async function applyAssigneeCascade(
 		const selectedFrontier = new Set<number>();
 		for (const a of affected) {
 			if (isDescendantOfAnySelected(a.line0, selectedFrontier)) continue;
-			if (typeof oldAlias === "string" && oldAlias.length > 0) {
+			if (typeof inferredOldAlias === "string" && inferredOldAlias.length > 0) {
 				selectedFrontier.add(a.line0);
-				toSetExplicit.set(a.line0, oldAlias);
+				toSetExplicit.set(a.line0, inferredOldAlias);
 				// Ensure deeper nodes inherit this during redundancy pass
-				explicitAfter[a.line0] = oldAlias;
+				explicitAfter[a.line0] = inferredOldAlias;
 			}
 		}
 
@@ -431,7 +456,7 @@ export async function applyAssigneeCascade(
 	} catch (err) {
 		console.error(
 			"[assignment-cascade] error:",
-			(err as any)?.message ?? err
+			(err as Error)?.message ?? err
 		);
 	}
 }
@@ -442,7 +467,7 @@ export function wireTaskAssignmentCascade(
 	plugin: Plugin,
 	ports?: CascadePorts
 ) {
-	class HeadlessEditor {
+	class HeadlessEditor implements CascadeEditor {
 		private _lines: string[];
 		constructor(lines: string[]) {
 			this._lines = lines.slice();
@@ -488,11 +513,10 @@ export function wireTaskAssignmentCascade(
 				app.workspace.getActiveViewOfType(MarkdownView) ?? null;
 
 			// Prefer oldAssigneeSlug passed by dispatcher
-			let oldAlias: string | null =
-				(detail as any).oldAssigneeSlug ?? null;
+			let oldAlias: string | null = detail.oldAssigneeSlug ?? null;
 
 			if (view && view.file && view.file.path === filePath) {
-				const editor: any = (view as any).editor;
+				const editor = view.editor;
 				if (!editor) return;
 
 				const before = beforeLines ?? editor.getValue().split(/\r?\n/);
@@ -560,7 +584,7 @@ export function wireTaskAssignmentCascade(
 			await applyAssigneeCascade(
 				app,
 				filePath,
-				headlessEditor as any,
+				headlessEditor,
 				parentLine0,
 				oldAlias,
 				newAssigneeSlug,
@@ -572,9 +596,12 @@ export function wireTaskAssignmentCascade(
 			if (newLines.join("\n") !== afterContent) {
 				// Let dashboard suppress double-render
 				window.dispatchEvent(
-					new CustomEvent("agile:prepare-optimistic-file-change", {
-						detail: { filePath },
-					})
+					new CustomEvent<{ filePath: string }>(
+						"agile:prepare-optimistic-file-change",
+						{
+							detail: { filePath },
+						}
+					)
 				);
 				await app.vault.modify(abs, newLines.join("\n"));
 			}
@@ -589,7 +616,7 @@ export function wireTaskAssignmentCascade(
 
 	plugin.registerDomEvent(
 		document,
-		"agile:assignee-changed" as any,
-		onAssigneeChanged as any
+		"agile:assignee-changed" as unknown as keyof DocumentEventMap,
+		onAssigneeChanged as (ev: Event) => void
 	);
 }

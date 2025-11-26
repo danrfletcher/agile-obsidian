@@ -1,4 +1,4 @@
-import type { App, Plugin } from "obsidian";
+import type { App, Editor, Plugin } from "obsidian";
 import { MarkdownView, Notice, Menu, TFile } from "obsidian";
 import { renderTemplateOnly } from "@features/templating-engine";
 import type {
@@ -36,7 +36,7 @@ function hasAttrWithValue(s: string, attr: string, value: string): boolean {
 }
 
 function findLineIndexByInstanceIdInEditor(
-	editor: any,
+	editor: Editor,
 	instanceId: string
 ): number {
 	try {
@@ -114,7 +114,11 @@ function buildAssignmentTargets(
 	return out;
 }
 
-function placeCursorEndOfLine(editor: any, lineNo: number, lineText: string) {
+function placeCursorEndOfLine(
+	editor: Editor,
+	lineNo: number,
+	lineText: string
+) {
 	try {
 		editor.setCursor?.({ line: lineNo, ch: lineText.length });
 	} catch {
@@ -122,7 +126,11 @@ function placeCursorEndOfLine(editor: any, lineNo: number, lineText: string) {
 	}
 }
 
-function updateEditorLine(editor: any, lineNo: number, newText: string) {
+function updateEditorLine(
+	editor: Editor,
+	lineNo: number,
+	newText: string
+) {
 	const before = editor.getLine(lineNo) ?? "";
 	editor.replaceRange(
 		newText,
@@ -138,22 +146,20 @@ function getEventTargets(app: App, view: MarkdownView | null): EventTarget[] {
 
 	// IMPORTANT: include window so the Agile Dashboard (listening on window) sees the event
 	const win: EventTarget | null =
-		typeof window !== "undefined"
-			? (window as unknown as EventTarget)
-			: null;
+		typeof window !== "undefined" ? window : null;
 	if (win) targets.push(win);
 
-	const globalDoc = (window as any)?.document ?? document;
+	const globalDoc =
+		typeof document !== "undefined" ? document : null;
 	if (globalDoc) targets.push(globalDoc);
 
-	const cmHolder = (view ?? getActiveView(app)) as unknown as {
+	const actualView = view ?? getActiveView(app);
+	const cmHolder = actualView as unknown as {
 		editor?: { cm?: { contentDOM?: HTMLElement } };
 	};
 	const cmContent =
 		cmHolder?.editor?.cm?.contentDOM ??
-		(view ?? getActiveView(app))?.containerEl?.querySelector?.(
-			".cm-content"
-		) ??
+		actualView?.containerEl?.querySelector?.(".cm-content") ??
 		null;
 	if (cmContent) targets.unshift(cmContent as EventTarget);
 	return targets;
@@ -280,6 +286,15 @@ type OpenMenuParams = {
 	lineHint0?: number | null;
 };
 
+type AssigneeChangedDetail = {
+	filePath: string;
+	parentLine0: number;
+	beforeLines: string[];
+	newAssigneeSlug: string | null;
+	oldAssigneeSlug: string | null;
+	parentUid?: string | null;
+};
+
 /**
  * Exported entry point: open the reassignment menu at a position, for either editor or headless modes.
  */
@@ -299,9 +314,9 @@ export function openAssignmentMenuAt(params: OpenMenuParams) {
 	} = params;
 
 	const view = getActiveView(app);
-	const editor: any =
+	const editor: Editor | null =
 		view && view.file && view.file.path === filePath
-			? (view as any)?.editor
+			? view.editor
 			: null;
 
 	const effectiveMode: MenuMode =
@@ -326,7 +341,7 @@ export function openAssignmentMenuAt(params: OpenMenuParams) {
 		newAssigneeSlug: string | null
 	) => {
 		const targetsEls = getEventTargets(app, view);
-		const detail: any = {
+		const detail: AssigneeChangedDetail = {
 			filePath,
 			parentLine0: lineNo,
 			beforeLines: beforeDoc,
@@ -337,10 +352,13 @@ export function openAssignmentMenuAt(params: OpenMenuParams) {
 
 		for (const t of targetsEls) {
 			try {
-				(t as any).dispatchEvent?.(
-					new CustomEvent("agile:assignee-changed", {
-						detail,
-					})
+				t.dispatchEvent(
+					new CustomEvent<AssigneeChangedDetail>(
+						"agile:assignee-changed",
+						{
+							detail,
+						}
+					)
 				);
 			} catch {
 				/* ignore */
@@ -453,7 +471,9 @@ export function openAssignmentMenuAt(params: OpenMenuParams) {
 				);
 				oldSlug =
 					(target?.assignType === "assignee"
-						? extractSlugFromWrapperSegment(target?.segment || "")
+						? extractSlugFromWrapperSegment(
+								target?.segment || ""
+						  )
 						: null) || null;
 				if (!oldSlug) {
 					const near =
@@ -520,8 +540,8 @@ export function openAssignmentMenuAt(params: OpenMenuParams) {
 			updateEditorLine(editor, lineNo, updated);
 
 			if (isAssignee) {
-				const beforeDocForEvent = beforeDoc.map(
-					(s: string, i: number) => (i === lineNo ? beforeLine : s)
+				const beforeDocForEvent = beforeDoc.map((s, i) =>
+					i === lineNo ? beforeLine : s
 				);
 				dispatchCascade(
 					beforeDocForEvent,
@@ -906,26 +926,39 @@ export function openAssignmentMenuAt(params: OpenMenuParams) {
 
 		// SPECIAL ASSIGNEES
 		type SpecialCandidate = { name: string; slug: string };
+
+		type SpecialAssignee = {
+			slug?: string | null;
+			name?: string | null;
+		};
+
+		type OrgStructurePortWithSpecials = OrgStructurePort & {
+			getSpecialAssigneesForFile?: (
+				filePath: string
+			) => SpecialAssignee[] | null | undefined;
+		};
+
 		const specialsMap = new Map<string, SpecialCandidate>();
 
 		if (team) {
 			specialsMap.set("everyone", { name: "Everyone", slug: "everyone" });
 		}
 		try {
-			const getSpecials = (ports.orgStructure as any)
-				?.getSpecialAssigneesForFile;
-			if (typeof getSpecials === "function") {
-				const extra: any = getSpecials.call(
-					ports.orgStructure,
-					filePath
-				);
+			const orgWithSpecials =
+				ports.orgStructure as OrgStructurePortWithSpecials;
+			if (
+				typeof orgWithSpecials.getSpecialAssigneesForFile ===
+				"function"
+			) {
+				const extra =
+					orgWithSpecials.getSpecialAssigneesForFile(filePath);
 				if (Array.isArray(extra)) {
 					for (const e of extra) {
-						const slug = String(e?.slug ?? "").trim();
+						const slug = String(e.slug ?? "").trim();
 						if (!slug) continue;
 						const key = slug.toLowerCase();
 						const name =
-							String(e?.name ?? "").trim() ||
+							String(e.name ?? "").trim() ||
 							toTitleCase(slug.replace(/[-_]+/g, " "));
 						if (!specialsMap.has(key)) {
 							specialsMap.set(key, { name, slug });
@@ -1046,8 +1079,7 @@ export function wireTaskAssignmentDomHandlers(
 
 		evt.preventDefault();
 		evt.stopPropagation();
-		// @ts-ignore
-		(evt as any).stopImmediatePropagation?.();
+		evt.stopImmediatePropagation();
 
 		try {
 			const templateKey = el.getAttribute("data-template-key") ?? "";
