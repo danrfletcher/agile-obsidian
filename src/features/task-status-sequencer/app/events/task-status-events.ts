@@ -9,11 +9,15 @@ export type TaskStatusChangedDetail = {
 	toStatus: string | null | undefined;
 };
 
-export function publishTaskStatusChanged(detail: TaskStatusChangedDetail) {
+export function publishTaskStatusChanged(
+	detail: TaskStatusChangedDetail
+): void {
 	try {
-		document.dispatchEvent(
-			new CustomEvent("agile:task-status-changed" as any, { detail })
+		const event = new CustomEvent<TaskStatusChangedDetail>(
+			"agile:task-status-changed",
+			{ detail }
 		);
+		document.dispatchEvent(event);
 	} catch {
 		/* ignore */
 	}

@@ -2,16 +2,19 @@
  * App: Wire Obsidian editor checkbox behavior to our status sequencing,
  * with long-press-to-cancel, flicker prevention, and scroll stability.
  */
-import type { App, Editor, Plugin } from "obsidian";
+import type { App, Editor, Plugin, MarkdownFileInfo } from "obsidian";
 import { MarkdownView } from "obsidian";
-import { getCheckboxStatusChar } from "@platform/obsidian";
+import {
+	getCheckboxStatusChar,
+	findPosFromEvent,
+	isPosOnCheckboxToken,
+} from "@platform/obsidian";
 import { publishTaskStatusChanged } from "./events/task-status-events";
 import { LONG_PRESS_CANCEL_MS } from "./constants";
 import {
 	DEFAULT_STATUS_SEQUENCE,
 	normalizeStatusInput,
 } from "../domain/task-status-sequence";
-import { findPosFromEvent, isPosOnCheckboxToken } from "@platform/obsidian";
 import {
 	advanceTaskStatusAtEditorLine,
 	setTaskStatusAtEditorLine,
@@ -51,18 +54,32 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 	const suppressNextClick = new WeakMap<MarkdownView, number>();
 	const SUPPRESS_CLICK_MS = 600;
 
+	type EventWithComposedPath = Event & {
+		composedPath?: () => EventTarget[];
+	};
+
+	type EventWithStopImmediatePropagation = Event & {
+		stopImmediatePropagation?: () => void;
+	};
+
+	type ViewWithContainers = MarkdownView & {
+		contentEl?: HTMLElement;
+		containerEl: HTMLElement;
+	};
+
 	// -------------------------
 	// Helpers
 	// -------------------------
 	const getPathEls = (evt: Event): HTMLElement[] => {
-		const raw = (evt as any).composedPath?.() as EventTarget[] | undefined;
-		if (Array.isArray(raw) && raw.length) {
+		const eventWithPath = evt as EventWithComposedPath;
+		const raw = eventWithPath.composedPath?.() ?? [];
+		if (raw.length) {
 			return raw.filter(
-				(n) => n && (n as any).nodeType === 1
-			) as HTMLElement[];
+				(node): node is HTMLElement => node instanceof HTMLElement
+			);
 		}
 		const out: HTMLElement[] = [];
-		let el = evt.target as HTMLElement | null;
+		let el = evt.target instanceof HTMLElement ? evt.target : null;
 		while (el) {
 			out.push(el);
 			el = el.parentElement;
@@ -158,7 +175,7 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 		if (!file || file.extension !== "md") return;
 		const path = file.path;
 
-		const editor: any = (view as any).editor;
+		const editor = view.editor;
 		if (!editor) return;
 
 		const nextLines = collectLines(editor);
@@ -197,18 +214,17 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 		viewSnapshots.set(view, { path, lines: nextLines });
 	};
 
-	const onEditorChangeAny = (...args: any[]) => {
+	const onEditorChange = (
+		_editor: Editor,
+		info: MarkdownView | MarkdownFileInfo
+	): void => {
 		try {
-			let mdView: any = null;
-			if (args.length === 1 && args[0] instanceof MarkdownView) {
-				mdView = args[0];
-			} else if (args.length >= 2 && args[1] instanceof MarkdownView) {
-				mdView = args[1];
-			} else {
-				mdView =
-					app.workspace.getActiveViewOfType(MarkdownView) ?? null;
-			}
-			if (!(mdView instanceof MarkdownView)) return;
+			const mdView =
+				info instanceof MarkdownView
+					? info
+					: app.workspace.getActiveViewOfType(MarkdownView);
+
+			if (!mdView) return;
 			tryImmediateHandleForView(mdView);
 		} catch (e) {
 			console.warn(
@@ -219,7 +235,7 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 	};
 
 	plugin.registerEvent(
-		app.workspace.on("editor-change", onEditorChangeAny as any)
+		app.workspace.on("editor-change", onEditorChange)
 	);
 
 	plugin.registerEvent(
@@ -227,13 +243,15 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 			try {
 				const view = app.workspace.getActiveViewOfType(MarkdownView);
 				if (!view || !view.file) return;
-				const editor: any = (view as any).editor;
+				const editor = view.editor;
 				if (!editor) return;
 				viewSnapshots.set(view, {
 					path: view.file.path,
 					lines: collectLines(editor),
 				});
-			} catch {}
+			} catch {
+				/* ignore */
+			}
 		})
 	);
 
@@ -242,13 +260,15 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 			try {
 				const view = app.workspace.getActiveViewOfType(MarkdownView);
 				if (!view || !view.file) return;
-				const editor: any = (view as any).editor;
+				const editor = view.editor;
 				if (!editor) return;
 				viewSnapshots.set(view, {
 					path: view.file.path,
 					lines: collectLines(editor),
 				});
-			} catch {}
+			} catch {
+				/* ignore */
+			}
 		})
 	);
 
@@ -257,17 +277,18 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 		try {
 			const view = app.workspace.getActiveViewOfType(MarkdownView);
 			if (!view || !view.file) return;
-			const editor: any = (view as any).editor;
+			const editor = view.editor;
 			if (!editor) return;
 
-			const container: HTMLElement | null =
-				(view as any).contentEl || (view as any).containerEl || null;
+			const viewWithContainers = view as ViewWithContainers;
+			const container =
+				viewWithContainers.contentEl ?? viewWithContainers.containerEl;
 			if (!container || !container.contains(evt.target as Node)) return;
 
 			// If clicking the chevron/bullet, allow fold and do not intercept.
 			if (isChevronEvent(evt)) return;
 
-			const pos = findPosFromEvent(editor, evt as any);
+			const pos = findPosFromEvent(editor, evt);
 			if (!pos) return;
 
 			const line0 = pos.line;
@@ -281,8 +302,7 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 			// Stop default checkbox behavior early to avoid flicker/indent jump
 			evt.preventDefault();
 			evt.stopPropagation();
-			// @ts-ignore
-			evt.stopImmediatePropagation?.();
+			(evt as EventWithStopImmediatePropagation).stopImmediatePropagation?.();
 
 			const filePath = view.file?.path || "";
 			const state = pressState.get(view);
@@ -320,7 +340,9 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 								path: nextState.filePath,
 								lines: collectLines(editor),
 							});
-						} catch {}
+						} catch {
+							/* ignore */
+						}
 					}
 					nextState.longApplied = true;
 
@@ -343,7 +365,7 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 		try {
 			const view = app.workspace.getActiveViewOfType(MarkdownView);
 			if (!view || !view.file) return;
-			const editor: any = (view as any).editor;
+			const editor = view.editor;
 			if (!editor) return;
 
 			const state = pressState.get(view);
@@ -367,9 +389,10 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 					try {
 						ev.preventDefault();
 						ev.stopPropagation();
-						// @ts-ignore
-						(ev as any).stopImmediatePropagation?.();
-					} catch {}
+						(ev as EventWithStopImmediatePropagation).stopImmediatePropagation?.();
+					} catch {
+						/* ignore */
+					}
 				}
 				return;
 			}
@@ -401,7 +424,9 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 						path,
 						lines: collectLines(editor),
 					});
-				} catch {}
+				} catch {
+					/* ignore */
+				}
 			}
 
 			// Swallow the immediate next click generated by this press
@@ -412,9 +437,10 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 				try {
 					ev.preventDefault();
 					ev.stopPropagation();
-					// @ts-ignore
-					(ev as any).stopImmediatePropagation?.();
-				} catch {}
+					(ev as EventWithStopImmediatePropagation).stopImmediatePropagation?.();
+				} catch {
+					/* ignore */
+				}
 			}
 		} catch {
 			/* ignore */
@@ -425,13 +451,9 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 		finishShortPressIfAny(evt);
 	};
 
-	plugin.registerDomEvent(document, "pointerdown", onPointerDown as any);
-	plugin.registerDomEvent(document, "pointerup", onPointerUpOrCancel as any);
-	plugin.registerDomEvent(
-		document,
-		"pointercancel",
-		onPointerUpOrCancel as any
-	);
+	plugin.registerDomEvent(document, "pointerdown", onPointerDown);
+	plugin.registerDomEvent(document, "pointerup", onPointerUpOrCancel);
+	plugin.registerDomEvent(document, "pointercancel", onPointerUpOrCancel);
 
 	// Capture-phase click guard:
 	// - Case 1: Immediately after our handled press → fully swallow (prevent + stop*).
@@ -441,25 +463,25 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 			const view = app.workspace.getActiveViewOfType(MarkdownView);
 			if (!view) return;
 
-			const container: HTMLElement | null =
-				(view as any).contentEl || (view as any).containerEl || null;
+			const viewWithContainers = view as ViewWithContainers;
+			const container =
+				viewWithContainers.contentEl ?? viewWithContainers.containerEl;
 			if (!container || !container.contains(evt.target as Node)) return;
 
 			// Case 1: swallow click after our own press handling
 			const ts = suppressNextClick.get(view);
 			if (ts && Date.now() - ts <= SUPPRESS_CLICK_MS) {
 				evt.preventDefault();
-				// @ts-ignore
-				evt.stopImmediatePropagation?.();
+				(evt as EventWithStopImmediatePropagation).stopImmediatePropagation?.();
 				evt.stopPropagation();
 				suppressNextClick.delete(view);
 				return;
 			}
 
-			const editor: any = (view as any).editor;
+			const editor = view.editor;
 			if (!editor) return;
 
-			const pos = findPosFromEvent(editor, evt as any);
+			const pos = findPosFromEvent(editor, evt);
 			if (!pos) return;
 
 			const lineText = editor.getLine(pos.line) ?? "";
@@ -482,10 +504,7 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 		}
 	};
 
-	plugin.registerDomEvent(
-		document,
-		"click",
-		onClickCapture as any,
-		{ capture: true } as any
-	);
+	plugin.registerDomEvent(document, "click", onClickCapture, {
+		capture: true,
+	});
 }

@@ -69,9 +69,7 @@ export async function advanceTaskStatusForTaskItem(params: {
 
 	const view = app.workspace.getActiveViewOfType(MarkdownView);
 	const editor: Editor | null =
-		view && view.file?.path === filePath
-			? ((view as any).editor as Editor)
-			: null;
+		view && view.file?.path === filePath ? view.editor : null;
 
 	if (editor) {
 		const from = getCheckboxStatusChar(editor.getLine(line0) ?? "");
@@ -130,9 +128,7 @@ export async function setTaskStatusForTaskItem(params: {
 
 	const view = app.workspace.getActiveViewOfType(MarkdownView);
 	const editor: Editor | null =
-		view && view.file?.path === filePath
-			? ((view as any).editor as Editor)
-			: null;
+		view && view.file?.path === filePath ? view.editor : null;
 
 	if (editor) {
 		const res = setTaskStatusAtEditorLine(editor, line0, to);

@@ -17,6 +17,10 @@ import {
 	type StatusChar,
 } from "../domain/task-status-sequence";
 
+type EventWithStopImmediatePropagation = Event & {
+	stopImmediatePropagation?: () => void;
+};
+
 export function attachCustomCheckboxStatusHandlers(opts: {
 	checkboxEl: HTMLInputElement;
 	app: App;
@@ -52,7 +56,7 @@ export function attachCustomCheckboxStatusHandlers(opts: {
 		}
 	};
 
-	const performAdvance = async () => {
+	const performAdvance = async (): Promise<void> => {
 		if (isUpdating) return;
 		isUpdating = true;
 		try {
@@ -61,7 +65,7 @@ export function attachCustomCheckboxStatusHandlers(opts: {
 				DEFAULT_STATUS_SEQUENCE
 			);
 			await advanceTaskStatusForTaskItem({ app, task });
-			(task as any).status = predicted;
+			task.status = predicted;
 			setCheckedForStatus(predicted);
 			onStatusApplied?.(predicted);
 		} finally {
@@ -69,7 +73,7 @@ export function attachCustomCheckboxStatusHandlers(opts: {
 		}
 	};
 
-	const performCancel = async () => {
+	const performCancel = async (): Promise<void> => {
 		if (isUpdating) return;
 		isUpdating = true;
 		try {
@@ -78,7 +82,7 @@ export function attachCustomCheckboxStatusHandlers(opts: {
 				task: { filePath: task.filePath, line0: task.line0 },
 				to: "-",
 			});
-			(task as any).status = "-";
+			task.status = "-";
 			setCheckedForStatus("-");
 			onStatusApplied?.("-");
 		} finally {
@@ -86,15 +90,14 @@ export function attachCustomCheckboxStatusHandlers(opts: {
 		}
 	};
 
-	checkboxEl.addEventListener("change", (ev) => {
+	checkboxEl.addEventListener("change", (ev: Event) => {
 		ev.preventDefault();
-		// @ts-ignore
-		(ev as any).stopImmediatePropagation?.();
-		setCheckedForStatus((task as any).status ?? " ");
+		(ev as EventWithStopImmediatePropagation).stopImmediatePropagation?.();
+		setCheckedForStatus(task.status ?? " ");
 	});
 
-	checkboxEl.addEventListener("keydown", async (ev) => {
-		const key = (ev as KeyboardEvent).key;
+	checkboxEl.addEventListener("keydown", async (ev: KeyboardEvent) => {
+		const { key } = ev;
 		if (key === " " || key === "Enter") {
 			ev.preventDefault();
 			ev.stopPropagation();
@@ -102,7 +105,7 @@ export function attachCustomCheckboxStatusHandlers(opts: {
 		}
 	});
 
-	const onPressStart = () => {
+	const onPressStart = (): void => {
 		longApplied = false;
 		clearTimer();
 		pressTimer = window.setTimeout(async () => {
@@ -112,7 +115,7 @@ export function attachCustomCheckboxStatusHandlers(opts: {
 		}, longPressMs);
 	};
 
-	const onPressEnd = async (ev?: Event) => {
+	const onPressEnd = async (ev?: Event): Promise<void> => {
 		const hadTimer = pressTimer !== null;
 		clearTimer();
 		if (longApplied) {
@@ -120,9 +123,10 @@ export function attachCustomCheckboxStatusHandlers(opts: {
 				try {
 					ev.preventDefault();
 					ev.stopPropagation();
-					// @ts-ignore
-					(ev as any).stopImmediatePropagation?.();
-				} catch {}
+					(ev as EventWithStopImmediatePropagation).stopImmediatePropagation?.();
+				} catch {
+					/* ignore */
+				}
 			}
 			return;
 		}
@@ -133,9 +137,10 @@ export function attachCustomCheckboxStatusHandlers(opts: {
 				try {
 					ev.preventDefault();
 					ev.stopPropagation();
-					// @ts-ignore
-					(ev as any).stopImmediatePropagation?.();
-				} catch {}
+					(ev as EventWithStopImmediatePropagation).stopImmediatePropagation?.();
+				} catch {
+					/* ignore */
+				}
 			}
 		}
 	};
@@ -149,17 +154,16 @@ export function attachCustomCheckboxStatusHandlers(opts: {
 	checkboxEl.addEventListener("mouseleave", () => clearTimer());
 	checkboxEl.addEventListener("touchstart", onPressStart, {
 		passive: true,
-	} as any);
+	});
 	checkboxEl.addEventListener("touchend", onPressEnd);
 	checkboxEl.addEventListener("touchcancel", () => clearTimer());
 
-	checkboxEl.addEventListener("click", (ev) => {
+	checkboxEl.addEventListener("click", (ev: MouseEvent) => {
 		if (suppressNextClick) {
 			suppressNextClick = false;
 			ev.preventDefault();
 			ev.stopPropagation();
-			// @ts-ignore
-			(ev as any).stopImmediatePropagation?.();
+			(ev as EventWithStopImmediatePropagation).stopImmediatePropagation?.();
 			return;
 		}
 		ev.preventDefault();
