@@ -23,6 +23,39 @@ import {
 } from "@features/templating-engine/app/templating-service";
 import { showSchemaModal } from "@features/templating-params-editor";
 
+// Infer the schema type used by the params editor to avoid hard-coding it here.
+type ModalSchema = Parameters<typeof showSchemaModal>[2];
+
+// Start from whatever field type the modal schema uses, but ensure we always
+// have optional `name` and `required` available in this file.
+type ModalSchemaField =
+	ModalSchema extends { fields: Array<infer F> }
+		? F & {
+				name?: string;
+				required?: boolean;
+		  }
+		: {
+				name?: string;
+				required?: boolean;
+		  };
+
+type ModalSchemaWithFields = Omit<ModalSchema, "fields" | "title" | "titles"> & {
+	fields: ModalSchemaField[];
+} & Pick<ModalSchema, "title" | "titles">;
+
+// Minimal view of a template definition that this module cares about.
+interface TemplateWithSchema {
+	id: string;
+	label?: string;
+	hasParams?: boolean;
+	paramsSchema?: ModalSchema;
+}
+
+// Minimal editor type inferred from the templating engine helper
+type MinimalEditorForReplace = Parameters<
+	typeof replaceTemplateWrapperOnCurrentLine
+>[2];
+
 /**
  * Build an index for fast runtime lookups.
  */
@@ -74,22 +107,25 @@ export function getCurrentParamsFromWrapper(
  * Optional fields are ignored even if they are missing; they will simply be left off.
  */
 function makeMissingOnlySchema(
-	fullSchema: any | undefined,
+	fullSchema: ModalSchema | undefined,
 	candidate: Record<string, unknown>
-): any | undefined {
-	if (
-		!fullSchema ||
-		!Array.isArray(fullSchema.fields) ||
-		fullSchema.fields.length === 0
-	) {
+): ModalSchemaWithFields | undefined {
+	if (!fullSchema) {
 		return undefined;
 	}
 
-	const missingFields = fullSchema.fields.filter((f: any) => {
-		const required = !!f?.required;
+	const schema = fullSchema as ModalSchemaWithFields;
+	const { fields } = schema;
+
+	if (!Array.isArray(fields) || fields.length === 0) {
+		return undefined;
+	}
+
+	const missingFields = fields.filter((f) => {
+		const required = Boolean(f.required);
 		if (!required) return false; // do not prompt for optional fields
 
-		const name = String(f?.name ?? "").trim();
+		const name = String(f.name ?? "").trim();
 		if (!name) return false;
 
 		const v = candidate[name];
@@ -100,9 +136,9 @@ function makeMissingOnlySchema(
 	if (missingFields.length === 0) return undefined;
 
 	return {
-		...fullSchema,
+		...schema,
 		title: "Additional Properties",
-		fields: missingFields.map((f: any) => ({ ...f })),
+		fields: missingFields.map((f) => ({ ...f })),
 		titles: undefined,
 	};
 }
@@ -113,12 +149,13 @@ function makeMissingOnlySchema(
  * - We only prefill when a source value is non-empty after trimming (empty values remain "missing" to trigger the modal).
  * - Sequence callback overrides (variableMapOverrides) win over these defaults (so users can transform or replace).
  */
-function getSchemaFieldNames(def: any | undefined): string[] {
-	if (!def?.paramsSchema?.fields || !Array.isArray(def.paramsSchema.fields))
-		return [];
-	return def.paramsSchema.fields
-		.map((f: any) => String(f?.name ?? "").trim())
-		.filter((n: string) => n.length > 0);
+function getSchemaFieldNames(def: TemplateWithSchema | undefined): string[] {
+	const schema = def?.paramsSchema as ModalSchemaWithFields | undefined;
+	const fields = schema?.fields;
+	if (!Array.isArray(fields)) return [];
+	return fields
+		.map((f) => String(f.name ?? "").trim())
+		.filter((n) => n.length > 0);
 }
 
 function normalizeString(v: unknown): string {
@@ -127,7 +164,7 @@ function normalizeString(v: unknown): string {
 
 function computeAutoMappedParams(
 	source: Record<string, unknown>,
-	destTemplateDef: any | undefined
+	destTemplateDef: TemplateWithSchema | undefined
 ): Record<string, unknown> {
 	const out: Record<string, unknown> = {};
 	const destKeys = getSchemaFieldNames(destTemplateDef);
@@ -156,7 +193,7 @@ export async function executeSequenceMove(args: {
 	wrapperEl: HTMLElement;
 	currentTemplateKey: string;
 	currentInstanceId?: string | null;
-	sequence: Sequence<any, any>;
+	sequence: Sequence;
 	direction: "forward" | "backward";
 }): Promise<void> {
 	const {
@@ -169,7 +206,14 @@ export async function executeSequenceMove(args: {
 		direction,
 	} = args;
 
-	const editor: any = (view as any).editor;
+	const editor = (view as MarkdownView & {
+		editor?: MinimalEditorForReplace;
+	}).editor;
+
+	if (!editor) {
+		// No active editor available; nothing to do.
+		return;
+	}
 
 	// Current params from the clicked wrapper instance
 	const currentParams = getCurrentParamsFromWrapper(wrapperEl);
@@ -189,12 +233,7 @@ export async function executeSequenceMove(args: {
 
 	// Resolve target template definition
 	const targetDef = findTemplateById(targetTemplate) as
-		| {
-				id: string;
-				hasParams?: boolean;
-				paramsSchema?: any;
-				label?: string;
-		  }
+		| TemplateWithSchema
 		| undefined;
 	if (!targetDef)
 		throw new Error(`Unknown target template: ${targetTemplate}`);
@@ -222,33 +261,31 @@ export async function executeSequenceMove(args: {
 	};
 
 	// 3) Collect any missing fields via filtered schema (automatic prompting)
-	let finalParams = { ...(baseParams ?? {}) };
-	if (
-		targetDef.paramsSchema &&
-		Array.isArray(targetDef.paramsSchema.fields)
-	) {
-		const missingSchema = makeMissingOnlySchema(
-			targetDef.paramsSchema,
-			finalParams
+	let finalParams: Record<string, unknown> = { ...(baseParams ?? {}) };
+
+	const missingSchema = makeMissingOnlySchema(
+		targetDef.paramsSchema,
+		finalParams
+	);
+	if (missingSchema && missingSchema.fields.length > 0) {
+		const collected = await showSchemaModal(
+			app,
+			targetTemplate,
+			{
+				...missingSchema,
+				fields: missingSchema.fields.map((f) => ({
+					...f,
+					defaultValue:
+						f.name && finalParams[f.name] != null
+							? String(finalParams[f.name])
+							: f.defaultValue != null
+							? String(f.defaultValue)
+							: undefined,
+				})),
+			},
+			false
 		);
-		if (missingSchema && missingSchema.fields.length > 0) {
-			const collected = await showSchemaModal(
-				app,
-				targetTemplate,
-				{
-					...missingSchema,
-					fields: missingSchema.fields.map((f: any) => ({
-						...f,
-						defaultValue:
-							finalParams[f.name] != null
-								? String(finalParams[f.name])
-								: f.defaultValue,
-					})),
-				},
-				false
-			);
-			if (collected) finalParams = { ...finalParams, ...collected };
-		}
+		if (collected) finalParams = { ...finalParams, ...collected };
 	}
 
 	// 4) Render only the inner content (wrapper is unchanged)
@@ -256,9 +293,9 @@ export async function executeSequenceMove(args: {
 
 	// 5) Replace the wrapper inner HTML in the current line via templating-engine helper
 	await replaceTemplateWrapperOnCurrentLine(
-		app as any,
-		view as any,
-		editor as any,
+		app,
+		view,
+		editor,
 		currentTemplateKey,
 		newInnerHtml,
 		currentInstanceId || undefined
@@ -321,6 +358,7 @@ async function replaceWrapperInnerHtmlOnFileLine(params: {
 			const reKey = new RegExp(keyStr);
 			anchorPos = line.search(reKey);
 		}
+		// Could not find anything in this line
 		if (anchorPos < 0) return { changed: false, out: line };
 
 		// Find the opening <span ...> that contains our anchor
@@ -430,7 +468,7 @@ export async function executeSequenceMoveOnFile(args: {
 	wrapperEl: HTMLElement;
 	currentTemplateKey: string;
 	currentInstanceId?: string | null;
-	sequence: Sequence<any, any>;
+	sequence: Sequence;
 	direction: "forward" | "backward";
 }): Promise<void> {
 	const {
@@ -461,11 +499,7 @@ export async function executeSequenceMoveOnFile(args: {
 	if (currentTemplateKey !== startTemplate) return;
 
 	const targetDef = findTemplateById(targetTemplate) as
-		| {
-				id: string;
-				hasParams?: boolean;
-				paramsSchema?: any;
-		  }
+		| TemplateWithSchema
 		| undefined;
 	if (!targetDef)
 		throw new Error(`Unknown target template: ${targetTemplate}`);
@@ -492,33 +526,31 @@ export async function executeSequenceMoveOnFile(args: {
 	};
 
 	// 5) Collect missing fields (Additional Properties)
-	let finalParams = { ...(baseParams ?? {}) };
-	if (
-		targetDef.paramsSchema &&
-		Array.isArray(targetDef.paramsSchema.fields)
-	) {
-		const missingSchema = makeMissingOnlySchema(
-			targetDef.paramsSchema,
-			finalParams
+	let finalParams: Record<string, unknown> = { ...(baseParams ?? {}) };
+
+	const missingSchema = makeMissingOnlySchema(
+		targetDef.paramsSchema,
+		finalParams
+	);
+	if (missingSchema && missingSchema.fields.length > 0) {
+		const collected = await showSchemaModal(
+			app,
+			targetTemplate,
+			{
+				...missingSchema,
+				fields: missingSchema.fields.map((f) => ({
+					...f,
+					defaultValue:
+						f.name && finalParams[f.name] != null
+							? String(finalParams[f.name])
+							: f.defaultValue != null
+							? String(f.defaultValue)
+							: undefined,
+				})),
+			},
+			false
 		);
-		if (missingSchema && missingSchema.fields.length > 0) {
-			const collected = await showSchemaModal(
-				app,
-				targetTemplate,
-				{
-					...missingSchema,
-					fields: missingSchema.fields.map((f: any) => ({
-						...f,
-						defaultValue:
-							finalParams[f.name] != null
-								? String(finalParams[f.name])
-								: f.defaultValue,
-					})),
-				},
-				false
-			);
-			if (collected) finalParams = { ...finalParams, ...collected };
-		}
+		if (collected) finalParams = { ...finalParams, ...collected };
 	}
 
 	// 6) Render inner HTML only (may be full wrapper depending on engine; we replace entire wrapper region below)
@@ -542,8 +574,8 @@ export function computeAvailableMoves(
 	templateKey: string,
 	currentParams: Record<string, unknown>
 ): {
-	forward: Array<Sequence<any, any>>;
-	backward: Array<Sequence<any, any>>; // reversible items where clicked is the target
+	forward: Sequence[];
+	backward: Sequence[]; // reversible items where clicked is the target
 } {
 	const forward = sequenceIndex.byStart.get(templateKey) ?? [];
 	const backward = sequenceIndex.reversibleByTarget.get(templateKey) ?? [];

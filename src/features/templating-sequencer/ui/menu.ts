@@ -16,9 +16,13 @@ import {
 	getCurrentParamsFromWrapper,
 } from "../app/sequencer-service";
 
+type TemplateWithOptionalLabel = {
+	label?: string;
+};
+
 function getTemplateLabel(templateId: string): string {
-	const def = findTemplateById(templateId) as any;
-	return (def?.label as string) || templateId;
+	const def = findTemplateById(templateId) as TemplateWithOptionalLabel | undefined;
+	return def?.label ?? templateId;
 }
 
 /**

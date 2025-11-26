@@ -34,7 +34,10 @@ export type BackwardMapper<TStartParams, TTargetParams> = (args: {
  *              with the same (startTemplate -> targetTemplate). Disabled sequences are not included in
  *              the final available set, but they prevent auto-generation of the same pair.
  */
-export interface Sequence<TStartParams = any, TTargetParams = any> {
+export interface Sequence<
+	TStartParams = Record<string, unknown>,
+	TTargetParams = Record<string, unknown>
+> {
 	id: string;
 	startTemplate: string;
 	targetTemplate: string;
@@ -66,7 +69,7 @@ export interface Sequence<TStartParams = any, TTargetParams = any> {
  */
 export type SequenceIndex = {
 	// Forward options keyed by startTemplate
-	byStart: Map<string, Array<Sequence<any, any>>>;
+	byStart: Map<string, Array<Sequence>>;
 	// Reverse-capable options keyed by targetTemplate (only sequences with direction="both")
-	reversibleByTarget: Map<string, Array<Sequence<any, any>>>;
+	reversibleByTarget: Map<string, Array<Sequence>>;
 };

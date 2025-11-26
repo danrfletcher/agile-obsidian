@@ -34,7 +34,7 @@ const CRM = {
  * Manually defined sequences (overrides and CRM presets).
  * To disable an auto-generated sequence, define it here with disabled: true.
  */
-const manualSequences: Array<Sequence<any, any>> = [
+const manualSequences: Sequence[] = [
 	// awaitingDeposit <-> depositPaid
 	{
 		id: "crm:awaiting->depositPaid",
@@ -143,7 +143,7 @@ function isEligibleForDynamic(def: AnyTemplateDef): boolean {
  * Generate forward-only dynamic sequences between any two eligible templates
  * sharing identical param name sets.
  */
-function generateDynamicSequences(): Array<Sequence<any, any>> {
+function generateDynamicSequences(): Sequence[] {
 	const defs = collectAllTemplateDefs();
 	const eligible = defs.filter(isEligibleForDynamic).map((d) => ({
 		id: d.id,
@@ -159,7 +159,7 @@ function generateDynamicSequences(): Array<Sequence<any, any>> {
 		signatureMap.set(sig, list);
 	}
 
-	const dynamic: Array<Sequence<any, any>> = [];
+	const dynamic: Sequence[] = [];
 
 	// For each group with >= 2 templates, create forward-only sequences between all ordered pairs
 	for (const [, ids] of signatureMap) {
@@ -189,14 +189,13 @@ function generateDynamicSequences(): Array<Sequence<any, any>> {
  * - Otherwise we include the dynamic sequence.
  */
 function mergeSequences(
-	manual: Array<Sequence<any, any>>,
-	autoGen: Array<Sequence<any, any>>
-): Array<Sequence<any, any>> {
+	manual: Sequence[],
+	autoGen: Sequence[]
+): Sequence[] {
 	// Key = "start->target"
-	const keyOf = (s: Sequence<any, any>) =>
-		`${s.startTemplate}->${s.targetTemplate}`;
+	const keyOf = (s: Sequence) => `${s.startTemplate}->${s.targetTemplate}`;
 
-	const manualByKey = new Map<string, Sequence<any, any>>();
+	const manualByKey = new Map<string, Sequence>();
 	const disabledKeys = new Set<string>();
 
 	for (const m of manual) {
@@ -207,7 +206,7 @@ function mergeSequences(
 		}
 	}
 
-	const out: Array<Sequence<any, any>> = [];
+	const out: Sequence[] = [];
 
 	// 1) Include manual sequences that are not disabled
 	for (const m of manual) {
@@ -227,7 +226,7 @@ function mergeSequences(
 }
 
 const dynamicSequences = generateDynamicSequences();
-export const presetSequences: Array<Sequence<any, any>> = mergeSequences(
+export const presetSequences: Sequence[] = mergeSequences(
 	manualSequences,
 	dynamicSequences
 );

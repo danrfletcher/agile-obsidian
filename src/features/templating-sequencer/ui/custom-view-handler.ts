@@ -31,7 +31,7 @@ export interface CustomViewSequencerHandlerOptions {
 	registerDomEvent: (
 		el: HTMLElement | Window | Document,
 		type: string,
-		handler: (evt: any) => void,
+		handler: (evt: MouseEvent) => void,
 		options?: AddEventListenerOptions | boolean
 	) => void;
 
@@ -39,9 +39,13 @@ export interface CustomViewSequencerHandlerOptions {
 	refreshForFile: (filePath?: string | null) => Promise<void>;
 }
 
+type TemplateWithOptionalLabel = {
+	label?: string;
+};
+
 function getTemplateLabel(templateId: string): string {
-	const def = findTemplateById(templateId) as any;
-	return (def?.label as string) || templateId;
+	const def = findTemplateById(templateId) as TemplateWithOptionalLabel | undefined;
+	return def?.label ?? templateId;
 }
 
 // Discriminate single vs double-click
