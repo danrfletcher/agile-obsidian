@@ -127,17 +127,27 @@ export class PromptDialog implements PromptPort {
 				}
 			}, 0);
 
-			const removeListener = (
+			function removeListener(
+				el: Document,
+				type: "keydown",
+				handler: (this: Document, ev: KeyboardEvent) => void
+			): void;
+			function removeListener(
+				el: HTMLElement,
+				type: "click",
+				handler: (this: HTMLElement, ev: MouseEvent) => void
+			): void;
+			function removeListener(
 				el: Element | Document | Window,
 				type: string,
-				handler: any
-			) => {
+				handler: EventListenerOrEventListenerObject
+			): void {
 				try {
-					el.removeEventListener(type as any, handler as any);
+					el.removeEventListener(type, handler);
 				} catch {
 					/* ignore */
 				}
-			};
+			}
 
 			const cleanup = () => {
 				// Immediately hide to avoid any lingering visual

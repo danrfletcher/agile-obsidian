@@ -79,6 +79,7 @@ export class CascadeService {
 		}
 	}
 
+
 	/**
 	 * Attempt to cascade in an active editor view (interactive).
 	 * If parentLine0FromEvent is provided, skip snapshot diffing and use it directly.
@@ -92,7 +93,7 @@ export class CascadeService {
 	): Promise<boolean> {
 		if (this.shouldSuppress(path)) return false;
 
-		const editorPort = new ObsidianEditor((mdView as any).editor);
+		const editorPort = new ObsidianEditor(mdView.editor);
 		const linesNow = editorPort.getAllLines();
 
 		let targetLine0: number | null = null;

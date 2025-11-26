@@ -1,4 +1,4 @@
-import type { App, Plugin } from "obsidian";
+import type { App, Editor, Plugin } from "obsidian";
 import { MarkdownView, Notice, TFile } from "obsidian";
 import { CascadeService } from "./cascade-service";
 import { PromptDialog } from "../ui/prompt-dialog";
@@ -31,7 +31,7 @@ export function wireTaskClosedCascade(app: App, plugin: Plugin) {
 			const active =
 				app.workspace.getActiveViewOfType(MarkdownView) ?? null;
 			if (active && active.file && active.file.path === filePath) {
-				const editor: any = (active as any).editor;
+				const { editor } = active;
 				if (!editor) return;
 				// Use event-provided parentLine0 to bypass snapshot dependency
 				await service.maybeCascadeInEditor(
@@ -58,20 +58,27 @@ export function wireTaskClosedCascade(app: App, plugin: Plugin) {
 	};
 
 	// Backward compatibility & integration with task-close-manager events.
+	const TASK_CLOSED_EVENT =
+		"agile:task-closed" as unknown as keyof DocumentEventMap;
+	const TASK_COMPLETED_DATE_ADDED_EVENT =
+		"agile:task-completed-date-added" as unknown as keyof DocumentEventMap;
+	const TASK_CANCELLED_DATE_ADDED_EVENT =
+		"agile:task-cancelled-date-added" as unknown as keyof DocumentEventMap;
+
 	plugin.registerDomEvent(
 		document,
-		"agile:task-closed" as any,
-		onTaskClosed as any
+		TASK_CLOSED_EVENT,
+		onTaskClosed as (this: HTMLElement, ev: DocumentEventMap[keyof DocumentEventMap]) => unknown
 	);
 	plugin.registerDomEvent(
 		document,
-		"agile:task-completed-date-added" as any,
-		onTaskClosed as any
+		TASK_COMPLETED_DATE_ADDED_EVENT,
+		onTaskClosed as (this: HTMLElement, ev: DocumentEventMap[keyof DocumentEventMap]) => unknown
 	);
 	plugin.registerDomEvent(
 		document,
-		"agile:task-cancelled-date-added" as any,
-		onTaskClosed as any
+		TASK_CANCELLED_DATE_ADDED_EVENT,
+		onTaskClosed as (this: HTMLElement, ev: DocumentEventMap[keyof DocumentEventMap]) => unknown
 	);
 }
 
@@ -87,34 +94,42 @@ export function wireTaskClosedCascadeObserver(app: App, plugin: Plugin) {
 		try {
 			const view = app.workspace.getActiveViewOfType(MarkdownView);
 			if (!view || !view.file) return;
-			const editor = (view as any).editor;
+			const { editor } = view;
 			if (!editor) return;
 			const editorPort = new ObsidianEditor(editor);
 			// Set snapshot through service’s snapshot manager (implicitly via maybeCascadeInEditor flow)
 			// Here, we just force a no-op attempt to initialize state:
 			editorPort.getAllLines(); // access to ensure no lazy errors
-		} catch {}
+		} catch {
+			/* ignore */
+		}
 	};
+
 	seedActiveViewSnapshot();
 	try {
-		(app.workspace as any).onLayoutReady?.(seedActiveViewSnapshot);
-	} catch {}
+		app.workspace.onLayoutReady(seedActiveViewSnapshot);
+	} catch {
+		/* ignore */
+	}
 
 	// Editor changes in active view
 	plugin.registerEvent(
-		app.workspace.on("editor-change", async (_editor: any, mdView: any) => {
-			try {
-				if (!(mdView instanceof MarkdownView)) return;
-				const file = mdView.file;
-				if (!file || file.extension !== "md") return;
-				await service.maybeCascadeInEditor(app, file.path, mdView);
-			} catch (e) {
-				console.warn(
-					"[task-closed-cascade] editor-change handler failed",
-					e
-				);
+		app.workspace.on(
+			"editor-change",
+			async (_editor: Editor, mdView: MarkdownView) => {
+				try {
+					if (!(mdView instanceof MarkdownView)) return;
+					const file = mdView.file;
+					if (!file || file.extension !== "md") return;
+					await service.maybeCascadeInEditor(app, file.path, mdView);
+				} catch (e) {
+					console.warn(
+						"[task-closed-cascade] editor-change handler failed",
+						e
+					);
+				}
 			}
-		})
+		)
 	);
 
 	// Update snapshot when switching views
@@ -123,11 +138,13 @@ export function wireTaskClosedCascadeObserver(app: App, plugin: Plugin) {
 			try {
 				const view = app.workspace.getActiveViewOfType(MarkdownView);
 				if (!view || !view.file) return;
-				const editor: any = (view as any).editor;
+				const { editor } = view;
 				if (!editor) return;
 				// Snapshot is managed lazily by service on first change; this preloads state.
 				new ObsidianEditor(editor).getAllLines();
-			} catch {}
+			} catch {
+				/* ignore */
+			}
 		})
 	);
 
