@@ -130,7 +130,7 @@ export async function createOrganizationFromTeam(opts: {
 		// Collect used pathIds from existing children to avoid collisions
 		const usedPathIds = new Set<string>();
 		try {
-			const list = await (vault.adapter as any).list(teamsDir);
+			const list = await vault.adapter.list(teamsDir);
 			const folders: string[] = Array.isArray(list?.folders)
 				? list.folders
 				: [];
@@ -215,7 +215,7 @@ export async function addTeamsToExistingOrganization(
 	// Collect used pathIds from existing children to avoid collisions
 	const usedPathIds = new Set<string>();
 	try {
-		const list = await (app.vault.adapter as any).list(teamsDir);
+		const list = await app.vault.adapter.list(teamsDir);
 		const folders: string[] = Array.isArray(list?.folders)
 			? list.folders
 			: [];
@@ -417,7 +417,7 @@ async function materializeBlueprint(params: {
 		parentRenameEnabled: boolean
 	) {
 		// Inherit rename flag down the tree; default to true
-		const selfRenameEnabled = (node as any).renameWithSlug ?? true;
+		const selfRenameEnabled = (node as BlueprintNode & { renameWithSlug?: boolean }).renameWithSlug ?? true;
 		const effectiveRename = parentRenameEnabled && selfRenameEnabled;
 
 		if (node.type === "folder") {

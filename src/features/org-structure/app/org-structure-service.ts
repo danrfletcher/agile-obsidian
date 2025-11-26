@@ -1,6 +1,6 @@
 import type { App, EventRef, TAbstractFile, TFile } from "obsidian";
 import type { AgileObsidianSettings } from "src/settings";
-import { hydrateTeamsFromVault } from "../domain/org-detection";
+import { hydrateTeamsFromVault, type MutableSettings } from "../domain/org-detection";
 import type { MemberInfo, TeamInfo } from "../domain/org-types";
 import type {
 	MembersBuckets,
@@ -28,10 +28,10 @@ function stableMemberType(
 	if (alias.endsWith("-team")) return "team";
 	if (alias.endsWith("-ext")) return "external";
 	// fallback to explicit type or default member
-	return (m.type as any) === "internal-team-member" ||
-		(m.type as any) === "team" ||
-		(m.type as any) === "external"
-		? (m.type as any)
+	return m.type === "internal-team-member" ||
+		m.type === "team" ||
+		m.type === "external"
+		? m.type
 		: "member";
 }
 
@@ -265,7 +265,7 @@ export function createOrgStructureService(opts: {
 	// Only care about relevant files/folders; skip hidden/system paths
 	const shouldCare = (file: TAbstractFile | null | undefined): boolean => {
 		if (!file) return false;
-		const p = (file as any).path as string | undefined;
+		const p = file.path;
 		if (!p) return false;
 
 		// Ignore Obsidian internals and trash
@@ -287,7 +287,7 @@ export function createOrgStructureService(opts: {
 	async function buildAll() {
 		if (disposed) return;
 		try {
-			await hydrateTeamsFromVault(app.vault, settings as any);
+			await hydrateTeamsFromVault(app.vault, settings as unknown as MutableSettings);
 			// hydrate mutates settings.teams in memory.
 		} catch (e) {
 			console.warn("[OrgStructureService] buildAll failed:", e);

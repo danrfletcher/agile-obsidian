@@ -8,7 +8,7 @@ import type {
 } from "./org-types";
 import { getDisplayNameFromAlias, TEAM_CODE_RE } from "@shared/identity";
 
-type MutableSettings = {
+export type MutableSettings = {
 	teamsFolder: string;
 	teams?: CanonicalTeamInfo[];
 	[k: string]: unknown;
@@ -183,7 +183,7 @@ export async function hydrateTeamsFromVault(
 		// 1) Collect all folders we can see by walking file parents upward
 		const allFolders = new Set<TFolder>();
 		for (const f of vault.getAllLoadedFiles()) {
-			const parent = (f as any).parent;
+			const parent = f.parent;
 			if (parent && parent instanceof TFolder) {
 				allFolders.add(parent);
 				let cur: TFolder | null = parent;

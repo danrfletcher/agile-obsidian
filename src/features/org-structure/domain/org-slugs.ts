@@ -155,12 +155,15 @@ export function isTeamFolderName(name: string): boolean {
  * Resolve the team metadata for a given file path from a list of teams.
  * Picks the deepest matching rootPath; fallback tolerates "Name (slug)" segment.
  */
-export function resolveTeamForPath(filePath: string, teams: any[]): any | null {
+export function resolveTeamForPath<T extends { rootPath: string; name: string }>(
+	filePath: string,
+	teams: T[]
+): T | null {
 	try {
 		if (!filePath || !teams || teams.length === 0) return null;
 
 		// Prefer rootPath match (deepest)
-		let best: any = null;
+		let best: T | null = null;
 		let bestLen = -1;
 		for (const t of teams) {
 			const root = (t.rootPath || "").replace(/\/+$/g, "");

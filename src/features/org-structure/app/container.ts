@@ -7,6 +7,7 @@ import type { TeamInfo } from "@features/org-structure";
 import type {
 	OrgStructureResult,
 } from "@features/org-structure";
+import type { MembersBuckets } from "../domain/org-api-types";
 
 export interface Container {
 	plugin: Plugin;
@@ -20,7 +21,7 @@ export interface Container {
 		getOrgStructure: () => OrgStructureResult;
 		getTeamMembersForPath: (path: string) => {
 			members: TeamInfo["members"];
-			buckets: any;
+			buckets: MembersBuckets;
 			team: TeamInfo | null;
 		};
 	};
@@ -30,11 +31,11 @@ export interface Container {
 export function createContainer(
 	plugin: Plugin & { settings: AgileObsidianSettings }
 ): Container {
-	const app = (plugin as any).app as App;
-	const settings = (plugin as any).settings as AgileObsidianSettings;
+	const app = plugin.app;
+	const settings = plugin.settings;
 
 	const settingsService = createSettingsService(
-		() => (plugin as any).settings
+		() => plugin.settings
 	);
 
 	return {
@@ -42,6 +43,6 @@ export function createContainer(
 		app,
 		settings,
 		settingsService,
-		manifestId: (plugin as any).manifest?.id ?? "",
+		manifestId: plugin.manifest.id,
 	};
 }
