@@ -17,7 +17,7 @@ import { attachSectionFolding } from "@features/task-tree-fold";
 type RegisterDomEvent = (
 	el: HTMLElement | Window | Document,
 	type: string,
-	handler: (evt: any) => void,
+	handler: (evt: Event) => void,
 	options?: AddEventListenerOptions | boolean
 ) => void;
 

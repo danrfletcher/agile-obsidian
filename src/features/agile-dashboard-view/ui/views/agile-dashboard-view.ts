@@ -2,6 +2,7 @@ import { ItemView, WorkspaceLeaf } from "obsidian";
 import manifest from "manifest.json";
 
 import type { TaskIndexService } from "@features/task-index";
+import type { TaskIndexSnapshot } from "@features/task-index";
 import type { SettingsService } from "@settings";
 import type { OrgStructurePort } from "@features/org-structure";
 
@@ -38,7 +39,7 @@ export class AgileDashboardView extends ItemView {
 				updateFile: async () => {},
 				removeFile: () => {},
 				renameFile: () => {},
-				getSnapshot: () => ({} as any),
+				getSnapshot: () => ({} as TaskIndexSnapshot),
 				getAllTasks: () => [],
 				getByFile: () => undefined,
 				getById: () => undefined,
@@ -52,15 +53,15 @@ export class AgileDashboardView extends ItemView {
 		this.storageKey = `agile:selected-team-slugs:${mid}`;
 	}
 
-	getViewType() {
+	getViewType(): string {
 		return VIEW_TYPE_AGILE_DASHBOARD;
 	}
 
-	getDisplayText() {
+	getDisplayText(): string {
 		return "Agile Dashboard";
 	}
 
-	getIcon() {
+	getIcon(): string {
 		return "calendar-clock";
 	}
 
@@ -71,11 +72,12 @@ export class AgileDashboardView extends ItemView {
 			taskIndexService: this.taskIndexService,
 			settingsService: this.settingsService,
 			orgStructurePort: this.orgStructurePort,
-			manifestVersion: manifest.version,
+			manifestVersion: String((manifest as { version?: unknown }).version ?? ""),
 			storageKey: this.storageKey,
-			register: this.register.bind(this),
-			registerEvent: this.registerEvent.bind(this),
-			registerDomEvent: this.registerDomEvent.bind(this),
+			register: (fn) => this.register(fn),
+			registerEvent: (evt) => this.registerEvent(evt),
+			registerDomEvent: (el, type, handler, options) =>
+				this.registerDomEvent(el, type, handler, options),
 		});
 
 		this.controller.mount();

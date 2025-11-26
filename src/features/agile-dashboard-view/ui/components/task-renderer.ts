@@ -104,7 +104,7 @@ function getTaskFilePath(task: TaskItem): string {
 }
 
 function getTaskLine(task: TaskItem): number | null {
-	const posLine = (task as any)?.position?.start?.line ?? (task as any)?.line;
+	const posLine = (task.position as unknown as { line?: number } | null)?.line ?? task.line;
 	if (typeof posLine === "number" && posLine >= 0) return posLine;
 	if (typeof task.line === "number" && task.line >= 0) return task.line;
 	return null;
@@ -121,12 +121,21 @@ async function openTaskInNewTab(app: App, task: TaskItem): Promise<void> {
 		const line = getTaskLine(task);
 		const leaf = app.workspace.getLeaf(true);
 
-		await (leaf as any).openFile(abs, {
-			eState: line != null ? { line } : {},
-		});
+		await (leaf as unknown as { openFile: (file: TFile, state?: unknown) => Promise<void> }).openFile(
+			abs,
+			line != null ? { eState: { line } } : {}
+		);
 
 		try {
-			const view = (leaf as any).view;
+			const view = (leaf as unknown as { view?: unknown }).view as
+				| {
+					  editor?: {
+						  setCursor?: (pos: { line: number; ch: number }) => unknown;
+						  scrollIntoView?: (range: unknown, center?: boolean) => unknown;
+					  };
+					  setEphemeralState?: (state: unknown) => unknown;
+				  }
+				| undefined;
 			if (
 				view?.editor &&
 				typeof view.editor.setCursor === "function" &&
@@ -149,14 +158,16 @@ async function openTaskInNewTab(app: App, task: TaskItem): Promise<void> {
 			/* ignore */
 		}
 
-		if (line == null && (task as any).blockId) {
-			const blockId = (task as any).blockId;
+		if (line == null && task.blockId) {
+			const blockId = task.blockId;
 			try {
-				(app.workspace as any).openLinkText(
-					`${filePath}#^${blockId}`,
-					"",
-					true
-				);
+				(app.workspace as unknown as {
+					openLinkText: (
+						linktext: string,
+						sourcePath: string,
+						newLeaf?: boolean
+					) => unknown;
+				}).openLinkText(`${filePath}#^${blockId}`,'', true);
 			} catch {
 				/* ignore */
 			}
@@ -175,7 +186,7 @@ function attachOpenOnLongPress(
 	task: TaskItem,
 	app: App
 ): void {
-	if ((liEl as any).__agileOpenAttached) return;
+	if (liEl.dataset.agileOpenAttached === "1") return;
 
 	const LONG_PRESS_MS = 500;
 	let pressTimer: number | null = null;
@@ -212,11 +223,11 @@ function attachOpenOnLongPress(
 	liEl.addEventListener("mouseup", onPressEnd);
 	liEl.addEventListener("mouseleave", onPressEnd);
 
-	liEl.addEventListener("touchstart", onPressStart, { passive: true } as any);
+	liEl.addEventListener("touchstart", onPressStart, { passive: true } as AddEventListenerOptions);
 	liEl.addEventListener("touchend", onPressEnd);
 	liEl.addEventListener("touchcancel", onPressEnd);
 
-	(liEl as any).__agileOpenAttached = true;
+	liEl.dataset.agileOpenAttached = "1";
 }
 
 /**
@@ -357,10 +368,10 @@ export function renderTaskTree(
 					line != null
 						? line
 						: (() => {
-								const s =
-									taskItemEl.getAttribute("data-line") || "";
-								return /^\d+$/.test(s) ? parseInt(s, 10) : 0;
-						  })();
+							const s =
+								taskItemEl.getAttribute("data-line") || "";
+							return /^\d+$/.test(s) ? parseInt(s, 10) : 0;
+						})();
 
 				attachCustomCheckboxStatusHandlers({
 					checkboxEl: checkbox,
@@ -368,11 +379,11 @@ export function renderTaskTree(
 					task: {
 						filePath: resolvedFilePath,
 						line0,
-						status: (task as any)?.status ?? " ",
+						status: task.status ?? " ",
 					},
 					onStatusApplied: (to: StatusChar) => {
 						// Update in-memory for downstream code relying on task.status
-						(task as any).status = to;
+						task.status = to;
 						if (to === "/") {
 							rerenderTaskInline(
 								task,
@@ -562,10 +573,10 @@ function rerenderTaskInline(
 					task: {
 						filePath: resolvedFilePath,
 						line0,
-						status: (task as any)?.status ?? newStatus,
+						status: task.status ?? newStatus,
 					},
 					onStatusApplied: (to: StatusChar) => {
-						(task as any).status = to;
+						task.status = to;
 						if (to === "/") {
 							rerenderTaskInline(
 								task,

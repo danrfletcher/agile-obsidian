@@ -12,7 +12,7 @@ import { openAssignmentMenuAt } from "@features/task-assignment/ui/reassignment-
 type RegisterDomEvent = (
 	el: HTMLElement | Window | Document,
 	type: string,
-	handler: (evt: any) => void,
+	handler: (evt: Event) => void,
 	options?: AddEventListenerOptions | boolean
 ) => void;
 
@@ -43,8 +43,7 @@ export function attachDashboardAssignmentHandler(
 			// Prevent default navigation/handlers early
 			evt.preventDefault();
 			evt.stopPropagation();
-			// @ts-ignore
-			(evt as any).stopImmediatePropagation?.();
+			evt.stopImmediatePropagation();
 
 			const templateKey = span.getAttribute("data-template-key") ?? "";
 			if (templateKey !== "members.assignee") return;

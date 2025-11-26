@@ -1,4 +1,4 @@
-import { TFile, type App, type TAbstractFile } from "obsidian";
+import { TFile, type App, type TAbstractFile, type EventRef } from "obsidian";
 import type { TaskIndexService } from "@features/task-index";
 import { eventBus } from "../../app/event-bus";
 import {
@@ -7,7 +7,7 @@ import {
 } from "../../app/refresh-service";
 
 type RegisterFn = (fn: () => void) => void;
-type RegisterEventFn = (evt: any) => void;
+type RegisterEventFn = (evt: EventRef) => void;
 
 export interface WiringOptions {
 	app: App;

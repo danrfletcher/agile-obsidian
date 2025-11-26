@@ -1,6 +1,8 @@
 import type { SettingsService } from "@settings";
 import type { OrgStructurePort } from "@features/org-structure";
 import type { TaskItem } from "@features/task-index";
+import type { MembersBuckets, TeamNode } from "@features/org-structure";
+import type { TeamInfo } from "@features/org-structure";
 
 export class TeamSelection {
 	private selectedTeamSlugs = new Set<string>();
@@ -26,7 +28,7 @@ export class TeamSelection {
 				return;
 			}
 			this.implicitAllSelected = false;
-			const arr = JSON.parse(raw);
+			const arr: unknown = JSON.parse(raw);
 			if (Array.isArray(arr)) {
 				this.selectedTeamSlugs = new Set(
 					arr.map((s) => String(s).toLowerCase())
@@ -86,11 +88,11 @@ export class TeamSelection {
 		if (!x || typeof x !== "object") return "";
 		const anyObj = x as Record<string, unknown>;
 		const cand =
-			(anyObj as any).alias ??
-			(anyObj as any).user ??
-			(anyObj as any).name ??
-			(anyObj as any).id ??
-			(anyObj as any).email;
+			(anyObj as Record<string, unknown>).alias ??
+			(anyObj as Record<string, unknown>).user ??
+			(anyObj as Record<string, unknown>).name ??
+			(anyObj as Record<string, unknown>).id ??
+			(anyObj as Record<string, unknown>).email;
 		return this.normalizeAlias(
 			typeof cand === "string" ? cand : String(cand || "")
 		);
@@ -104,21 +106,32 @@ export class TeamSelection {
 				.filter(Boolean);
 		}
 		if (typeof members === "object") {
-			return Object.values(members)
-				.map((v) => this.aliasFromMemberLike(v))
-				.filter(Boolean);
+			const out: string[] = [];
+			for (const v of Object.values(members as Record<string, unknown>)) {
+				if (Array.isArray(v)) {
+					for (const e of v) {
+						const a = this.aliasFromMemberLike(e);
+						if (a) out.push(a);
+					}
+				} else {
+					const a = this.aliasFromMemberLike(v);
+					if (a) out.push(a);
+				}
+			}
+			return out;
 		}
 		return [];
 	}
 
-	private teamNodeHasUser(node: any, aliasNorm: string): boolean {
+	private teamNodeHasUserFromBuckets(
+		buckets: MembersBuckets,
+		aliasNorm: string
+	): boolean {
 		const pools = [
-			node?.members,
-			node?.memberAliases,
-			node?.users,
-			node?.aliases,
-			node?.membersMap,
-			node?.allMembers,
+			buckets.teamMembers,
+			buckets.internalMembersDelegates,
+			buckets.internalTeamDelegates,
+			buckets.externalDelegates,
 		];
 		for (const pool of pools) {
 			const aliases = this.extractAliases(pool);
@@ -143,8 +156,8 @@ export class TeamSelection {
 			const fn = port[fnName];
 			if (typeof fn === "function") {
 				try {
-					const raw = (fn as any).call(
-						this.orgStructurePort,
+					const raw = (fn as (alias: string) => unknown).call(
+						this.orgStructurePort as unknown as object,
 						aliasNorm
 					);
 					if (Array.isArray(raw)) {
@@ -154,12 +167,13 @@ export class TeamSelection {
 								const slug = item.toLowerCase().trim();
 								if (slug) set.add(slug);
 							} else if (item && typeof item === "object") {
+								const obj = item as Record<string, unknown>;
 								const cand =
-									(item as any).slug ??
-									(item as any).teamSlug ??
-									(item as any).id ??
-									(item as any).key ??
-									(item as any).code;
+									obj.slug ??
+									obj.teamSlug ??
+									obj.id ??
+									obj.key ??
+									obj.code;
 								const slug =
 									typeof cand === "string"
 										? cand.toLowerCase().trim()
@@ -184,32 +198,37 @@ export class TeamSelection {
 	): Set<string> | null {
 		if (!this.orgStructurePort) return null;
 		try {
-			const { organizations, teams } =
-				this.orgStructurePort.getOrgStructure();
+			// Use the proper shape from OrgStructurePort without miscasting
+			const { organizations, teams } = this.orgStructurePort.getOrgStructure();
 			const result = new Set<string>();
 
-			const visitTeam = (node: any) => {
-				const cand =
-					node?.slug ??
-					node?.teamSlug ??
-					node?.id ??
-					node?.key ??
-					node?.code;
-				const slug =
-					typeof cand === "string"
-						? cand.toLowerCase().trim()
-						: String(cand || "")
-								.toLowerCase()
-								.trim();
-				if (slug && this.teamNodeHasUser(node, aliasNorm))
+			const visitTeam = (node: TeamNode) => {
+				const slug = String(node.teamSlug || "").toLowerCase().trim();
+				if (
+					slug &&
+					this.teamNodeHasUserFromBuckets(node.members, aliasNorm)
+				) {
 					result.add(slug);
-				for (const st of (node.subteams as any[] | undefined) || [])
+				}
+				for (const st of node.subteams ?? []) {
 					visitTeam(st);
+				}
 			};
 
-			for (const org of organizations || [])
-				for (const t of org.teams || []) visitTeam(t);
-			for (const t of teams || []) visitTeam(t);
+			const orgs = organizations ?? [];
+			const orphanTeams = teams ?? [];
+
+			// organizations are OrganizationNode, which (correctly) have a `teams` array
+			for (const org of orgs) {
+				for (const t of org.teams ?? []) {
+					visitTeam(t);
+				}
+			}
+
+			// orphan teams come directly from the top-level `teams` array
+			for (const t of orphanTeams) {
+				visitTeam(t);
+			}
 
 			return result.size > 0 ? result : new Set<string>();
 		} catch {
@@ -222,15 +241,15 @@ export class TeamSelection {
 	): Set<string> | null {
 		try {
 			const settings = this.settingsService.getRaw();
-			const teams = settings.teams || [];
+			const teams: TeamInfo[] = settings.teams || [];
 			const result = new Set<string>();
 			for (const t of teams) {
-				const slug = (t as any).slug ?? (t as any).teamSlug ?? "";
+				const slug = t.slug ?? "";
 				const slugNorm = String(slug || "")
 					.toLowerCase()
 					.trim();
 				if (!slugNorm) continue;
-				const members = (t as any).members || [];
+				const members = t.members || [];
 				const aliases = this.extractAliases(members);
 				if (aliases.includes(aliasNorm)) result.add(slugNorm);
 			}

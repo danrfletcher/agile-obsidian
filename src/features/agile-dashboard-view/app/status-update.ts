@@ -26,15 +26,17 @@ export const handleStatusChange = async (
 		const filePath = task.link?.path || task._uniqueId?.split(":")[0];
 		if (!filePath) throw new Error("Missing task file path");
 
-		const file = app.vault.getAbstractFileByPath(filePath) as TFile;
+		const fileUnknown: unknown = app.vault.getAbstractFileByPath(filePath);
+		const file = fileUnknown as TFile;
 		if (!file) throw new Error(`File not found: ${filePath}`);
 
 		// Prepare optimistic UI suppression for vault modify refresh
 		eventBus.dispatch("agile:prepare-optimistic-file-change", { filePath });
 
 		// Read content to robustly locate the target line
-		const content = await app.vault.read(file);
-		const lines = content.split(/\r?\n/);
+		const rawContent: unknown = await app.vault.read(file);
+		const content: string = String(rawContent);
+		const lines: string[] = content.split(/\r?\n/);
 
 		// Helpers (reuse robust targeting from previous implementation)
 		const parseStatusFromLine = (line: string): string | null => {
@@ -61,13 +63,16 @@ export const handleStatusChange = async (
 		);
 
 		// Prefer parsing from known position or nearby
-		const baseIdx =
-			typeof (task as any)?.position?.start?.line === "number"
-				? (task as any).position.start.line
+		// Fix: Access start.line on Pos interface instead of direct .line property
+		const baseIdx: number =
+			typeof task.position?.start?.line === "number"
+				? task.position.start.line
 				: typeof task.line === "number"
 				? task.line
 				: -1;
-		const candidates = [baseIdx, baseIdx - 1, baseIdx + 1].filter(
+
+		const allCandidates: number[] = [baseIdx, baseIdx - 1, baseIdx + 1];
+		const candidates = allCandidates.filter(
 			(i) => i >= 0 && i < lines.length
 		);
 
@@ -119,7 +124,7 @@ export const handleStatusChange = async (
 
 		// Predict the next status for short press, or "-" for long press
 		const predictShortNext = (cur: string): string =>
-			getNextStatusChar(cur as any, DEFAULT_STATUS_SEQUENCE);
+			getNextStatusChar(cur, DEFAULT_STATUS_SEQUENCE);
 
 		const targetStatus = isCancel ? "-" : predictShortNext(effectiveStatus);
 
@@ -144,7 +149,7 @@ export const handleStatusChange = async (
 			const seq = DEFAULT_STATUS_SEQUENCE;
 			const curIdx = Math.max(
 				0,
-				seq.findIndex((c) => c === (effectiveStatus as any))
+				seq.findIndex((c) => c === effectiveStatus)
 			);
 			const targetIdx = seq.findIndex((c) => c === "-");
 			const len = seq.length;
@@ -160,7 +165,7 @@ export const handleStatusChange = async (
 		}
 
 		// Update the TaskItem's in-memory status for immediate UI hints elsewhere
-		(task as any).status = targetStatus;
+		task.status = targetStatus;
 
 		// Hide completed/cancelled items immediately in UI
 		if (targetStatus === "x" || targetStatus === "-") {

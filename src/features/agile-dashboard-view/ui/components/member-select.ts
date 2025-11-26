@@ -1,4 +1,5 @@
 import type { SettingsService } from "@settings";
+import type { TeamInfo, MemberInfo } from "@features/org-structure";
 
 type MemberSelectFilter = {
 	selectedTeamSlugs?: Set<string> | null;
@@ -24,7 +25,7 @@ function computeEntries(
 	filter?: MemberSelectFilter
 ): Entry[] {
 	const settings = settingsService.getRaw();
-	const teams = settings.teams || [];
+	const teams: TeamInfo[] = settings.teams || [];
 
 	// Determine which teams to include
 	const selectedSet = filter?.selectedTeamSlugs ?? null;
@@ -34,11 +35,8 @@ function computeEntries(
 
 	const includedTeams = includeAllTeams
 		? teams
-		: teams.filter((t: any) => {
-				const slug = (t?.slug ?? t?.teamSlug ?? "")
-					.toString()
-					.toLowerCase()
-					.trim();
+		: teams.filter((t) => {
+				const slug = (t.slug ?? "").toString().toLowerCase().trim();
 				return slug && selectedSet!.has(slug);
 		  });
 
@@ -46,18 +44,16 @@ function computeEntries(
 	const seen = new Set<string>();
 
 	for (const t of includedTeams) {
-		for (const m of t.members || []) {
+		for (const m of (t.members || []) as (MemberInfo | string)[]) {
 			const aliasRaw =
-				typeof m === "string"
-					? m
-					: (m as any)?.alias || (m as any)?.name || "";
+				typeof m === "string" ? m : m.alias || m.name || "";
 			const alias = normalizeAlias(aliasRaw);
 			if (!alias) continue;
 			if (seen.has(alias)) continue;
 			seen.add(alias);
 
 			const dispName =
-				(typeof m === "string" ? "" : (m as any)?.name) || alias;
+				(typeof m === "string" ? "" : m.name) || alias;
 
 			const lower = alias.toLowerCase();
 			let role: Entry["role"] = "member";

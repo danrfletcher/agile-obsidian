@@ -15,7 +15,7 @@ import { TeamSelection } from "../../domain/team-selection";
 type RegisterDomEvent = (
 	el: HTMLElement | Window | Document,
 	type: string,
-	handler: (evt: any) => void,
+	handler: (evt: Event) => void,
 	options?: AddEventListenerOptions | boolean
 ) => void;
 
@@ -60,24 +60,20 @@ export async function renderProjectView(opts: ProjectViewOptions) {
 	let currentTasks: TaskItem[] = taskIndexService.getAllTasks();
 
 	currentTasks = currentTasks.filter((t) =>
-		teamSelection.isTaskAllowedByTeam(
-			t as unknown as TaskItem,
-			selectedAlias
-		)
+		teamSelection.isTaskAllowedByTeam(t, selectedAlias)
 	);
 
 	const taskMap = new Map<string, TaskItem>();
 	const childrenMap = new Map<string, TaskItem[]>();
 	currentTasks.forEach((t) => {
 		if (t._uniqueId) {
-			taskMap.set(t._uniqueId, t as unknown as TaskItem);
+			taskMap.set(t._uniqueId, t);
 			childrenMap.set(t._uniqueId, []);
 		}
 	});
 	currentTasks.forEach((t) => {
-		const tt = t as unknown as TaskItem;
-		if (tt._parentId && childrenMap.has(tt._parentId)) {
-			childrenMap.get(tt._parentId)!.push(tt);
+		if (t._parentId && childrenMap.has(t._parentId)) {
+			childrenMap.get(t._parentId)!.push(t);
 		}
 	});
 
@@ -92,7 +88,7 @@ export async function renderProjectView(opts: ProjectViewOptions) {
 	if (settings.showObjectives) {
 		processAndRenderObjectives(
 			container,
-			currentTasks as unknown as TaskItem[],
+			currentTasks,
 			statusActive,
 			selectedAlias,
 			app,
@@ -105,7 +101,7 @@ export async function renderProjectView(opts: ProjectViewOptions) {
 	if (settings.showResponsibilities) {
 		processAndRenderResponsibilities(
 			container,
-			currentTasks as unknown as TaskItem[],
+			currentTasks,
 			statusActive,
 			selectedAlias,
 			app,
@@ -117,7 +113,7 @@ export async function renderProjectView(opts: ProjectViewOptions) {
 	}
 	processAndRenderArtifacts(
 		container,
-		currentTasks as unknown as TaskItem[],
+		currentTasks,
 		statusActive,
 		selectedAlias,
 		app,
@@ -130,7 +126,7 @@ export async function renderProjectView(opts: ProjectViewOptions) {
 	if (settings.showInitiatives) {
 		processAndRenderInitiatives(
 			container,
-			currentTasks as unknown as TaskItem[],
+			currentTasks,
 			statusActive,
 			selectedAlias,
 			app,
@@ -143,7 +139,7 @@ export async function renderProjectView(opts: ProjectViewOptions) {
 	if (settings.showPriorities) {
 		processAndRenderPriorities(
 			container,
-			currentTasks as unknown as TaskItem[],
+			currentTasks,
 			statusActive,
 			selectedAlias,
 			app,

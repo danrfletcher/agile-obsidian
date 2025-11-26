@@ -10,7 +10,7 @@ import { inferTeamSlugFromPath } from "@features/org-structure";
 type RegisterDomEvent = (
 	el: HTMLElement | Window | Document,
 	type: string,
-	handler: (evt: any) => void,
+	handler: (evt: Event) => void,
 	options?: AddEventListenerOptions | boolean
 ) => void;
 
@@ -57,9 +57,7 @@ export function processAndRenderObjectives(
 	};
 
 	const entries: OKREntry[] = assignedOKRs.map((okr, idx) => {
-		const rawBlockId = (okr as any)?.blockId
-			? String((okr as any).blockId)
-			: "";
+		const rawBlockId = okr.blockId ? String(okr.blockId) : "";
 		const blockId = rawBlockId.startsWith("^")
 			? rawBlockId.slice(1)
 			: rawBlockId;

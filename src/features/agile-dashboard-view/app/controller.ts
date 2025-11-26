@@ -1,4 +1,4 @@
-import { Notice, type App, type ItemView } from "obsidian";
+import { Notice, type App, type ItemView, type EventRef } from "obsidian";
 import type { TaskIndexService } from "@features/task-index";
 import type { SettingsService } from "@settings";
 import type { OrgStructurePort } from "@features/org-structure";
@@ -23,11 +23,11 @@ import { refreshForFile } from "./refresh-service";
 import { attachCustomViewTemplatingSequencerHandler } from "@features/templating-sequencer";
 
 type RegisterFn = (fn: () => void) => void;
-type RegisterEventFn = (evt: any) => void;
+type RegisterEventFn = (evt: EventRef) => void;
 type RegisterDomEvent = (
 	el: HTMLElement | Window | Document,
 	type: string,
-	handler: (evt: any) => void,
+	handler: (evt: Event) => void,
 	options?: AddEventListenerOptions | boolean
 ) => void;
 
@@ -124,10 +124,19 @@ export class DashboardController {
 		});
 
 		// NEW: Sequencer menu for templates inside the dashboard
+		// NOTE: The sequencer expects registerDomEvent to use MouseEvent in the handler,
+		// while our DashboardControllerDeps.registerDomEvent is typed with Event.
+		// This adapter bridges the two signatures in a type-safe way.
 		attachCustomViewTemplatingSequencerHandler({
 			app: this.deps.app,
 			viewContainer: container,
-			registerDomEvent: this.deps.registerDomEvent,
+			registerDomEvent: (el, type, handler, options) =>
+				this.deps.registerDomEvent(
+					el,
+					type,
+					handler as unknown as (evt: Event) => void,
+					options
+				),
 			refreshForFile: async (filePath?: string | null) => {
 				await refreshForFile(
 					this.deps.app,
@@ -175,7 +184,7 @@ export class DashboardController {
 			try {
 				window.removeEventListener("click", this.outsideClickHandler, {
 					capture: true,
-				} as any);
+				});
 			} catch {}
 			this.outsideClickHandler = null;
 		}
@@ -183,7 +192,7 @@ export class DashboardController {
 
 	// Rendering
 	private getViewContainer(): HTMLElement {
-		return (this.deps.view as any).containerEl.children[1] as HTMLElement;
+		return this.deps.view.containerEl.children[1] as HTMLElement;
 	}
 
 	private getOrCreateContentContainer(parent: HTMLElement): HTMLElement {

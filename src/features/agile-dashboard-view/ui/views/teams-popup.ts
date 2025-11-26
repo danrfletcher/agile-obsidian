@@ -136,9 +136,7 @@ export function renderTeamsPopupContent(ctx: TeamsPopupContext) {
 
 					const label = document.createElement("label");
 					const name = extractPossibleName(t);
-					label.textContent = `${name} (${
-						(t as any).teamSlug || (t as any).slug || ""
-					})`;
+					label.textContent = `${name} (${extractPossibleSlug(t)})`;
 					label.style.cursor = "pointer";
 					label.addEventListener("click", () => cb.click());
 
@@ -214,7 +212,8 @@ function renderOrganizationEntryFiltered(
 
 	const state = computeSelectionState(ctx, allOrgTeamSlugs);
 	cb.checked = state === "all";
-	(cb as any).indeterminate = state === "partial";
+	(cb as unknown as { indeterminate: boolean }).indeterminate =
+		state === "partial";
 
 	cb.addEventListener("change", () => {
 		ctx.setImplicitAllSelected(false);
@@ -224,9 +223,9 @@ function renderOrganizationEntryFiltered(
 	});
 
 	const label = document.createElement("label");
-	label.textContent = `${(org as any).orgName || (org as any).name || ""} (${
-		(org as any).orgSlug || (org as any).slug || ""
-	})`;
+	label.textContent = `${extractPossibleName(org)} (${extractPossibleSlug(
+		org
+	)})`;
 	label.style.cursor = "pointer";
 	label.addEventListener("click", () => cb.click());
 
@@ -293,7 +292,8 @@ function renderTeamNodeEntryFiltered(
 
 	const state = computeSelectionState(ctx, visibleSlugsHere);
 	cb.checked = state === "all";
-	(cb as any).indeterminate = state === "partial";
+	(cb as unknown as { indeterminate: boolean }).indeterminate =
+		state === "partial";
 
 	cb.addEventListener("change", () => {
 		ctx.setImplicitAllSelected(false);
@@ -303,9 +303,9 @@ function renderTeamNodeEntryFiltered(
 	});
 
 	const label = document.createElement("label");
-	label.textContent = `${
-		(node as any).teamName || (node as any).name || ""
-	} (${(node as any).teamSlug || (node as any).slug || ""})`;
+	label.textContent = `${extractPossibleName(node)} (${extractPossibleSlug(
+		node
+	)})`;
 	label.style.cursor = "pointer";
 	label.addEventListener("click", () => cb.click());
 
@@ -404,8 +404,8 @@ function extractPossibleSlug(obj: unknown): string {
 	return typeof cand === "string"
 		? cand.toLowerCase().trim()
 		: String(cand || "")
-				.toLowerCase()
-				.trim();
+			.toLowerCase()
+			.trim();
 }
 
 function extractPossibleName(obj: unknown): string {
