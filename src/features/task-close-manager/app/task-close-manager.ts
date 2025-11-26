@@ -1,6 +1,13 @@
 import { toYyyyMmDd } from "@features/task-date-manager";
 import { getCheckboxStatusChar } from "@platform/obsidian";
-import type { App, Plugin, TFile } from "obsidian";
+import type {
+	App,
+	Editor,
+	EditorPosition,
+	MarkdownFileInfo,
+	Plugin,
+	TFile,
+} from "obsidian";
 import { MarkdownView, TFile as ObsidianTFile } from "obsidian";
 import {
 	appendEmojiWithDate,
@@ -51,6 +58,27 @@ type StatusChangedDetail = {
 	toStatus: Status;
 };
 
+type DateAddedDetail = {
+	filePath: string;
+	parentLine0: number;
+	date: string;
+	beforeLines?: string[];
+};
+
+type SelectionRange = {
+	from: EditorPosition;
+	to: EditorPosition;
+};
+
+type MutateResult = {
+	beforeLines: string[];
+	didChange: boolean;
+};
+
+interface SelectionPreservingEditor extends Editor {
+	getCursor(position?: "from" | "to"): EditorPosition;
+}
+
 function norm(s: Status): string {
 	const v = (s ?? "").toString();
 	return v.length ? v.toLowerCase() : "";
@@ -86,9 +114,10 @@ export function wireTaskCloseManager(app: App, plugin: Plugin) {
 			kind === "completed"
 				? "agile:task-completed-date-added"
 				: "agile:task-cancelled-date-added";
+
 		try {
 			document.dispatchEvent(
-				new CustomEvent(evtName as any, {
+				new CustomEvent<DateAddedDetail>(evtName, {
 					detail: {
 						filePath,
 						parentLine0,
@@ -106,29 +135,35 @@ export function wireTaskCloseManager(app: App, plugin: Plugin) {
 		view: MarkdownView,
 		line0: number,
 		mutate: (orig: string) => string | null
-	): Promise<{ beforeLines: string[]; didChange: boolean } | null> {
-		const editor: any = (view as any).editor;
+	): Promise<MutateResult | null> {
+		const editor = view.editor as SelectionPreservingEditor | null;
 		if (!editor) return null;
 
 		// Snapshot lines before edit
 		const beforeLines: string[] = [];
-		for (let i = 0; i < editor.lineCount(); i++)
+		const lineCount = editor.lineCount();
+		for (let i = 0; i < lineCount; i += 1) {
 			beforeLines.push(editor.getLine(i));
+		}
 
 		// Snapshot cursor/selection to preserve user caret if it's on the edited line
-		let from = editor.getCursor?.("from");
-		let to = editor.getCursor?.("to");
-		const hasCursorAPI =
-			from &&
-			to &&
-			typeof from.line === "number" &&
-			typeof from.ch === "number" &&
-			typeof to.line === "number" &&
-			typeof to.ch === "number";
-		const selectionOnLine =
-			hasCursorAPI &&
-			(from.line === line0 || to.line === line0) &&
-			from.line === to.line;
+		let selection: SelectionRange | null = null;
+		try {
+			const from = editor.getCursor("from");
+			const to = editor.getCursor("to");
+			if (
+				typeof from?.line === "number" &&
+				typeof from.ch === "number" &&
+				typeof to?.line === "number" &&
+				typeof to.ch === "number" &&
+				(from.line === line0 || to.line === line0) &&
+				from.line === to.line
+			) {
+				selection = { from, to };
+			}
+		} catch {
+			selection = null;
+		}
 
 		const orig = editor.getLine(line0) ?? "";
 		const updated = mutate(orig);
@@ -143,28 +178,19 @@ export function wireTaskCloseManager(app: App, plugin: Plugin) {
 		);
 
 		// Restore selection/caret if it was on this line
-		if (selectionOnLine) {
-			try {
-				const newLen = updated.length;
-				const newFromCh = Math.max(
-					0,
-					Math.min(newLen, from.ch as number)
-				);
-				const newToCh = Math.max(0, Math.min(newLen, to.ch as number));
+		if (selection) {
+			const { from, to } = selection;
+			const newLen = updated.length;
+			const newFromCh = Math.max(0, Math.min(newLen, from.ch));
+			const newToCh = Math.max(0, Math.min(newLen, to.ch));
 
-				if (typeof editor.setSelection === "function") {
-					editor.setSelection(
-						{ line: line0, ch: newFromCh },
-						{ line: line0, ch: newToCh }
-					);
-				} else if (
-					newFromCh === newToCh &&
-					typeof editor.setCursor === "function"
-				) {
-					editor.setCursor({ line: line0, ch: newFromCh });
-				}
-			} catch {
-				// Non-fatal: if we cannot restore, we do nothing
+			if (newFromCh === newToCh) {
+				editor.setCursor({ line: line0, ch: newFromCh });
+			} else {
+				editor.setSelection(
+					{ line: line0, ch: newFromCh },
+					{ line: line0, ch: newToCh }
+				);
 			}
 		}
 
@@ -175,7 +201,7 @@ export function wireTaskCloseManager(app: App, plugin: Plugin) {
 		filePath: string,
 		line0: number,
 		mutate: (orig: string) => string | null
-	): Promise<{ beforeLines: string[]; didChange: boolean } | null> {
+	): Promise<MutateResult | null> {
 		const abs = app.vault.getAbstractFileByPath(filePath);
 		if (!(abs instanceof ObsidianTFile)) return null;
 		const tfile = abs as TFile;
@@ -194,7 +220,9 @@ export function wireTaskCloseManager(app: App, plugin: Plugin) {
 					detail: { filePath },
 				})
 			);
-		} catch {}
+		} catch {
+			// ignore
+		}
 		lines[line0] = updated;
 		// Suppress downstream index-driven re-writes for a short window
 		if (!isSuppressed(filePath)) {
@@ -256,12 +284,14 @@ export function wireTaskCloseManager(app: App, plugin: Plugin) {
 		if (!file || file.extension !== "md") return;
 		const path = file.path;
 
-		const editor: any = (view as any).editor;
+		const editor = view.editor as SelectionPreservingEditor | null;
 		if (!editor) return;
 
 		const nextLines: string[] = [];
 		const count = editor.lineCount();
-		for (let i = 0; i < count; i++) nextLines.push(editor.getLine(i));
+		for (let i = 0; i < count; i += 1) {
+			nextLines.push(editor.getLine(i));
+		}
 
 		const snap = viewSnapshots.get(view);
 		if (!snap || snap.path !== path) {
@@ -348,7 +378,9 @@ export function wireTaskCloseManager(app: App, plugin: Plugin) {
 		// Update snapshot from the editor after our write
 		const refreshed: string[] = [];
 		const lc = editor.lineCount();
-		for (let i = 0; i < lc; i++) refreshed.push(editor.getLine(i));
+		for (let i = 0; i < lc; i += 1) {
+			refreshed.push(editor.getLine(i));
+		}
 		viewSnapshots.set(view, { path, lines: refreshed });
 
 		// Emit events only if we actually added a date (completed/cancelled)
@@ -364,66 +396,83 @@ export function wireTaskCloseManager(app: App, plugin: Plugin) {
 	};
 
 	// Robust editor-change handler for different Obsidian signatures
-	const onEditorChangeAny = async (...args: any[]) => {
+	// Signature: (editor: Editor, info: MarkdownView | MarkdownFileInfo)
+	const onEditorChange = async (
+		_editor: Editor,
+		info: MarkdownView | MarkdownFileInfo
+	): Promise<void> => {
 		try {
-			let mdView: any = null;
-			// Possible signatures: (mdView), (_editor, mdView)
-			if (args.length === 1 && args[0] instanceof MarkdownView) {
-				mdView = args[0];
-			} else if (args.length >= 2 && args[1] instanceof MarkdownView) {
-				mdView = args[1];
+			let mdView: MarkdownView | null = null;
+
+			if (info instanceof MarkdownView) {
+				// Normal case: Obsidian gave us the MarkdownView directly.
+				mdView = info;
 			} else {
-				mdView =
-					app.workspace.getActiveViewOfType(MarkdownView) ?? null;
+				// Fallback: resolve the active MarkdownView from the workspace.
+				mdView = app.workspace.getActiveViewOfType(MarkdownView) ?? null;
 			}
-			if (!(mdView instanceof MarkdownView)) return;
+
+			if (!mdView) return;
+
 			await tryImmediateHandleForView(mdView);
 		} catch (e) {
-			console.warn(
-				"[task-close-manager] editor-change handler failed",
-				e
-			);
+			console.warn("[task-close-manager] editor-change handler failed", e);
 		}
 	};
 
+	plugin.registerEvent(app.workspace.on("editor-change", onEditorChange));
+
 	plugin.registerEvent(
-		app.workspace.on("editor-change", onEditorChangeAny as any)
+		app.workspace.on("editor-change", onEditorChange)
 	);
 
 	plugin.registerEvent(
-		app.workspace.on("active-leaf-change", (_leaf) => {
+		app.workspace.on("active-leaf-change", () => {
 			try {
-				const view = app.workspace.getActiveViewOfType(MarkdownView);
+				const view =
+					app.workspace.getActiveViewOfType(MarkdownView);
 				if (!view || !view.file) return;
-				const editor: any = (view as any).editor;
+				const editor =
+					view.editor as SelectionPreservingEditor | null;
 				if (!editor) return;
 				const lines: string[] = [];
-				for (let i = 0; i < editor.lineCount(); i++)
+				const lineCount = editor.lineCount();
+				for (let i = 0; i < lineCount; i += 1) {
 					lines.push(editor.getLine(i));
+				}
 				viewSnapshots.set(view, { path: view.file.path, lines });
-			} catch {}
+			} catch {
+				// ignore
+			}
 		})
 	);
 
 	plugin.registerEvent(
-		app.workspace.on("file-open", (_file) => {
+		app.workspace.on("file-open", () => {
 			try {
-				const view = app.workspace.getActiveViewOfType(MarkdownView);
+				const view =
+					app.workspace.getActiveViewOfType(MarkdownView);
 				if (!view || !view.file) return;
-				const editor: any = (view as any).editor;
+				const editor =
+					view.editor as SelectionPreservingEditor | null;
 				if (!editor) return;
 				const lines: string[] = [];
-				for (let i = 0; i < editor.lineCount(); i++)
+				const lineCount = editor.lineCount();
+				for (let i = 0; i < lineCount; i += 1) {
 					lines.push(editor.getLine(i));
+				}
 				viewSnapshots.set(view, { path: view.file.path, lines });
-			} catch {}
+			} catch {
+				// ignore
+			}
 		})
 	);
 
 	// 2) Event-driven path from task-status-sequence for headless/non-editor changes
-	const onStatusChanged = async (e: Event) => {
-		const ce = e as CustomEvent<StatusChangedDetail>;
-		const detail = ce?.detail;
+	const onStatusChanged = async (
+		e: CustomEvent<StatusChangedDetail>
+	): Promise<void> => {
+		const detail = e.detail;
 		if (!detail) return;
 
 		const filePath = detail.filePath;
@@ -470,8 +519,9 @@ export function wireTaskCloseManager(app: App, plugin: Plugin) {
 				return cleaned === orig ? null : cleaned;
 			};
 
-		const activeView = app.workspace.getActiveViewOfType(MarkdownView);
-		let result: { beforeLines: string[]; didChange: boolean } | null = null;
+		const activeView =
+			app.workspace.getActiveViewOfType(MarkdownView);
+		let result: MutateResult | null = null;
 
 		if (
 			activeView &&
@@ -480,11 +530,14 @@ export function wireTaskCloseManager(app: App, plugin: Plugin) {
 		) {
 			result = await modifyInEditor(activeView, line0, mutateForTo(to));
 			// Refresh snapshot if this view is tracked
-			const editor: any = (activeView as any).editor;
+			const editor =
+				activeView.editor as SelectionPreservingEditor | null;
 			if (editor) {
 				const refreshed: string[] = [];
 				const lc = editor.lineCount();
-				for (let i = 0; i < lc; i++) refreshed.push(editor.getLine(i));
+				for (let i = 0; i < lc; i += 1) {
+					refreshed.push(editor.getLine(i));
+				}
 				viewSnapshots.set(activeView, {
 					path: filePath,
 					lines: refreshed,
@@ -505,7 +558,13 @@ export function wireTaskCloseManager(app: App, plugin: Plugin) {
 
 	plugin.registerDomEvent(
 		document,
-		"agile:task-status-changed" as any,
-		onStatusChanged as any
+		"agile:task-status-changed" as keyof DocumentEventMap,
+		(event: Event) => {
+			if (event instanceof CustomEvent) {
+				void onStatusChanged(
+					event as CustomEvent<StatusChangedDetail>
+				);
+			}
+		}
 	);
 }
