@@ -36,7 +36,7 @@ type EditorWithCm = Editor & {
 };
 
 function resolveContentRoot(
-	view: MarkdownView | undefined
+	view: MarkdownView | null | undefined
 ): HTMLElement | null {
 	if (!view) return null;
 
@@ -56,10 +56,7 @@ export async function getCursorContext(
 	editor?: Editor
 ): Promise<CursorContext> {
 	const view =
-		viewParam ??
-		(app.workspace.getActiveViewOfType(MarkdownView) as
-			| MarkdownView
-			| undefined);
+		viewParam ?? app.workspace.getActiveViewOfType(MarkdownView);
 
 	const ctx: Partial<CursorContext> = {};
 	ctx.filePath = (view?.file?.path as string) ?? "";
@@ -120,8 +117,8 @@ export async function getCursorContext(
 	if (contentRoot) {
 		const wrappers = Array.from(
 			contentRoot.querySelectorAll("[data-template-wrapper]")
-		) as HTMLElement[];
-		for (const w of wrappers) {
+		);
+		for (const w of wrappers as HTMLElement[]) {
 			// Heuristic: match by text inclusion
 			const txt = (w.textContent ?? "").trim();
 			if (

@@ -72,10 +72,13 @@ export function applyLineTransform(
 		typeof toSel.line === "number" &&
 		typeof toSel.ch === "number";
 
-	const selectionOnLine =
-		hasCursorAPI &&
-		(fromSel!.line === line0 || toSel!.line === line0) &&
-		fromSel!.line === toSel!.line;
+	let selectionOnLine = false;
+
+	if (hasCursorAPI && fromSel && toSel) {
+		selectionOnLine =
+			(fromSel.line === line0 || toSel.line === line0) &&
+			fromSel.line === toSel.line;
+	}
 
 	editor.replaceRange(
 		after,

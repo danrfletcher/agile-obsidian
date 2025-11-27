@@ -24,7 +24,7 @@ export async function applyFileLineTransform(
 	if (!(abs instanceof TFile)) {
 		throw new Error(`Not a file: ${filePath}`);
 	}
-	const tfile = abs as TFile;
+	const tfile = abs;
 
 	const content = await app.vault.read(tfile);
 	// Preserve existing line endings

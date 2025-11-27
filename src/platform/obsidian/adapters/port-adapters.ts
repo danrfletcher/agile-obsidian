@@ -1,4 +1,4 @@
-import type { App, Editor, TFile } from "obsidian";
+import { TFile, type App, type Editor } from "obsidian";
 
 /**
  * EditorPort-compatible adapter that wraps an Obsidian editor instance.
@@ -91,14 +91,18 @@ export class ObsidianVault {
 
 	async readFile(path: string): Promise<string> {
 		const abs = this.app.vault.getAbstractFileByPath(path);
-		if (!(abs && (abs as TFile).extension === "md")) return "";
-		return this.app.vault.read(abs as TFile);
+		if (!(abs instanceof TFile) || abs.extension !== "md") {
+			return "";
+		}
+		return this.app.vault.read(abs);
 	}
 
 	async writeFile(path: string, content: string): Promise<void> {
 		const abs = this.app.vault.getAbstractFileByPath(path);
-		if (!(abs && (abs as TFile).extension === "md")) return;
-		await this.app.vault.modify(abs as TFile, content);
+		if (!(abs instanceof TFile) || abs.extension !== "md") {
+			return;
+		}
+		await this.app.vault.modify(abs, content);
 	}
 }
 
@@ -109,7 +113,15 @@ export class ObsidianVault {
 export class WindowEventBus {
 	dispatchPrepareOptimisticFileChange(filePath: string): void {
 		try {
-			window.dispatchEvent(
+			const globalTarget = globalThis as {
+				dispatchEvent?: (event: Event) => boolean;
+			};
+
+			if (typeof globalTarget.dispatchEvent !== "function") {
+				return;
+			}
+
+			globalTarget.dispatchEvent(
 				new CustomEvent("agile:prepare-optimistic-file-change", {
 					detail: { filePath },
 				})
