@@ -1,3 +1,4 @@
+// ./src/features/task-snooze/domain/snooze.ts
 import { App, TFile } from "obsidian";
 import { TaskItem } from "@features/task-index";
 import { escapeRegExp } from "@utils";
@@ -9,8 +10,16 @@ export async function snoozeTask(
 	userSlug: string,
 	dateStr?: string
 ): Promise<void> {
-	const file = app.vault.getAbstractFileByPath(task.link?.path) as TFile;
-	if (!file) throw new Error(`File not found: ${task.link?.path}`);
+	const filePath = task.link?.path;
+	if (!filePath) {
+		throw new Error("Task has no associated file path.");
+	}
+
+	const abstractFile = app.vault.getAbstractFileByPath(filePath);
+	if (!(abstractFile instanceof TFile)) {
+		throw new Error(`File not found: ${filePath}`);
+	}
+	const file = abstractFile;
 
 	const raw = await app.vault.read(file);
 	const lines = raw.split("\n");
