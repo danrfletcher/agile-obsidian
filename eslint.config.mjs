@@ -2,6 +2,7 @@ import tsParser from "@typescript-eslint/parser";
 import tsPlugin from "@typescript-eslint/eslint-plugin";
 import boundariesPlugin from "eslint-plugin-boundaries";
 import obsidianmd from "eslint-plugin-obsidianmd";
+import dependPlugin from "eslint-plugin-depend";
 import { defineConfig } from "eslint/config";
 
 export default defineConfig([
@@ -55,20 +56,14 @@ export default defineConfig([
       },
     },
 
-    // NOTE: `env` is not allowed in flat config, so it’s removed.
-    // env: {
-    //   browser: true,
-    // },
-
     plugins: {
       "@typescript-eslint": tsPlugin,
-      // import: importPlugin, // removed
       boundaries: boundariesPlugin,
+      depend: dependPlugin,
       // "obsidianmd" already enabled via configs.recommended
     },
 
     settings: {
-      // "import/resolver" removed because eslint-plugin-import is gone
       boundaries: {
         // Global default: disallow cross-boundary imports unless a rule allows it
         default: "disallow",
@@ -144,6 +139,10 @@ export default defineConfig([
       "@typescript-eslint/ban-ts-comment": "off",
       "no-prototype-builtins": "off",
       "@typescript-eslint/no-empty-function": "off",
+
+      // You can leave this off globally if you want
+      "depend/ban-dependencies": "off",
+
       "no-restricted-imports": [
         "error",
         {
@@ -193,6 +192,14 @@ export default defineConfig([
     files: ["src/composition/**", "src/main.ts"],
     rules: {
       // add them later.
+    },
+  },
+
+  // 3.5. Turn off depend/ban-dependencies specifically for package.json
+  {
+    files: ["package.json"],
+    rules: {
+      "depend/ban-dependencies": "off",
     },
   },
 
