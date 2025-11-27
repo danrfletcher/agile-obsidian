@@ -49,7 +49,7 @@ function ensureAssignmentEventListener(app: App) {
 	if (assignmentEventListenerAttached) return;
 	assignmentEventListenerAttached = true;
 
-	eventBus.on("agile:request-assign-propagate", async (detail) => {
+	eventBus.on("agile:request-assign-propagate", (detail) => {
 		try {
 			const uid = detail?.uid;
 			const newAlias = detail?.newAlias;
@@ -81,9 +81,8 @@ function annotateAssigneeMarks(
 	uid: string,
 	filePath: string
 ) {
-	const marks = liEl.querySelectorAll("mark");
-	marks.forEach((m) => {
-		const el = m as HTMLElement;
+	const marks = liEl.querySelectorAll<HTMLElement>("mark");
+	marks.forEach((el) => {
 		const cls = (el.getAttribute("class") || "").toLowerCase();
 		if (
 			!/(^|\s)(?:active|inactive)-[a-z0-9-]+(\s|$)/i.test(" " + cls + " ")
@@ -104,7 +103,9 @@ function getTaskFilePath(task: TaskItem): string {
 }
 
 function getTaskLine(task: TaskItem): number | null {
-	const posLine = (task.position as unknown as { line?: number } | null)?.line ?? task.line;
+	const posLine =
+		(task.position as unknown as { line?: number } | null)?.line ??
+		task.line;
 	if (typeof posLine === "number" && posLine >= 0) return posLine;
 	if (typeof task.line === "number" && task.line >= 0) return task.line;
 	return null;
@@ -121,21 +122,22 @@ async function openTaskInNewTab(app: App, task: TaskItem): Promise<void> {
 		const line = getTaskLine(task);
 		const leaf = app.workspace.getLeaf(true);
 
-		await (leaf as unknown as { openFile: (file: TFile, state?: unknown) => Promise<void> }).openFile(
-			abs,
-			line != null ? { eState: { line } } : {}
-		);
+		await leaf.openFile(abs, line != null ? { eState: { line } } : {});
 
 		try {
-			const view = (leaf as unknown as { view?: unknown }).view as
+			const view = leaf.view as
 				| {
-					  editor?: {
-						  setCursor?: (pos: { line: number; ch: number }) => unknown;
-						  scrollIntoView?: (range: unknown, center?: boolean) => unknown;
-					  };
-					  setEphemeralState?: (state: unknown) => unknown;
+						editor?: {
+							setCursor?: (pos: { line: number; ch: number }) => unknown;
+							scrollIntoView?: (
+								range: unknown,
+								center?: boolean
+							) => unknown;
+						};
+						setEphemeralState?: (state: unknown) => unknown;
 				  }
 				| undefined;
+
 			if (
 				view?.editor &&
 				typeof view.editor.setCursor === "function" &&
@@ -161,13 +163,11 @@ async function openTaskInNewTab(app: App, task: TaskItem): Promise<void> {
 		if (line == null && task.blockId) {
 			const blockId = task.blockId;
 			try {
-				(app.workspace as unknown as {
-					openLinkText: (
-						linktext: string,
-						sourcePath: string,
-						newLeaf?: boolean
-					) => unknown;
-				}).openLinkText(`${filePath}#^${blockId}`,'', true);
+				app.workspace.openLinkText(
+					`${filePath}#^${blockId}`,
+					"",
+					true
+				).catch(() => {});
 			} catch {
 				/* ignore */
 			}
@@ -191,7 +191,7 @@ function attachOpenOnLongPress(
 	const LONG_PRESS_MS = 500;
 	let pressTimer: number | null = null;
 
-	const clearTimer = () => {
+	const clearTimer = (): void => {
 		if (pressTimer !== null) {
 			window.clearTimeout(pressTimer);
 			pressTimer = null;
@@ -205,17 +205,17 @@ function attachOpenOnLongPress(
 		return false;
 	};
 
-	const onPressStart = (ev: Event) => {
+	const onPressStart = (ev: Event): void => {
 		const target = ev.target as HTMLElement | null;
 		if (isInteractiveTarget(target)) return;
 		clearTimer();
-		pressTimer = window.setTimeout(async () => {
-			await openTaskInNewTab(app, task);
+		pressTimer = window.setTimeout(() => {
+			void openTaskInNewTab(app, task);
 			clearTimer();
 		}, LONG_PRESS_MS);
 	};
 
-	const onPressEnd = () => {
+	const onPressEnd = (): void => {
 		clearTimer();
 	};
 
@@ -223,7 +223,7 @@ function attachOpenOnLongPress(
 	liEl.addEventListener("mouseup", onPressEnd);
 	liEl.addEventListener("mouseleave", onPressEnd);
 
-	liEl.addEventListener("touchstart", onPressStart, { passive: true } as AddEventListenerOptions);
+	liEl.addEventListener("touchstart", onPressStart, { passive: true });
 	liEl.addEventListener("touchend", onPressEnd);
 	liEl.addEventListener("touchcancel", onPressEnd);
 
@@ -241,7 +241,7 @@ export function renderTaskTree(
 	isRoot: boolean,
 	sectionType: string,
 	selectedAlias: string | null
-) {
+): void {
 	ensureAssignmentEventListener(app);
 	if (tasks.length === 0) return;
 
@@ -261,7 +261,8 @@ export function renderTaskTree(
 
 		const tempEl = document.createElement("div");
 		const renderComponent = new Component();
-		MarkdownRenderer.renderMarkdown(
+		void MarkdownRenderer.render(
+			app,
 			(task.visual || task.text || "").trim(),
 			tempEl,
 			task.link?.path || "",
@@ -269,20 +270,22 @@ export function renderTaskTree(
 		);
 		renderComponent.load();
 
-		const firstEl = tempEl.firstElementChild as HTMLElement | null;
+		const firstEl = tempEl.firstElementChild;
 		let taskItemEl: HTMLElement;
 
 		if (firstEl?.tagName.toLowerCase() === "ul") {
+			const firstChild = firstEl.firstElementChild;
 			if (
 				firstEl.children.length === 1 &&
-				(
-					firstEl.firstElementChild as HTMLElement | null
-				)?.tagName.toLowerCase() === "li"
+				firstChild instanceof HTMLElement &&
+				firstChild.tagName.toLowerCase() === "li"
 			) {
-				taskItemEl = firstEl.firstElementChild as HTMLElement;
+				taskItemEl = firstChild;
 				taskList.appendChild(taskItemEl);
 			} else {
-				taskItemEl = taskList.createEl("li", { cls: "task-list-item" });
+				taskItemEl = taskList.createEl("li", {
+					cls: "task-list-item",
+				});
 				while (tempEl.firstChild) {
 					taskItemEl.appendChild(tempEl.firstChild);
 				}
@@ -320,14 +323,14 @@ export function renderTaskTree(
 		}
 
 		try {
-			appendSnoozeButtonIfEligible(
+			void appendSnoozeButtonIfEligible(
 				task,
 				taskItemEl,
 				normalizedSection,
 				app,
 				selectedAlias
 			);
-			appendSnoozeAllSubtasksButtonIfEligible(
+			void appendSnoozeAllSubtasksButtonIfEligible(
 				task,
 				taskItemEl,
 				normalizedSection,
@@ -344,9 +347,9 @@ export function renderTaskTree(
 			/* ignore */
 		}
 
-		const checkbox = taskItemEl.querySelector(
+		const checkbox = taskItemEl.querySelector<HTMLInputElement>(
 			'input[type="checkbox"]'
-		) as HTMLInputElement | null;
+		);
 
 		if (checkbox) {
 			const interactive = shouldEnableCheckbox(
@@ -359,8 +362,13 @@ export function renderTaskTree(
 				checkbox.disabled = true;
 				checkbox.tabIndex = -1;
 				checkbox.setAttribute("aria-disabled", "true");
-				(checkbox as HTMLElement).style.pointerEvents = "none";
+				checkbox.classList.add(
+					"agile-dashboard-checkbox-noninteractive"
+				);
 			} else {
+				checkbox.classList.remove(
+					"agile-dashboard-checkbox-noninteractive"
+				);
 				// Wire dashboard checkbox using the sequencer-provided adapter (short vs long-press)
 				const resolvedFilePath =
 					task.link?.path || (task._uniqueId?.split(":")[0] ?? "");
@@ -368,12 +376,12 @@ export function renderTaskTree(
 					line != null
 						? line
 						: (() => {
-							const s =
-								taskItemEl.getAttribute("data-line") || "";
-							return /^\d+$/.test(s) ? parseInt(s, 10) : 0;
-						})();
+								const s =
+									taskItemEl.getAttribute("data-line") || "";
+								return /^\d+$/.test(s) ? parseInt(s, 10) : 0;
+						  })();
 
-				attachCustomCheckboxStatusHandlers({
+				void attachCustomCheckboxStatusHandlers({
 					checkboxEl: checkbox,
 					app,
 					task: {
@@ -437,8 +445,8 @@ function rerenderTaskInline(
 		liEl.setAttribute("data-section", normalizedSection);
 
 		const childLists = Array.from(
-			liEl.querySelectorAll(":scope > ul")
-		) as HTMLElement[];
+			liEl.querySelectorAll<HTMLElement>(":scope > ul")
+		);
 
 		let lineMd = (task.visual || task.text || "").trim();
 
@@ -461,7 +469,8 @@ function rerenderTaskInline(
 
 		const tempEl = document.createElement("div");
 		const renderComponent = new Component();
-		MarkdownRenderer.renderMarkdown(
+		void MarkdownRenderer.render(
+			app,
 			lineMd,
 			tempEl,
 			task.link?.path || "",
@@ -469,35 +478,35 @@ function rerenderTaskInline(
 		);
 		renderComponent.load();
 
-		const firstEl = tempEl.firstElementChild as HTMLElement | null;
+		const firstEl = tempEl.firstElementChild;
 		if (
 			firstEl?.tagName.toLowerCase() === "ul" &&
-			firstEl.children.length === 1 &&
-			(
-				firstEl.firstElementChild as HTMLElement | null
-			)?.tagName.toLowerCase() === "li"
+			firstEl.children.length === 1
 		) {
-			const sourceLi = firstEl.firstElementChild as HTMLElement;
-			const hadAnnotated = liEl.classList.contains("annotated-task");
+			const firstChild = firstEl.firstElementChild;
+			if (firstChild instanceof HTMLElement) {
+				const sourceLi = firstChild;
+				const hadAnnotated = liEl.classList.contains("annotated-task");
 
-			const dataTask = sourceLi.getAttribute("data-task");
-			if (dataTask !== null) liEl.setAttribute("data-task", dataTask);
-			else liEl.removeAttribute("data-task");
+				const dataTask = sourceLi.getAttribute("data-task");
+				if (dataTask !== null) liEl.setAttribute("data-task", dataTask);
+				else liEl.removeAttribute("data-task");
 
-			const role = sourceLi.getAttribute("role");
-			if (role !== null) liEl.setAttribute("role", role);
-			else liEl.removeAttribute("role");
+				const role = sourceLi.getAttribute("role");
+				if (role !== null) liEl.setAttribute("role", role);
+				else liEl.removeAttribute("role");
 
-			const ariaChecked = sourceLi.getAttribute("aria-checked");
-			if (ariaChecked !== null)
-				liEl.setAttribute("aria-checked", ariaChecked);
-			else liEl.removeAttribute("aria-checked");
+				const ariaChecked = sourceLi.getAttribute("aria-checked");
+				if (ariaChecked !== null)
+					liEl.setAttribute("aria-checked", ariaChecked);
+				else liEl.removeAttribute("aria-checked");
 
-			liEl.className = sourceLi.className;
-			if (hadAnnotated) liEl.classList.add("annotated-task");
+				liEl.className = sourceLi.className;
+				if (hadAnnotated) liEl.classList.add("annotated-task");
 
-			while (sourceLi.firstChild) {
-				liEl.appendChild(sourceLi.firstChild);
+				while (sourceLi.firstChild) {
+					liEl.appendChild(sourceLi.firstChild);
+				}
 			}
 		} else {
 			while (tempEl.firstChild) {
@@ -509,9 +518,9 @@ function rerenderTaskInline(
 			liEl.setAttribute("data-task", newStatus);
 		}
 
-		const inputEl = liEl.querySelector(
+		const inputEl = liEl.querySelector<HTMLInputElement>(
 			'input[type="checkbox"]'
-		) as HTMLInputElement | null;
+		);
 		if (inputEl) {
 			inputEl.setAttribute("data-task", newStatus);
 		}
@@ -519,14 +528,14 @@ function rerenderTaskInline(
 		childLists.forEach((ul) => liEl.appendChild(ul));
 
 		try {
-			appendSnoozeButtonIfEligible(
+			void appendSnoozeButtonIfEligible(
 				task,
 				liEl,
 				normalizedSection,
 				app,
 				selectedAlias
 			);
-			appendSnoozeAllSubtasksButtonIfEligible(
+			void appendSnoozeAllSubtasksButtonIfEligible(
 				task,
 				liEl,
 				normalizedSection,
@@ -543,9 +552,9 @@ function rerenderTaskInline(
 			/* ignore */
 		}
 
-		const checkbox = liEl.querySelector(
+		const checkbox = liEl.querySelector<HTMLInputElement>(
 			'input[type="checkbox"]'
-		) as HTMLInputElement | null;
+		);
 
 		if (checkbox) {
 			const interactive = shouldEnableCheckbox(
@@ -558,8 +567,13 @@ function rerenderTaskInline(
 				checkbox.disabled = true;
 				checkbox.tabIndex = -1;
 				checkbox.setAttribute("aria-disabled", "true");
-				(checkbox as HTMLElement).style.pointerEvents = "none";
+				checkbox.classList.add(
+					"agile-dashboard-checkbox-noninteractive"
+				);
 			} else {
+				checkbox.classList.remove(
+					"agile-dashboard-checkbox-noninteractive"
+				);
 				const resolvedFilePath =
 					task.link?.path || (task._uniqueId?.split(":")[0] ?? "");
 				const lineAttr = liEl.getAttribute("data-line") || "";
@@ -567,7 +581,7 @@ function rerenderTaskInline(
 					? parseInt(lineAttr, 10)
 					: getTaskLine(task) ?? 0;
 
-				attachCustomCheckboxStatusHandlers({
+				void attachCustomCheckboxStatusHandlers({
 					checkboxEl: checkbox,
 					app,
 					task: {

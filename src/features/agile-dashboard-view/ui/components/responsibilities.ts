@@ -11,7 +11,10 @@ import {
 	isAssignedToMemberOrTeam,
 	isAssignedToAnyUser,
 } from "@features/task-filter";
-import { isRelevantToday, recurringPatternMatchesToday } from "@features/task-date-manager";
+import {
+	isRelevantToday,
+	recurringPatternMatchesToday,
+} from "@features/task-date-manager";
 import { buildFullSubtree } from "@features/task-tree-builder";
 import { attachSectionFolding } from "@features/task-tree-fold";
 
@@ -40,7 +43,7 @@ export function processAndRenderResponsibilities(
 	childrenMap: Map<string, TaskItem[]>,
 	taskParams: TaskParams,
 	registerDomEvent?: RegisterDomEvent
-) {
+): void {
 	void childrenMap;
 
 	const { inProgress, completed, sleeping, cancelled } = taskParams;
@@ -124,7 +127,9 @@ export function processAndRenderResponsibilities(
 	});
 
 	if (responsibilityItemsFiltered.length > 0 && status) {
-		container.createEl("h2", { text: "🧹 Responsibilities" });
+		container.createEl("h2", {
+			text: "🧹 responsibilities overview",
+		});
 
 		// Render just the responsibility items themselves (no pre-rendered children)
 		const shallowOnly = responsibilityItemsFiltered.map((t) => ({

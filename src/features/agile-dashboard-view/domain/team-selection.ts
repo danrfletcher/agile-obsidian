@@ -1,8 +1,12 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import type { SettingsService } from "@settings";
-import type { OrgStructurePort } from "@features/org-structure";
+import type {
+	OrgStructurePort,
+	MembersBuckets,
+	TeamNode,
+	TeamInfo,
+} from "@features/org-structure";
 import type { TaskItem } from "@features/task-index";
-import type { MembersBuckets, TeamNode } from "@features/org-structure";
-import type { TeamInfo } from "@features/org-structure";
 
 export class TeamSelection {
 	private selectedTeamSlugs = new Set<string>();
@@ -19,7 +23,7 @@ export class TeamSelection {
 	}
 
 	// Persistence
-	private load() {
+	private load(): void {
 		try {
 			const raw = window.localStorage.getItem(this.storageKey);
 			if (raw === null) {
@@ -27,12 +31,20 @@ export class TeamSelection {
 				this.selectedTeamSlugs = new Set();
 				return;
 			}
+
 			this.implicitAllSelected = false;
-			const arr: unknown = JSON.parse(raw);
-			if (Array.isArray(arr)) {
-				this.selectedTeamSlugs = new Set(
-					arr.map((s) => String(s).toLowerCase())
-				);
+
+			const parsed: unknown = JSON.parse(raw);
+
+			if (
+				Array.isArray(parsed) &&
+				parsed.every(
+					(s): s is string | number =>
+						typeof s === "string" || typeof s === "number"
+				)
+			) {
+				const normalized = parsed.map((s) => String(s).toLowerCase());
+				this.selectedTeamSlugs = new Set(normalized);
 			} else {
 				this.selectedTeamSlugs = new Set();
 			}
@@ -42,19 +54,21 @@ export class TeamSelection {
 		}
 	}
 
-	private persist() {
+	private persist(): void {
 		try {
 			this.implicitAllSelected = false;
 			const arr = Array.from(this.selectedTeamSlugs.values());
 			window.localStorage.setItem(this.storageKey, JSON.stringify(arr));
-		} catch {}
+		} catch {
+			/* ignore */
+		}
 	}
 
 	// Public selection API
 	getImplicitAllSelected(): boolean {
 		return this.implicitAllSelected;
 	}
-	setImplicitAllSelected(val: boolean) {
+	setImplicitAllSelected(val: boolean): void {
 		this.implicitAllSelected = val;
 	}
 
@@ -62,13 +76,13 @@ export class TeamSelection {
 		return this.selectedTeamSlugs;
 	}
 
-	addSelectedSlugs(slugs: string[]) {
+	addSelectedSlugs(slugs: string[]): void {
 		slugs.forEach((s) =>
 			this.selectedTeamSlugs.add((s || "").toLowerCase())
 		);
 		this.persist();
 	}
-	removeSelectedSlugs(slugs: string[]) {
+	removeSelectedSlugs(slugs: string[]): void {
 		slugs.forEach((s) =>
 			this.selectedTeamSlugs.delete((s || "").toLowerCase())
 		);
@@ -86,16 +100,20 @@ export class TeamSelection {
 	private aliasFromMemberLike(x: unknown): string {
 		if (typeof x === "string") return this.normalizeAlias(x);
 		if (!x || typeof x !== "object") return "";
+
 		const anyObj = x as Record<string, unknown>;
+
 		const cand =
-			(anyObj as Record<string, unknown>).alias ??
-			(anyObj as Record<string, unknown>).user ??
-			(anyObj as Record<string, unknown>).name ??
-			(anyObj as Record<string, unknown>).id ??
-			(anyObj as Record<string, unknown>).email;
-		return this.normalizeAlias(
-			typeof cand === "string" ? cand : String(cand || "")
-		);
+			anyObj.alias ??
+			anyObj.user ??
+			anyObj.name ??
+			anyObj.id ??
+			anyObj.email;
+
+		if (typeof cand === "string" || typeof cand === "number") {
+			return this.normalizeAlias(String(cand));
+		}
+		return "";
 	}
 
 	private extractAliases(members: unknown): string[] {
@@ -142,6 +160,9 @@ export class TeamSelection {
 
 	private tryPortMembershipMethods(aliasNorm: string): Set<string> | null {
 		if (!this.orgStructurePort) return null;
+
+		// Note: this is intentionally very loose and guarded with typeof checks
+		// because we're probing for optional methods on a port.
 		const port = this.orgStructurePort as unknown as Record<
 			string,
 			unknown
@@ -152,6 +173,7 @@ export class TeamSelection {
 			"getUserTeams",
 			"getTeamsByUser",
 		];
+
 		for (const fnName of candidates) {
 			const fn = port[fnName];
 			if (typeof fn === "function") {
@@ -162,7 +184,7 @@ export class TeamSelection {
 					);
 					if (Array.isArray(raw)) {
 						const set = new Set<string>();
-						for (const item of raw) {
+						for (const item of raw as unknown[]) {
 							if (typeof item === "string") {
 								const slug = item.toLowerCase().trim();
 								if (slug) set.add(slug);
@@ -174,12 +196,16 @@ export class TeamSelection {
 									obj.id ??
 									obj.key ??
 									obj.code;
-								const slug =
-									typeof cand === "string"
-										? cand.toLowerCase().trim()
-										: String(cand || "")
-												.toLowerCase()
-												.trim();
+
+								let slug = "";
+								if (
+									typeof cand === "string" ||
+									typeof cand === "number"
+								) {
+									slug = String(cand)
+										.toLowerCase()
+										.trim();
+								}
 								if (slug) set.add(slug);
 							}
 						}
@@ -198,12 +224,14 @@ export class TeamSelection {
 	): Set<string> | null {
 		if (!this.orgStructurePort) return null;
 		try {
-			// Use the proper shape from OrgStructurePort without miscasting
-			const { organizations, teams } = this.orgStructurePort.getOrgStructure();
+			const { organizations, teams } =
+				this.orgStructurePort.getOrgStructure();
 			const result = new Set<string>();
 
 			const visitTeam = (node: TeamNode) => {
-				const slug = String(node.teamSlug || "").toLowerCase().trim();
+				const slug = String(node.teamSlug || "")
+					.toLowerCase()
+					.trim();
 				if (
 					slug &&
 					this.teamNodeHasUserFromBuckets(node.members, aliasNorm)
@@ -218,14 +246,12 @@ export class TeamSelection {
 			const orgs = organizations ?? [];
 			const orphanTeams = teams ?? [];
 
-			// organizations are OrganizationNode, which (correctly) have a `teams` array
 			for (const org of orgs) {
 				for (const t of org.teams ?? []) {
 					visitTeam(t);
 				}
 			}
 
-			// orphan teams come directly from the top-level `teams` array
 			for (const t of orphanTeams) {
 				visitTeam(t);
 			}
@@ -244,10 +270,12 @@ export class TeamSelection {
 			const teams: TeamInfo[] = settings.teams || [];
 			const result = new Set<string>();
 			for (const t of teams) {
-				const slug = t.slug ?? "";
-				const slugNorm = String(slug || "")
-					.toLowerCase()
-					.trim();
+				const rawSlug = t.slug;
+				const slugNorm =
+					typeof rawSlug === "string" ||
+					typeof rawSlug === "number"
+						? String(rawSlug).toLowerCase().trim()
+						: "";
 				if (!slugNorm) continue;
 				const members = t.members || [];
 				const aliases = this.extractAliases(members);
@@ -275,7 +303,7 @@ export class TeamSelection {
 		return union.size > 0 ? union : null;
 	}
 
-	restrictSelectedTeamsToUserMembership(selectedAlias: string | null) {
+	restrictSelectedTeamsToUserMembership(selectedAlias: string | null): void {
 		const allowed = this.getAllowedTeamSlugsForSelectedUser(selectedAlias);
 		if (!allowed) return;
 		if (this.selectedTeamSlugs.size === 0) return;
@@ -287,18 +315,34 @@ export class TeamSelection {
 	}
 
 	getTeamSlugForFile(filePath: string): string | null {
-		try {
-			if (!this.orgStructurePort) return null;
-			const { team } =
-				this.orgStructurePort.getTeamMembersForFile(filePath);
-			const slug = (team?.slug || "").toLowerCase().trim();
-			return slug || null;
-		} catch {
-			return null;
-		}
-	}
+	try {
+		if (!this.orgStructurePort) return null;
 
-	isTaskAllowedByTeam(task: TaskItem, selectedAlias: string | null): boolean {
+		const result = this.orgStructurePort.getTeamMembersForFile(filePath);
+		const team: TeamInfo | null = result.team;
+
+		if (!team) return null;
+
+		const slugValue = team.slug;
+
+		if (
+			typeof slugValue === "string" ||
+			typeof slugValue === "number"
+		) {
+			const slug = String(slugValue).toLowerCase().trim();
+			return slug || null;
+		}
+
+		return null;
+	} catch {
+		return null;
+	}
+}
+
+	isTaskAllowedByTeam(
+		task: TaskItem,
+		selectedAlias: string | null
+	): boolean {
 		const filePath =
 			task.link?.path || (task._uniqueId?.split(":")[0] ?? "");
 		if (!filePath) return false;
@@ -327,7 +371,10 @@ export class TeamSelection {
 	}
 
 	// Expose state for Teams popup
-	buildTeamsPopupContext() {
+	buildTeamsPopupContext(): {
+		selectedTeamSlugs: Set<string>;
+		implicitAllSelected: boolean;
+	} {
 		return {
 			selectedTeamSlugs: this.selectedTeamSlugs,
 			implicitAllSelected: this.implicitAllSelected,

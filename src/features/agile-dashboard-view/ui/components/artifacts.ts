@@ -43,7 +43,7 @@ export function processAndRenderArtifact(
 	taskParams: TaskParams,
 	options: ArtifactOptions,
 	registerDomEvent?: RegisterDomEvent
-) {
+): void {
 	const sectionTasks = currentTasks.filter((task) =>
 		isShownByParams(task, taskMap, selectedAlias, taskParams)
 	);
@@ -103,15 +103,15 @@ export function processAndRenderArtifact(
 		try {
 			const restamp = (root: HTMLElement, value: string) => {
 				const uls = Array.from(
-					root.querySelectorAll(
+					root.querySelectorAll<HTMLElement>(
 						"ul.agile-dashboard.contains-task-list"
 					)
-				) as HTMLElement[];
+				);
 				uls.forEach((ul) => ul.setAttribute("data-section", value));
 
 				const lis = Array.from(
-					root.querySelectorAll("li.task-list-item")
-				) as HTMLElement[];
+					root.querySelectorAll<HTMLElement>("li.task-list-item")
+				);
 				lis.forEach((li) => li.setAttribute("data-section", value));
 			};
 			restamp(sectionRoot, normalizedType);
@@ -135,7 +135,7 @@ export function processAndRenderArtifacts(
 	taskParams: TaskParams,
 	settings: AgileObsidianSettings,
 	registerDomEvent?: RegisterDomEvent
-) {
+): void {
 	if (settings.showTasks) {
 		processAndRenderArtifact(
 			container,

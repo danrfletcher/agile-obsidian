@@ -26,9 +26,11 @@ export const handleStatusChange = async (
 		const filePath = task.link?.path || task._uniqueId?.split(":")[0];
 		if (!filePath) throw new Error("Missing task file path");
 
-		const fileUnknown: unknown = app.vault.getAbstractFileByPath(filePath);
-		const file = fileUnknown as TFile;
-		if (!file) throw new Error(`File not found: ${filePath}`);
+		const abstractFile = app.vault.getAbstractFileByPath(filePath);
+		if (!(abstractFile instanceof TFile)) {
+			throw new Error(`File not found: ${filePath}`);
+		}
+		const file = abstractFile;
 
 		// Prepare optimistic UI suppression for vault modify refresh
 		eventBus.dispatch("agile:prepare-optimistic-file-change", { filePath });

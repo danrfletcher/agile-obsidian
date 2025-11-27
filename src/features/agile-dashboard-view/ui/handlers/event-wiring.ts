@@ -20,7 +20,7 @@ export interface WiringOptions {
 	registerEvent: RegisterEventFn;
 }
 
-export function wireDashboardEvents(opts: WiringOptions) {
+export function wireDashboardEvents(opts: WiringOptions): void {
 	const {
 		app,
 		taskIndexService,
@@ -34,9 +34,12 @@ export function wireDashboardEvents(opts: WiringOptions) {
 
 	// Prepare optimistic update suppression
 	register(() =>
-		eventBus.on("agile:prepare-optimistic-file-change", ({ filePath }) => {
-			if (filePath) suppressedFiles.add(filePath);
-		})
+		eventBus.on(
+			"agile:prepare-optimistic-file-change",
+			({ filePath }) => {
+				if (filePath) suppressedFiles.add(filePath);
+			}
+		)
 	);
 
 	const handleAssignmentRefresh = async (filePath?: string) => {
@@ -55,76 +58,86 @@ export function wireDashboardEvents(opts: WiringOptions) {
 	};
 
 	register(() =>
-		eventBus.on("agile:assignee-changed", async ({ filePath }) => {
-			await handleAssignmentRefresh(filePath);
+		eventBus.on("agile:assignee-changed", ({ filePath }) => {
+			void handleAssignmentRefresh(filePath);
 		})
 	);
 
 	register(() =>
-		eventBus.on("agile:assignment-changed", async ({ filePath }) => {
-			await handleAssignmentRefresh(filePath);
+		eventBus.on("agile:assignment-changed", ({ filePath }) => {
+			void handleAssignmentRefresh(filePath);
 		})
 	);
 
 	// Snooze → localized subtree refresh (if visible)
 	register(() =>
-		eventBus.on("agile:task-snoozed", async ({ uid, filePath }) => {
-			try {
-				if (!uid) return;
-
-				const contentRoot = viewRoot.querySelector(
-					".content-container"
-				) as HTMLElement | null;
-
-				let targetLi: HTMLElement | null = null;
-				if (contentRoot) {
-					const allLis = Array.from(
-						contentRoot.querySelectorAll("li[data-task-uid]")
-					) as HTMLElement[];
-					targetLi =
-						allLis.find(
-							(el) =>
-								(el.getAttribute("data-task-uid") || "") === uid
-						) || null;
-				}
-
-				const isHidden =
-					!targetLi ||
-					targetLi.style.display === "none" ||
-					targetLi.getAttribute("aria-hidden") === "true" ||
-					(() => {
-						try {
-							const cs = getComputedStyle(targetLi!);
-							return (
-								cs.display === "none" ||
-								cs.visibility === "hidden"
-							);
-						} catch {
-							return false;
-						}
-					})();
-
-				if (isHidden) return;
-
+		eventBus.on("agile:task-snoozed", ({ uid, filePath }) => {
+			void (async () => {
 				try {
-					if (filePath) {
-						suppressedFiles.add(filePath);
-						await refreshForFile(app, taskIndexService, filePath);
+					if (!uid) return;
+
+					const contentRoot =
+						viewRoot.querySelector<HTMLElement>(
+							".content-container"
+						);
+					let targetLi: HTMLElement | null = null;
+
+					if (contentRoot) {
+						const allLis = Array.from(
+							contentRoot.querySelectorAll<HTMLElement>(
+								"li[data-task-uid]"
+							)
+						);
+						targetLi =
+							allLis.find(
+								(el) =>
+									(el.getAttribute("data-task-uid") ||
+										"") === uid
+							) ?? null;
 					}
+
+					if (!targetLi) return;
+
+					let isHidden = false;
+					try {
+						const cs = window.getComputedStyle(targetLi);
+						isHidden =
+							targetLi.style.display === "none" ||
+							targetLi.getAttribute("aria-hidden") === "true" ||
+							cs.display === "none" ||
+							cs.visibility === "hidden";
+					} catch {
+						isHidden =
+							targetLi.style.display === "none" ||
+							targetLi.getAttribute("aria-hidden") === "true";
+					}
+
+					if (isHidden) return;
+
+					try {
+						if (filePath) {
+							suppressedFiles.add(filePath);
+							await refreshForFile(
+								app,
+								taskIndexService,
+								filePath
+							);
+						}
+					} catch {
+						/* ignore */
+					}
+
+					await refreshTaskTreeByUid(
+						app,
+						taskIndexService,
+						viewRoot,
+						uid,
+						getSelectedAlias()
+					);
 				} catch {
 					/* ignore */
 				}
-
-				await refreshTaskTreeByUid(
-					app,
-					taskIndexService,
-					viewRoot,
-					uid,
-					getSelectedAlias()
-				);
-			} catch {
-				/* ignore */
-			}
+			})();
 		})
 	);
 
@@ -160,11 +173,14 @@ export function wireDashboardEvents(opts: WiringOptions) {
 	);
 
 	registerEvent(
-		app.vault.on("rename", async (file: TAbstractFile, oldPath: string) => {
-			if (file instanceof TFile && file.extension === "md") {
-				taskIndexService.renameFile(oldPath, file.path);
-				void updateView();
+		app.vault.on(
+			"rename",
+			async (file: TAbstractFile, oldPath: string) => {
+				if (file instanceof TFile && file.extension === "md") {
+					taskIndexService.renameFile(oldPath, file.path);
+					void updateView();
+				}
 			}
-		})
+		)
 	);
 }

@@ -94,7 +94,7 @@ export class EventBus {
 	dispatch(name: string, payload?: unknown): void {
 		if (!this.target) return;
 		this.target.dispatchEvent(
-			new CustomEvent(name as string, { detail: payload })
+			new CustomEvent(name, { detail: payload })
 		);
 	}
 }
