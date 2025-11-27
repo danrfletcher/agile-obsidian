@@ -181,8 +181,7 @@ export const getAgileArtifactType = (
 
 	try {
 		// Prefer templating helper
-		const keysFromHelper =
-			(getTemplateKeysFromTask(task) as string[]) ?? [];
+		const keysFromHelper = getTemplateKeysFromTask(task) ?? [];
 
 		// 1) Try helper-provided keys first
 		for (const k of keysFromHelper) {

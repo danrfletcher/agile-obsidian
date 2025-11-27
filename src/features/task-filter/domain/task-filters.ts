@@ -45,12 +45,12 @@ function parseAssigneeSpans(text: string | undefined | null): AssigneeSpan[] {
 
 		const assignType: "assignee" | "delegate" | null =
 			assignTypeRaw === "assignee" || assignTypeRaw === "delegate"
-				? (assignTypeRaw as "assignee" | "delegate")
+				? assignTypeRaw
 				: null;
 
 		const assignmentState: "active" | "inactive" | null =
 			assignmentStateRaw === "active" || assignmentStateRaw === "inactive"
-				? (assignmentStateRaw as "active" | "inactive")
+				? assignmentStateRaw
 				: null;
 
 		out.push({
