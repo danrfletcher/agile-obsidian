@@ -4,15 +4,15 @@
 export function hideTaskAndCollapseAncestors(liEl: HTMLElement): void {
 	if (!liEl) return;
 
-	const hide = (el: HTMLElement) => {
-		el.style.display = "none";
+	const hide = (el: HTMLElement): void => {
+		el.hidden = true;
 		el.setAttribute("aria-hidden", "true");
 	};
 
-	const isVisible = (el: HTMLElement) => {
+	const isVisible = (el: HTMLElement | null): boolean => {
 		if (!el) return false;
-		if (el.style.display === "none") return false;
-		const cs = getComputedStyle(el);
+		if (el.hidden) return false;
+		const cs = globalThis.getComputedStyle(el);
 		if (cs.visibility === "hidden" || cs.display === "none") return false;
 		return el.offsetParent !== null;
 	};
@@ -23,16 +23,17 @@ export function hideTaskAndCollapseAncestors(liEl: HTMLElement): void {
 	// Walk up and collapse single-child ancestors
 	let current: HTMLElement | null = liEl;
 	while (current) {
-		const ul = current.parentElement as HTMLElement | null;
-		if (!ul || ul.tagName !== "UL") break;
+		const maybeUl = current.parentElement;
+		if (!(maybeUl instanceof HTMLUListElement)) break;
+		const ul: HTMLUListElement = maybeUl;
 
-		const parentLi = ul.parentElement as HTMLElement | null;
-		if (!parentLi || parentLi.tagName !== "LI") break;
+		const maybeParentLi = ul.parentElement;
+		if (!(maybeParentLi instanceof HTMLLIElement)) break;
+		const parentLi: HTMLLIElement = maybeParentLi;
 
 		const childLis = Array.from(ul.children).filter(
-			(n) =>
-				n instanceof HTMLElement && (n as HTMLElement).tagName === "LI"
-		) as HTMLElement[];
+			(node): node is HTMLLIElement => node instanceof HTMLLIElement
+		);
 		const visibleChildren = childLis.filter((li) => isVisible(li));
 
 		if (childLis.length === 1 || visibleChildren.length === 0) {
@@ -46,19 +47,22 @@ export function hideTaskAndCollapseAncestors(liEl: HTMLElement): void {
 	// If no visible tasks remain in the section, hide the section (including its header)
 	const findSectionRoot = (el: HTMLElement): HTMLElement | null => {
 		let cur: HTMLElement | null = el;
-		while (cur && cur.parentElement) {
-			const parent = cur.parentElement as HTMLElement;
-			if (parent.classList?.contains("content-container")) {
+		while (cur) {
+			const parentElement: HTMLElement | null = cur.parentElement;
+			if (!parentElement) {
+				return null;
+			}
+			if (parentElement.classList.contains("content-container")) {
 				return cur;
 			}
-			cur = parent;
+			cur = parentElement;
 		}
 		return null;
 	};
 
-	const maybeHideAdjacentHeader = (el: HTMLElement) => {
-		const prev = el.previousElementSibling as HTMLElement | null;
-		if (prev && /^H[1-6]$/.test(prev.tagName)) {
+	const maybeHideAdjacentHeader = (el: HTMLElement): void => {
+		const prev = el.previousElementSibling;
+		if (prev instanceof HTMLElement && /^H[1-6]$/.test(prev.tagName)) {
 			hide(prev);
 		}
 	};
@@ -66,8 +70,8 @@ export function hideTaskAndCollapseAncestors(liEl: HTMLElement): void {
 	const sectionRoot = findSectionRoot(liEl);
 	if (sectionRoot) {
 		const visibleLis = Array.from(
-			sectionRoot.querySelectorAll("li")
-		).filter((node) => isVisible(node as HTMLElement));
+			sectionRoot.querySelectorAll<HTMLElement>("li")
+		).filter((node) => isVisible(node));
 		if (visibleLis.length === 0) {
 			hide(sectionRoot);
 			maybeHideAdjacentHeader(sectionRoot);
@@ -82,7 +86,7 @@ export function removeExistingControls(
 	liEl: HTMLElement,
 	selectors: string[]
 ): void {
-	const existing = liEl.querySelectorAll(selectors.join(", "));
+	const existing = liEl.querySelectorAll<HTMLElement>(selectors.join(", "));
 	existing.forEach((el) => {
 		try {
 			el.remove();
@@ -99,15 +103,12 @@ export function placeInlineControlAtLineEnd(
 	liEl: HTMLElement,
 	el: HTMLElement
 ): void {
-	const wrap = document.createElement("span");
+	const wrap = globalThis.document.createElement("span");
 	wrap.classList.add("agile-snooze-btn-wrap");
-	wrap.style.display = "inline-block";
-	wrap.style.marginLeft = "8px";
-	wrap.style.verticalAlign = "baseline";
 
 	wrap.appendChild(el);
 
-	const firstChildList = liEl.querySelector(":scope > ul");
+	const firstChildList = liEl.querySelector<HTMLUListElement>(":scope > ul");
 	if (firstChildList) {
 		liEl.insertBefore(wrap, firstChildList);
 	} else {

@@ -1,9 +1,6 @@
 import type { TaskItem } from "@features/task-index";
 import type { FileRepository, TaskWithMetadata } from "../types";
-import {
-	normalizeVisibleText,
-	sanitizeUserSlug,
-} from "../utils/text";
+import { normalizeVisibleText, sanitizeUserSlug } from "../utils/text";
 import { parseYyyyMmDd } from "@features/task-date-manager";
 import { getTaskFilePath, guessTaskLineIndex } from "../utils/task";
 import { escapeRegExp } from "@utils";
@@ -32,7 +29,7 @@ function updateLineWithSnoozeAllMarker(
 	// Global inherited marker (not user-specific)
 	const globalInheritedRegex = /💤⬇️\s*(\d{4}-\d{2}-\d{2})(?!\s*<span)/g;
 
-	let out = line.replace(userMarkerRegex, "").trimRight();
+	let out = line.replace(userMarkerRegex, "").trimEnd();
 
 	// If a global inherited snooze exists but is expired, replace with user-specific
 	out = out.replace(globalInheritedRegex, (match: string, date: string) => {

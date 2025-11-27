@@ -140,24 +140,28 @@ export function createTaskButtonsAPI(deps: TaskButtonsDeps) {
 				// Optimistically hide children UI branches (optional: caller can refresh)
 				try {
 					const directWraps = Array.from(
-						liEl.querySelectorAll(
+						liEl.querySelectorAll<HTMLElement>(
 							":scope > ul, :scope > div.agile-children-collapse"
 						)
-					) as HTMLElement[];
+					);
 					directWraps.forEach((wrap) => {
-						wrap.style.display = "none";
+						wrap.hidden = true;
 						wrap.setAttribute("aria-hidden", "true");
 					});
 
 					liEl.setAttribute("data-children-expanded", "false");
-					const hit = liEl.querySelector(
+					const hit = liEl.querySelector<HTMLElement>(
 						'span[data-epic-toggle-hit="true"]'
-					) as HTMLElement | null;
-					if (hit) hit.setAttribute("aria-expanded", "false");
-					const chev = liEl.querySelector(
+					);
+					if (hit) {
+						hit.setAttribute("aria-expanded", "false");
+					}
+					const chev = liEl.querySelector<HTMLElement>(
 						'span[data-epic-toggle="true"]'
-					) as HTMLElement | null;
-					if (chev) chev.style.transform = "rotate(0deg)";
+					);
+					if (chev) {
+						chev.setAttribute("data-agile-chevron-collapsed", "true");
+					}
 				} catch {
 					/* ignore */
 				}
