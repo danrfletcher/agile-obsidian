@@ -30,9 +30,9 @@ export class CreateSubteamsModal extends Modal {
 		this.onSubmit = onSubmit;
 		this.ui = Object.assign(
 			{
-				title: "Add Subteams",
-				addRowText: "Add Subteam",
-				submitText: "Create Subteams",
+				title: "Add subteams",
+				addRowText: "Add subteam",
+				submitText: "Create subteams",
 				emptyNoticeText: "Add at least one subteam.",
 			},
 			uiOverrides || {}
@@ -91,7 +91,7 @@ export class CreateSubteamsModal extends Modal {
 							: "Enter subteam name...",
 					style: "flex:1;",
 				},
-			}) as HTMLInputElement;
+			});
 
 			rows.push({ row, prefixSpan, suffixInput });
 		};
@@ -111,16 +111,18 @@ export class CreateSubteamsModal extends Modal {
 		const cancel = btns.createEl("button", { text: "Cancel" });
 		cancel.addEventListener("click", () => this.close());
 		const create = btns.createEl("button", { text: this.ui.submitText });
-		create.addEventListener("click", async () => {
-			const suffixes = rows
-				.map((r) => r.suffixInput.value.trim())
-				.filter(Boolean);
-			if (suffixes.length === 0) {
-				new Notice(this.ui.emptyNoticeText);
-				return;
-			}
-			await this.onSubmit(suffixes);
-			this.close();
+		create.addEventListener("click", () => {
+			void (async () => {
+				const suffixes = rows
+					.map((r) => r.suffixInput.value.trim())
+					.filter(Boolean);
+				if (suffixes.length === 0) {
+					new Notice(this.ui.emptyNoticeText);
+					return;
+				}
+				await this.onSubmit(suffixes);
+				this.close();
+			})();
 		});
 	}
 

@@ -28,20 +28,20 @@ export class CreateOrganizationModal extends Modal {
 		const { contentEl } = this;
 		contentEl.empty();
 
-		contentEl.createEl("h3", { text: "Create Organization From Team" });
+		contentEl.createEl("h3", { text: "Create organization from team" });
 
 		// Org name input
 		const nameWrap = contentEl.createEl("div", {
 			attr: { style: "margin-bottom: 12px;" },
 		});
 		nameWrap.createEl("label", {
-			text: "Organization Name",
+			text: "Organization name",
 			attr: { style: "display:block; margin-bottom:4px;" },
 		});
 		const orgNameInput = nameWrap.createEl("input", {
 			type: "text",
 			attr: { style: "width:100%;" },
-		}) as HTMLInputElement;
+		});
 		orgNameInput.value = this.initialOrgName;
 
 		// Teams list
@@ -50,7 +50,7 @@ export class CreateOrganizationModal extends Modal {
 			attr: { style: "margin-top: 6px;" },
 		});
 		const addTeamBtn = addBtnWrap.createEl("button", {
-			text: "Add Another Team",
+			text: "Add another team",
 		});
 
 		type TeamRow = {
@@ -86,7 +86,7 @@ export class CreateOrganizationModal extends Modal {
 							: "Enter team name...",
 					style: "flex:1;",
 				},
-			}) as HTMLInputElement;
+			});
 
 			rows.push({ row, prefixSpan, suffixInput });
 		};
@@ -111,22 +111,26 @@ export class CreateOrganizationModal extends Modal {
 		});
 		const cancel = btns.createEl("button", { text: "Cancel" });
 		cancel.addEventListener("click", () => this.close());
-		const create = btns.createEl("button", { text: "Create Organization" });
-		create.addEventListener("click", async () => {
-			const orgName = orgNameInput.value.trim();
-			if (!orgName) {
-				new Notice("Please enter an organization name.");
-				return;
-			}
-			const suffixes = rows
-				.map((r) => r.suffixInput.value.trim())
-				.filter(Boolean);
-			if (suffixes.length === 0) {
-				new Notice("Add at least one team.");
-				return;
-			}
-			await this.onSubmit(orgName, suffixes);
-			this.close();
+		const create = btns.createEl("button", {
+			text: "Create organization",
+		});
+		create.addEventListener("click", () => {
+			void (async () => {
+				const orgName = orgNameInput.value.trim();
+				if (!orgName) {
+					new Notice("Please enter an organization name.");
+					return;
+				}
+				const suffixes = rows
+					.map((r) => r.suffixInput.value.trim())
+					.filter(Boolean);
+				if (suffixes.length === 0) {
+					new Notice("Add at least one team.");
+					return;
+				}
+				await this.onSubmit(orgName, suffixes);
+				this.close();
+			})();
 		});
 	}
 

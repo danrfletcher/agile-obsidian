@@ -31,30 +31,27 @@ export class AgileSettingTab extends PluginSettingTab {
 		// Ensure our settings-specific styles are present once.
 		this.ensureAgileSettingsStyles();
 
-		// Header row with title + coffee GIF link (fills remaining space)
-		const headerRow = containerEl.createEl("div", {
-			attr: {
-				style: "display:flex; align-items:center; gap:12px; margin-bottom: 6px;",
-			},
-		});
-		headerRow.createEl("h1", {
-			text: "Agile Obsidian Settings",
-			attr: { style: "margin: 0; flex: 0 0 auto;" },
-		});
+		// Header row using a Setting heading with a coffee link on the right
+		const headerSetting = new Setting(containerEl)
+			.setName("Agile Obsidian")
+			.setHeading();
 
-		const coffeeLink = headerRow.createEl("a", {
+		const headerControlEl = headerSetting.controlEl;
+		headerControlEl.empty();
+
+		const coffeeLink = headerControlEl.createEl("a", {
 			href: "https://buymeacoffee.com/danrfletcher",
 			attr: {
 				target: "_blank",
 				rel: "noopener noreferrer",
-				style: "flex: 1 1 auto; display:flex; align-items:center; height: 36px; text-decoration: none;",
+				style: "display:flex; align-items:center; height: 36px; text-decoration: none;",
 				"aria-label": "Buy me a coffee",
 			},
 		});
 		coffeeLink.createEl("img", {
 			attr: {
 				src: coffeeGifUrl,
-				alt: "Buy Me a Coffee",
+				alt: "Buy me a coffee",
 				style: "width: 100%; height: 100%; object-fit: contain; object-position: right center; opacity: 0.95;",
 			},
 		});
@@ -62,8 +59,8 @@ export class AgileSettingTab extends PluginSettingTab {
 		// ORG STRUCTURE SECTION (foldable)
 		const org = this.createFoldableSection(
 			containerEl,
-			"Org Structure",
-			"Discover and manage teams and organizations found in your vault. Add/update teams, create organizations, and manage subteams. Add Sample Team to see how it works.",
+			"Org structure",
+			"Discover and manage teams and organizations found in your vault. Add or update teams, create organizations, and manage subteams. Add a sample team to see how it works.",
 			this.settings.uiFoldOrgStructure,
 			async (folded) => {
 				this.settings.uiFoldOrgStructure = folded;
@@ -75,7 +72,7 @@ export class AgileSettingTab extends PluginSettingTab {
 		// AGILE DASHBOARD SECTION (foldable)
 		const dash = this.createFoldableSection(
 			containerEl,
-			"Agile Dashboard View",
+			"Agile dashboard view",
 			"Choose which sections appear in the agile dashboard. Sections with no tasks are hidden by default.",
 			this.settings.uiFoldAgileDashboard ?? true,
 			async (folded) => {
@@ -88,8 +85,8 @@ export class AgileSettingTab extends PluginSettingTab {
 		// UX SHORTCUTS SECTION (foldable)
 		const ux = this.createFoldableSection(
 			containerEl,
-			"UX Shortcuts",
-			"Turn ease of use features on/off.",
+			"UX shortcuts",
+			"Turn ease-of-use features on or off.",
 			this.settings.uiFoldUxShortcuts ?? true,
 			async (folded) => {
 				this.settings.uiFoldUxShortcuts = folded;
@@ -101,7 +98,7 @@ export class AgileSettingTab extends PluginSettingTab {
 		// AGILE TASK FORMATTING SECTION (foldable) — 4th section
 		const fmt = this.createFoldableSection(
 			containerEl,
-			"Agile Task Formatting",
+			"Agile task formatting",
 			"Automatically keeps task lines clean and consistent. This section controls the canonical formatter and related task formatting actions.",
 			this.settings.uiFoldAgileTaskFormatting ?? true,
 			async (folded) => {
@@ -110,15 +107,6 @@ export class AgileSettingTab extends PluginSettingTab {
 			}
 		);
 		this.renderAgileTaskFormattingSection(fmt.contentEl);
-	}
-
-	private logCanonicalFlags(context: string) {
-		try {
-			const s = this.settings;
-			console.debug(
-				`[Agile][CanonicalFmt][Settings] ${context}: master=${!!s.enableTaskCanonicalFormatter}, onLineCommit=${!!s.enableCanonicalOnLineCommit}, onLeafChange=${!!s.enableCanonicalOnLeafChange}`
-			);
-		} catch {}
 	}
 
 	private getTeamsCount(): number {
@@ -132,20 +120,20 @@ export class AgileSettingTab extends PluginSettingTab {
 		containerEl.empty();
 
 		const teamsButtons = new Setting(containerEl)
-			.setName("List Members & Teams")
+			.setName("List members and teams")
 			.setDesc(
 				"Detects teams and organizations from your vault and adds new teams."
 			);
 
-		// Determine whether a Sample Team already exists (case-insensitive match on team name).
+		// Determine whether a sample team already exists (case-insensitive match on team name).
 		const hasSampleTeam =
 			(this.settings.teams ?? []).some(
 				(t) => (t.name || "").trim().toLowerCase() === "sample team"
 			) || false;
 
-		// Add Sample Team – neutral styling (first/left-most)
+		// Add sample team – neutral styling (first/left-most)
 		teamsButtons.addButton((btn) => {
-			btn.setButtonText("Add Sample Team")
+			btn.setButtonText("Add sample team")
 				.setDisabled(hasSampleTeam)
 				.onClick(() => {
 					new AddTeamModal(
@@ -167,12 +155,12 @@ export class AgileSettingTab extends PluginSettingTab {
 							);
 							await this.actions.detectAndUpdateTeams();
 							this.display();
-							new Notice(`Sample Team added.`);
+							new Notice("Sample team added.");
 						},
 						{
-							presetName: "Sample Team",
+							presetName: "Sample team",
 							disableNameInput: true,
-							submitLabel: "Add Sample Team",
+							submitLabel: "Add sample team",
 							seedWithSampleData: true,
 						}
 					).open();
@@ -180,10 +168,10 @@ export class AgileSettingTab extends PluginSettingTab {
 			return btn;
 		});
 
-		// Update Teams – keep primary styling
+		// Update teams – keep primary styling
 		teamsButtons.addButton((btn) =>
 			btn
-				.setButtonText("Update Teams")
+				.setButtonText("Update teams")
 				.setCta()
 				.onClick(async () => {
 					await this.actions.detectAndUpdateTeams();
@@ -192,13 +180,19 @@ export class AgileSettingTab extends PluginSettingTab {
 				})
 		);
 
-		// Add Team – neutral styling
+		// Add team – neutral styling
 		teamsButtons.addButton((btn) =>
-			btn.setButtonText("Add Team").onClick(() => {
+			btn.setButtonText("Add team").onClick(() => {
 				new AddTeamModal(
 					this.app,
 					this.settings.teamsFolder || "Teams",
-					async (teamName, parentPath, teamSlug, code, _options) => {
+					async (
+						teamName,
+						parentPath,
+						teamSlug,
+						code,
+						_options
+					) => {
 						await this.actions.createTeam(
 							teamName,
 							parentPath,
@@ -241,13 +235,14 @@ export class AgileSettingTab extends PluginSettingTab {
 		containerEl.empty();
 
 		new Setting(containerEl)
-			.setName("Toggle Sections")
+			.setName("Toggle sections")
 			.setDesc(
 				"Select which sections to display in project view. Sections with no tasks are hidden by default."
 			)
 			.setClass("setting-item-description");
 
 		new Setting(containerEl)
+			// eslint-disable-next-line obsidianmd/ui/sentence-case
 			.setName("🎯 Objectives (OKRs)")
 			.addToggle((toggle) =>
 				toggle
@@ -259,6 +254,7 @@ export class AgileSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
+			// eslint-disable-next-line obsidianmd/ui/sentence-case
 			.setName("🧹 Responsibilities")
 			.addToggle((toggle) =>
 				toggle
@@ -270,7 +266,8 @@ export class AgileSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("🔨 Tasks (Subtasks)")
+			// eslint-disable-next-line obsidianmd/ui/sentence-case
+			.setName("🔨 Tasks (subtasks)")
 			.addToggle((toggle) =>
 				toggle
 					.setValue(this.settings.showTasks)
@@ -279,7 +276,7 @@ export class AgileSettingTab extends PluginSettingTab {
 						await this.saveSettings();
 					})
 			);
-
+		// eslint-disable-next-line obsidianmd/ui/sentence-case
 		new Setting(containerEl).setName("📝 Stories").addToggle((toggle) =>
 			toggle
 				.setValue(this.settings.showStories)
@@ -288,14 +285,14 @@ export class AgileSettingTab extends PluginSettingTab {
 					await this.saveSettings();
 				})
 		);
-
+		// eslint-disable-next-line obsidianmd/ui/sentence-case
 		new Setting(containerEl).setName("🏆 Epics").addToggle((toggle) =>
 			toggle.setValue(this.settings.showEpics).onChange(async (value) => {
 				this.settings.showEpics = value;
 				await this.saveSettings();
 			})
 		);
-
+		// eslint-disable-next-line obsidianmd/ui/sentence-case
 		new Setting(containerEl).setName("🎖️ Initiatives").addToggle((toggle) =>
 			toggle
 				.setValue(this.settings.showInitiatives)
@@ -304,7 +301,7 @@ export class AgileSettingTab extends PluginSettingTab {
 					await this.saveSettings();
 				})
 		);
-
+		// eslint-disable-next-line obsidianmd/ui/sentence-case
 		new Setting(containerEl).setName("📁 Priorities").addToggle((toggle) =>
 			toggle
 				.setValue(this.settings.showPriorities)
@@ -323,16 +320,16 @@ export class AgileSettingTab extends PluginSettingTab {
 
 		// Subheader + description
 		new Setting(containerEl)
-			.setName("Agile Artifact Templates")
+			.setName("Agile artifact templates")
 			.setDesc(
-				"Applies to tasks containing Initiatives, Epics, User Stories & other agile templates"
+				"Applies to tasks containing initiatives, epics, user stories, and other agile templates."
 			);
 
 		// Toggle: Multiple Agile Template Easy Insertion
 		new Setting(containerEl)
-			.setName("Multiple Agile Template Easy Insertion")
+			.setName("Multiple agile template easy insertion")
 			.setDesc(
-				"With your cursor at the end of a task line containing an agile artifact template (Initiative, Epic, User Story etc), double press enter to quickly create the same artifact on the next line."
+				"With your cursor at the end of a task line containing an agile artifact template (initiative, epic, user story, etc.), double press enter to quickly create the same artifact on the next line."
 			)
 			.addToggle((toggle) =>
 				toggle
@@ -348,21 +345,20 @@ export class AgileSettingTab extends PluginSettingTab {
 	/**
 	 * Renders the Agile Task Formatting content into the provided container.
 	 * - Adds visual "disabled" styling to subordinate toggles when the master is off.
-	 * - Adds targeted logs when toggles change.
 	 */
 	private renderAgileTaskFormattingSection(containerEl: HTMLElement): void {
 		containerEl.empty();
 
 		// Section subheader inside the fold
 		new Setting(containerEl)
-			.setName("Canonical Formatting")
+			.setName("Canonical formatting")
 			.setDesc(
-				"Settings related to the Canonical Formatter, which keeps each task line in a clean, consistent structure."
+				"Settings related to the canonical formatter, which keeps each task line in a clean, consistent structure."
 			);
 
 		// Master toggle
 		new Setting(containerEl)
-			.setName("Enable Canonical Task Formatter")
+			.setName("Enable canonical task formatter")
 			.setDesc(
 				"Turns on automatic task canonicalization. Disables all related triggers when off."
 			)
@@ -372,7 +368,6 @@ export class AgileSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						this.settings.enableTaskCanonicalFormatter = value;
 						await this.saveSettings();
-						this.logCanonicalFlags("toggle: master changed");
 						// Re-render to update disabled state + color of child toggles immediately
 						this.display();
 					})
@@ -382,7 +377,7 @@ export class AgileSettingTab extends PluginSettingTab {
 
 		// Toggle 2: Run on Line Commit
 		const lineCommitSetting = new Setting(containerEl)
-			.setName("Run on Line Commit")
+			.setName("Run on line commit")
 			.setDesc("Auto format task line when you move to a new task.");
 		lineCommitSetting.addToggle((toggle) => {
 			toggle.setValue(this.settings.enableCanonicalOnLineCommit);
@@ -390,14 +385,13 @@ export class AgileSettingTab extends PluginSettingTab {
 			toggle.onChange(async (value) => {
 				this.settings.enableCanonicalOnLineCommit = value;
 				await this.saveSettings();
-				this.logCanonicalFlags("toggle: onLineCommit changed");
 			});
 		});
 		this.applySubToggleDisabledStyle(lineCommitSetting, !masterEnabled);
 
 		// Toggle 3: Run on Leaf Change
 		const leafChangeSetting = new Setting(containerEl)
-			.setName("Run on Leaf Change")
+			.setName("Run on leaf change")
 			.setDesc("Auto format file when the active note changes.");
 		leafChangeSetting.addToggle((toggle) => {
 			toggle.setValue(this.settings.enableCanonicalOnLeafChange);
@@ -405,26 +399,22 @@ export class AgileSettingTab extends PluginSettingTab {
 			toggle.onChange(async (value) => {
 				this.settings.enableCanonicalOnLeafChange = value;
 				await this.saveSettings();
-				this.logCanonicalFlags("toggle: onLeafChange changed");
 			});
 		});
 		this.applySubToggleDisabledStyle(leafChangeSetting, !masterEnabled);
 
 		// Button: Format All Files in Vault
 		new Setting(containerEl)
-			.setName("Run on All Files in Vault")
+			.setName("Run on all files in vault")
 			.setDesc(
 				"Run the canonical formatter across every Markdown file in your vault now."
 			)
 			.addButton((btn) =>
 				btn
 					.setCta()
-					.setButtonText("Run Canonical Formatter")
+					.setButtonText("Run canonical formatter")
 					.onClick(async () => {
 						try {
-							console.info(
-								`[Agile][CanonicalFmt][Settings] Manual format-all requested`
-							);
 							// @ts-ignore
 							this.app.workspace.trigger(
 								"agile-canonical-format-all"
@@ -442,14 +432,14 @@ export class AgileSettingTab extends PluginSettingTab {
 		// Metadata Cleanup subsection
 		// =========================
 		new Setting(containerEl)
-			.setName("Metadata Cleanup")
+			.setName("Metadata cleanup")
 			.setDesc(
-				"Settings relating to the Metadata Cleanup feature, which removes deprecated & expired metadata from tasks."
+				"Settings relating to the metadata cleanup feature, which removes deprecated and expired metadata from tasks."
 			);
 
 		// Master toggle: Enable Metadata Cleanup
 		const mcMaster = new Setting(containerEl)
-			.setName("Enable Metadata Cleanup")
+			.setName("Enable metadata cleanup")
 			.setDesc(
 				"Turns on automatic metadata cleanup. When off, scheduled cleanup does not run."
 			);
@@ -466,7 +456,7 @@ export class AgileSettingTab extends PluginSettingTab {
 
 		// Subtoggle: Run On Obsidian Start
 		const mcOnStart = new Setting(containerEl)
-			.setName("Run On Obsidian Start")
+			.setName("Run on Obsidian start")
 			.setDesc(
 				"Runs a cleanup pass automatically when Obsidian starts (or the plugin loads)."
 			);
@@ -482,7 +472,7 @@ export class AgileSettingTab extends PluginSettingTab {
 
 		// Subtoggle: Run At Midnight
 		const mcAtMidnight = new Setting(containerEl)
-			.setName("Run At Midnight")
+			.setName("Run at midnight")
 			.setDesc(
 				"Schedules a daily cleanup at your local midnight while Obsidian remains open."
 			);
@@ -500,14 +490,14 @@ export class AgileSettingTab extends PluginSettingTab {
 
 		// Manual action button: Run on All Files in Vault
 		new Setting(containerEl)
-			.setName("Run on All Files in Vault")
+			.setName("Run on all files in vault")
 			.setDesc(
 				"Run metadata cleanup across every Markdown file in your vault now. This runs even if the automatic toggle above is disabled."
 			)
 			.addButton((btn) =>
 				btn
 					.setCta()
-					.setButtonText("Run Metadata Cleanup")
+					.setButtonText("Run metadata cleanup")
 					.onClick(async () => {
 						try {
 							// @ts-ignore
@@ -617,24 +607,10 @@ export class AgileSettingTab extends PluginSettingTab {
 	}
 
 	/**
-	 * Injects a one-time style element to dim disabled subordinate toggle controls.
-	 * We specifically target the right-hand control column so the labels/descriptions
-	 * remain fully readable even when disabled.
+	 * Ensures any Agile settings-specific CSS is available.
+	 * Styles are loaded via the plugin's styles.css, so this method is a no-op.
 	 */
 	private ensureAgileSettingsStyles(): void {
-		const styleId = "agile-settings-toggle-styles";
-		if (document.getElementById(styleId)) return;
-		const style = document.createElement("style");
-		style.id = styleId;
-		style.textContent = `
-/* Dim only the right-hand control (toggle) when the sub-toggle is disabled by the master */
-.agile-subtoggle-disabled .setting-item-control {
-	opacity: 0.5;
-	filter: grayscale(40%);
-}
-/* Keep the row layout intact; ensure no pointer events are hijacked here.
-   Actual click prevention is handled by toggle.setDisabled(true). */
-		`.trim();
-		document.head.appendChild(style);
+		// Intentionally left blank; CSS is provided by styles.css.
 	}
 }
