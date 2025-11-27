@@ -6,6 +6,48 @@ import { getAncestorWraps } from "./dom-utils";
 import { getAgileArtifactType, isInProgress } from "@features/task-filter";
 import { stripListItems } from "@features/task-tree-builder";
 
+type CssProps = Record<string, string | null | undefined>;
+
+/**
+ * Helper to update inline styles while respecting existing style attributes.
+ * - Keys may be camelCase (e.g., "lineHeight") or kebab-case (e.g., "line-height").
+ * - Values of null/undefined/"" remove the property.
+ */
+function setCssProps(el: HTMLElement, props: CssProps): void {
+	const existing = el.getAttribute("style") ?? "";
+	const styleMap = new Map<string, string>();
+
+	for (const part of existing.split(";")) {
+		const trimmed = part.trim();
+		if (!trimmed) continue;
+		const sepIndex = trimmed.indexOf(":");
+		if (sepIndex === -1) continue;
+		const name = trimmed.slice(0, sepIndex).trim();
+		const value = trimmed.slice(sepIndex + 1).trim();
+		if (!name) continue;
+		styleMap.set(name.toLowerCase(), `${name}: ${value}`);
+	}
+
+	for (const [rawName, rawValue] of Object.entries(props)) {
+		const normalizedName = rawName.startsWith("--")
+			? rawName
+			: rawName.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
+		const key = normalizedName.toLowerCase();
+		if (rawValue == null || rawValue === "") {
+			styleMap.delete(key);
+		} else {
+			styleMap.set(key, `${normalizedName}: ${rawValue}`);
+		}
+	}
+
+	const nextStyle = Array.from(styleMap.values()).join("; ");
+	if (nextStyle) {
+		el.setAttribute("style", nextStyle);
+	} else {
+		el.removeAttribute("style");
+	}
+}
+
 /**
 Lifecycle-aware event registration. Use Obsidian's registerDomEvent underneath.
 */
@@ -108,12 +150,12 @@ interface TaskWithLine {
 }
 
 function getTaskLine(task: TaskItem): number | null {
-	const withPosition = task as TaskItem & TaskWithPosition;
+	const withPosition = task as TaskWithPosition;
 	if (typeof withPosition.position?.start?.line === "number") {
 		return withPosition.position.start.line;
 	}
 
-	const withLine = task as TaskItem & TaskWithLine;
+	const withLine = task as TaskWithLine;
 	if (typeof withLine.line === "number") {
 		return withLine.line;
 	}
@@ -185,7 +227,7 @@ export function attachChevronSet(
 		 */
 		getChildren?: (uid: string) => TaskItem[];
 	}
-) {
+): void {
 	const {
 		childrenMap,
 		taskMap,
@@ -210,7 +252,9 @@ export function attachChevronSet(
 	};
 
 	// Consider all direct child LIs, not only those which already expose data-task-uid
-	const lis = Array.from(ul.querySelectorAll(":scope > li")) as HTMLElement[];
+	const lis = Array.from(
+		ul.querySelectorAll<HTMLElement>(":scope > li")
+	);
 
 	lis.forEach((liEl) => {
 		// Skip if this LI already displays a direct child UL: we only fold from bottom-level items.
@@ -227,9 +271,9 @@ export function attachChevronSet(
 			return;
 		}
 
-		const checkbox = liEl.querySelector(
+		const checkbox = liEl.querySelector<HTMLInputElement>(
 			'input[type="checkbox"]'
-		) as HTMLInputElement | null;
+		);
 
 		// Remove any stale toggles
 		liEl.querySelectorAll(
@@ -304,14 +348,16 @@ export function attachChevronSet(
 		const chevron = document.createElement("span");
 		chevron.textContent = ">";
 		chevron.setAttribute("data-fold-toggle", "true");
-		chevron.style.display = "inline-block";
-		chevron.style.width = "12px";
-		chevron.style.height = "12px";
-		chevron.style.lineHeight = "12px";
-		chevron.style.userSelect = "none";
-		chevron.style.transform = "rotate(0deg)";
-		chevron.style.transition = "transform 120ms ease";
-		chevron.style.pointerEvents = "none";
+		setCssProps(chevron, {
+			display: "inline-block",
+			width: "12px",
+			height: "12px",
+			lineHeight: "12px",
+			userSelect: "none",
+			transform: "rotate(0deg)",
+			transition: "transform 120ms ease",
+			pointerEvents: "none",
+		});
 
 		// Hitbox inside label to stay aligned
 		const hit = document.createElement("span");
@@ -321,39 +367,47 @@ export function attachChevronSet(
 		hit.setAttribute("aria-expanded", "false");
 		hit.tabIndex = 0;
 
-		hit.style.position = "absolute";
-		hit.style.display = "flex";
-		hit.style.alignItems = "center";
-		hit.style.justifyContent = "center";
-		hit.style.width = "20px";
-		hit.style.height = "20px";
-		hit.style.cursor = "pointer";
-		hit.style.userSelect = "none";
-		hit.style.touchAction = "manipulation";
-		hit.style.setProperty("-webkit-tap-highlight-color", "transparent");
-		hit.style.zIndex = "9999";
-		hit.style.pointerEvents = "auto";
-		hit.style.background = "transparent";
+		setCssProps(hit, {
+			position: "absolute",
+			display: "flex",
+			alignItems: "center",
+			justifyContent: "center",
+			width: "20px",
+			height: "20px",
+			cursor: "pointer",
+			userSelect: "none",
+			touchAction: "manipulation",
+			"-webkit-tap-highlight-color": "transparent",
+			zIndex: "9999",
+			pointerEvents: "auto",
+			background: "transparent",
+		});
 
 		let anchorEl: HTMLElement = liEl;
 		let labelEl: HTMLElement | null = null;
 		if (checkbox) {
 			// Try to find the label wrapper around the checkbox; fall back to LI if not present
-			labelEl = checkbox.closest("label") as HTMLElement | null;
+			labelEl = checkbox.closest("label");
 			if (!labelEl) {
-				const alt = checkbox.closest(
+				const alt = checkbox.closest<HTMLElement>(
 					".task-list-item-label, .markdown-preview-view .task-list-item-checkbox + label"
-				) as HTMLElement | null;
+				);
 				if (alt) labelEl = alt;
 			}
 		}
 		if (labelEl) {
 			anchorEl = labelEl;
-			if (getComputedStyle(anchorEl).position === "static") {
-				anchorEl.style.position = "relative";
+			if (
+				typeof window !== "undefined" &&
+				window.getComputedStyle(anchorEl).position === "static"
+			) {
+				setCssProps(anchorEl, { position: "relative" });
 			}
-		} else if (getComputedStyle(liEl).position === "static") {
-			liEl.style.position = "relative";
+		} else if (
+			typeof window !== "undefined" &&
+			window.getComputedStyle(liEl).position === "static"
+		) {
+			setCssProps(liEl, { position: "relative" });
 		}
 
 		hit.appendChild(chevron);
@@ -365,8 +419,10 @@ export function attachChevronSet(
 			if (!hit.isConnected) return;
 			if (!checkbox) {
 				// No checkbox: pin near the start of the anchor
-				hit.style.left = `-22px`;
-				hit.style.top = `2px`;
+				setCssProps(hit, {
+					left: "-22px",
+					top: "2px",
+				});
 				return;
 			}
 			const anchorRect = anchorEl.getBoundingClientRect();
@@ -378,13 +434,20 @@ export function attachChevronSet(
 			const top = Math.round(
 				cbRect.top - anchorRect.top + (cbRect.height - h) / 2
 			);
-			hit.style.left = `${left}px`;
-			hit.style.top = `${top}px`;
+			setCssProps(hit, {
+				left: `${left}px`,
+				top: `${top}px`,
+			});
 		};
 
 		// Initial positioning
 		positionToggle();
-		requestAnimationFrame(positionToggle);
+		if (
+			typeof window !== "undefined" &&
+			typeof window.requestAnimationFrame === "function"
+		) {
+			window.requestAnimationFrame(positionToggle);
+		}
 
 		// Lifecycle-aware wiring
 		on(window, "resize", positionToggle, { passive: true });
@@ -423,27 +486,29 @@ export function attachChevronSet(
 			);
 
 			// Take the first generated UL directly — it contains the shallow children we passed in.
-			const generated = tmp.querySelector(
+			const generated = tmp.querySelector<HTMLElement>(
 				"ul.agile-dashboard.contains-task-list"
-			) as HTMLElement | null;
+			);
 			if (!generated) return;
 
 			// Wrap
 			const wrap = document.createElement("div");
 			wrap.className = "agile-children-collapse";
 			wrap.setAttribute("data-children-wrap-for", uid);
-			wrap.style.overflow = "hidden";
+			setCssProps(wrap, { overflow: "hidden" });
 			wrap.appendChild(generated);
 			liEl.appendChild(wrap);
 
 			const applyChevronExpanded = () => {
 				const prevTransition = chevron.style.transition;
-				if (!animate) chevron.style.transition = "none";
-				chevron.style.transform = "rotate(90deg)";
+				if (!animate) {
+					setCssProps(chevron, { transition: "none" });
+				}
+				setCssProps(chevron, { transform: "rotate(90deg)" });
 				if (!animate) {
 					// Force reflow to apply transform instantly, then restore transition
-					void chevron.offsetWidth;
-					chevron.style.transition = prevTransition;
+					chevron.getBoundingClientRect();
+					setCssProps(chevron, { transition: prevTransition });
 				}
 			};
 
@@ -452,7 +517,7 @@ export function attachChevronSet(
 				animateOpen(wrap, ancestorWraps);
 			} else {
 				// No animation: show immediately
-				wrap.style.height = "auto";
+				setCssProps(wrap, { height: "auto" });
 			}
 
 			// Attach next level chevrons (no type gating at deeper levels)
@@ -471,12 +536,12 @@ export function attachChevronSet(
 		};
 
 		const collapse = () => {
-			const wrap = liEl.querySelector(
+			const wrap = liEl.querySelector<HTMLElement>(
 				`:scope > div.agile-children-collapse[data-children-wrap-for="${uid}"]`
-			) as HTMLElement | null;
+			);
 
 			if (!wrap) {
-				chevron.style.transform = "rotate(0deg)";
+				setCssProps(chevron, { transform: "rotate(0deg)" });
 				liEl.setAttribute("data-children-expanded", "false");
 				hit.setAttribute("aria-expanded", "false");
 				// Persist collapsed state
@@ -487,7 +552,7 @@ export function attachChevronSet(
 			const ancestorWraps = getAncestorWraps(liEl);
 			animateClose(wrap, ancestorWraps, () => {
 				wrap.remove();
-				chevron.style.transform = "rotate(0deg)";
+				setCssProps(chevron, { transform: "rotate(0deg)" });
 				liEl.setAttribute("data-children-expanded", "false");
 				hit.setAttribute("aria-expanded", "false");
 				// Persist collapsed state
@@ -498,13 +563,16 @@ export function attachChevronSet(
 		const toggle = () => {
 			const expanded =
 				liEl.getAttribute("data-children-expanded") === "true";
-			expanded ? collapse() : expand({ animate: true });
+			if (expanded) {
+				collapse();
+			} else {
+				expand({ animate: true });
+			}
 		};
 
 		const suppress = (ev: Event) => {
 			ev.preventDefault();
 			ev.stopPropagation();
-			// @ts-ignore
 			ev.stopImmediatePropagation?.();
 		};
 
@@ -529,7 +597,7 @@ export function attachChevronSet(
 			expand({ animate: false });
 		} else {
 			liEl.setAttribute("data-children-expanded", "false");
-			chevron.style.transform = "rotate(0deg)";
+			setCssProps(chevron, { transform: "rotate(0deg)" });
 			hit.setAttribute("aria-expanded", "false");
 		}
 	});

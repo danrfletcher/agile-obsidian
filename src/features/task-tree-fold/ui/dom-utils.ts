@@ -28,8 +28,10 @@ export function selectChildrenUl(
 
 	// Try descendants
 	const descendantUls = Array.from(
-		generated.querySelectorAll("ul.agile-dashboard.contains-task-list")
-	) as HTMLElement[];
+		generated.querySelectorAll<HTMLElement>(
+			"ul.agile-dashboard.contains-task-list"
+		)
+	);
 	for (const ul of descendantUls) {
 		if (isMatch(ul)) return ul;
 	}
@@ -39,9 +41,9 @@ export function selectChildrenUl(
 	while (true) {
 		const lis = directChildLisOfUl(ul);
 		if (lis.length !== 1) break;
-		const inner = ul.querySelector(
+		const inner = ul.querySelector<HTMLElement>(
 			":scope > li > ul.agile-dashboard.contains-task-list"
-		) as HTMLElement | null;
+		);
 		if (!inner) break;
 		ul = inner;
 	}
@@ -53,12 +55,12 @@ Climb ancestors and collect wrapper elements to track during animations.
 */
 export function getAncestorWraps(liEl: HTMLElement): HTMLElement[] {
 	const wraps: HTMLElement[] = [];
-	let p: HTMLElement | null = liEl.parentElement as HTMLElement | null;
+	let p: HTMLElement | null = liEl.parentElement;
 	while (p) {
 		if (p.classList?.contains("agile-children-collapse")) {
 			wraps.push(p);
 		}
-		p = p.parentElement as HTMLElement | null;
+		p = p.parentElement;
 	}
 	return wraps;
 }
@@ -71,10 +73,10 @@ export function findSectionUl(
 	sectionName: string
 ): HTMLElement | null {
 	const lists = Array.from(
-		container.querySelectorAll(
+		container.querySelectorAll<HTMLElement>(
 			`ul.agile-dashboard.contains-task-list[data-section="${sectionName}"]`
 		)
-	) as HTMLElement[];
+	);
 	if (lists.length === 0) return null;
 	return lists[lists.length - 1];
 }
@@ -88,8 +90,8 @@ export function findSectionUls(
 	sectionName: string
 ): HTMLElement[] {
 	return Array.from(
-		container.querySelectorAll(
+		container.querySelectorAll<HTMLElement>(
 			`ul.agile-dashboard.contains-task-list[data-section="${sectionName}"]`
 		)
-	) as HTMLElement[];
+	);
 }
