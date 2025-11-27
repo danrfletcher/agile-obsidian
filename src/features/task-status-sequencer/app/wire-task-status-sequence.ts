@@ -389,7 +389,9 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 					try {
 						ev.preventDefault();
 						ev.stopPropagation();
-						(ev as EventWithStopImmediatePropagation).stopImmediatePropagation?.();
+						(
+							ev as EventWithStopImmediatePropagation
+						).stopImmediatePropagation?.();
 					} catch {
 						/* ignore */
 					}
@@ -437,7 +439,9 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 				try {
 					ev.preventDefault();
 					ev.stopPropagation();
-					(ev as EventWithStopImmediatePropagation).stopImmediatePropagation?.();
+					(
+						ev as EventWithStopImmediatePropagation
+					).stopImmediatePropagation?.();
 				} catch {
 					/* ignore */
 				}
@@ -472,7 +476,9 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 			const ts = suppressNextClick.get(view);
 			if (ts && Date.now() - ts <= SUPPRESS_CLICK_MS) {
 				evt.preventDefault();
-				(evt as EventWithStopImmediatePropagation).stopImmediatePropagation?.();
+				(
+					evt as EventWithStopImmediatePropagation
+				).stopImmediatePropagation?.();
 				evt.stopPropagation();
 				suppressNextClick.delete(view);
 				return;

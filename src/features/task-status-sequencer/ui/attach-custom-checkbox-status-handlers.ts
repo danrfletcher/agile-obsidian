@@ -45,11 +45,11 @@ export function attachCustomCheckboxStatusHandlers(opts: {
 	let isUpdating = false;
 	let suppressNextClick = false;
 
-	const setCheckedForStatus = (s: StatusChar | string) => {
+	const setCheckedForStatus = (s: string): void => {
 		checkboxEl.checked = s === "x";
 	};
 
-	const clearTimer = () => {
+	const clearTimer = (): void => {
 		if (pressTimer !== null) {
 			window.clearTimeout(pressTimer);
 			pressTimer = null;
@@ -96,26 +96,26 @@ export function attachCustomCheckboxStatusHandlers(opts: {
 		setCheckedForStatus(task.status ?? " ");
 	});
 
-	checkboxEl.addEventListener("keydown", async (ev: KeyboardEvent) => {
+	checkboxEl.addEventListener("keydown", (ev: KeyboardEvent) => {
 		const { key } = ev;
 		if (key === " " || key === "Enter") {
 			ev.preventDefault();
 			ev.stopPropagation();
-			await performAdvance();
+			void performAdvance();
 		}
 	});
 
 	const onPressStart = (): void => {
 		longApplied = false;
 		clearTimer();
-		pressTimer = window.setTimeout(async () => {
+		pressTimer = window.setTimeout(() => {
 			longApplied = true;
-			await performCancel();
+			void performCancel();
 			suppressNextClick = true;
 		}, longPressMs);
 	};
 
-	const onPressEnd = async (ev?: Event): Promise<void> => {
+	const onPressEnd = (ev?: Event): void => {
 		const hadTimer = pressTimer !== null;
 		clearTimer();
 		if (longApplied) {
@@ -123,7 +123,9 @@ export function attachCustomCheckboxStatusHandlers(opts: {
 				try {
 					ev.preventDefault();
 					ev.stopPropagation();
-					(ev as EventWithStopImmediatePropagation).stopImmediatePropagation?.();
+					(
+						ev as EventWithStopImmediatePropagation
+					).stopImmediatePropagation?.();
 				} catch {
 					/* ignore */
 				}
@@ -131,13 +133,15 @@ export function attachCustomCheckboxStatusHandlers(opts: {
 			return;
 		}
 		if (hadTimer) {
-			await performAdvance();
+			void performAdvance();
 			suppressNextClick = true;
 			if (ev) {
 				try {
 					ev.preventDefault();
 					ev.stopPropagation();
-					(ev as EventWithStopImmediatePropagation).stopImmediatePropagation?.();
+					(
+						ev as EventWithStopImmediatePropagation
+					).stopImmediatePropagation?.();
 				} catch {
 					/* ignore */
 				}
@@ -163,7 +167,9 @@ export function attachCustomCheckboxStatusHandlers(opts: {
 			suppressNextClick = false;
 			ev.preventDefault();
 			ev.stopPropagation();
-			(ev as EventWithStopImmediatePropagation).stopImmediatePropagation?.();
+			(
+				ev as EventWithStopImmediatePropagation
+			).stopImmediatePropagation?.();
 			return;
 		}
 		ev.preventDefault();
