@@ -18,13 +18,17 @@ export async function wireOrgStructure(container: Container): Promise<{
 	});
 	await orgStructureService.buildAll();
 
-	let rebuildTimer: number | null = null;
+	// Use the actual return type of setTimeout (number in browser, Timeout in Node)
+	let rebuildTimer: ReturnType<typeof setTimeout> | null = null;
+
 	const scheduleRebuild = () => {
-		if (rebuildTimer != null) window.clearTimeout(rebuildTimer);
-		rebuildTimer = window.setTimeout(() => {
+		if (rebuildTimer != null) {
+			globalThis.clearTimeout(rebuildTimer);
+		}
+		rebuildTimer = globalThis.setTimeout(() => {
 			rebuildTimer = null;
 			// fire and forget
-			orgStructureService["buildAll"]();
+			void orgStructureService["buildAll"]();
 		}, 200);
 	};
 
@@ -57,14 +61,14 @@ export async function wireOrgStructure(container: Container): Promise<{
 			}
 		);
 	} catch (e) {
-		console.error("[boot] assignment commands failed", e);
+		globalThis.console?.error?.("[boot] assignment commands failed", e);
 	}
 
 	return {
 		orgStructurePort,
 		dispose: () => {
 			if (rebuildTimer != null) {
-				window.clearTimeout(rebuildTimer);
+				globalThis.clearTimeout(rebuildTimer);
 				rebuildTimer = null;
 			}
 		},

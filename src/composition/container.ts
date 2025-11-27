@@ -46,7 +46,7 @@ export interface Container {
 export function createContainer(
 	plugin: Plugin & { settings: AgileObsidianSettings }
 ): Container {
-	const app = plugin.app as App;
+	const app = plugin.app;
 
 	const settingsService = createSettingsService(() => plugin.settings);
 

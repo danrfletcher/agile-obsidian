@@ -26,7 +26,9 @@ export async function registerEvents(container: Container) {
 		if (currentCanonicalDisposer) {
 			try {
 				currentCanonicalDisposer();
-			} catch { }
+			} catch {
+				// Ignore errors during dispose to avoid breaking re-wiring.
+			}
 			currentCanonicalDisposer = null;
 		}
 		currentView = null;
@@ -65,60 +67,64 @@ export async function registerEvents(container: Container) {
 	// 3) Vault-wide "Format All Files" wiring (triggered from Settings UI)
 	plugin.registerEvent(
 		// @ts-ignore - custom workspace events supported
-		app.workspace.on("agile-canonical-format-all", async () => {
-			try {
-				const mdFiles = app.vault.getMarkdownFiles();
-				let changedFiles = 0;
-				let changedLines = 0;
+		app.workspace.on("agile-canonical-format-all", () => {
+			// Fire-and-forget async handler to satisfy no-misused-promises
+			void (async () => {
+				try {
+					const mdFiles = app.vault.getMarkdownFiles();
+					let changedFiles = 0;
+					let changedLines = 0;
 
-				for (const f of mdFiles) {
-					const content = await app.vault.read(f);
+					for (const f of mdFiles) {
+						const content = await app.vault.read(f);
 
-					// Preserve EOL style and terminal newline
-					const useCRLF = content.includes("\r\n");
-					const eol = useCRLF ? "\r\n" : "\n";
-					const hasTerminalEOL = content.endsWith(eol);
+						// Preserve EOL style and terminal newline
+						const useCRLF = content.includes("\r\n");
+						const eol = useCRLF ? "\r\n" : "\n";
+						const hasTerminalEOL = content.endsWith(eol);
 
-					const lines = content.split(/\r?\n/);
-					let fileChanged = false;
-					const out: string[] = new Array(lines.length) as string[];
+						const lines = content.split(/\r?\n/);
+						let fileChanged = false;
+						const out: string[] = new Array(lines.length) as string[];
 
-					for (let i = 0; i < lines.length; i++) {
-						const oldLine = lines[i] ?? "";
-						const indentMatch = oldLine.match(/^\s*/);
-						const indent = indentMatch ? indentMatch[0] : "";
-						const sansIndent = oldLine.slice(indent.length);
-						const normalizedSansIndent =
-							normalizeTaskLine(sansIndent);
-						const newLine = indent + normalizedSansIndent;
-						out[i] = newLine;
-						if (newLine !== oldLine) {
-							fileChanged = true;
-							changedLines++;
+						for (let i = 0; i < lines.length; i++) {
+							const oldLine = lines[i] ?? "";
+							const indentMatch = oldLine.match(/^\s*/);
+							const indent = indentMatch ? indentMatch[0] : "";
+							const sansIndent = oldLine.slice(indent.length);
+							const normalizedSansIndent =
+								normalizeTaskLine(sansIndent);
+							const newLine = indent + normalizedSansIndent;
+							out[i] = newLine;
+							if (newLine !== oldLine) {
+								fileChanged = true;
+								changedLines++;
+							}
+						}
+
+						if (fileChanged) {
+							let next = out.join(eol);
+							if (hasTerminalEOL && !next.endsWith(eol)) {
+								next += eol;
+							} else if (!hasTerminalEOL && next.endsWith(eol)) {
+								next = next.slice(0, -eol.length);
+							}
+							await app.vault.modify(f, next);
+							changedFiles++;
 						}
 					}
 
-					if (fileChanged) {
-						let next = out.join(eol);
-						if (hasTerminalEOL && !next.endsWith(eol)) {
-							next += eol;
-						} else if (!hasTerminalEOL && next.endsWith(eol)) {
-							next = next.slice(0, -eol.length);
-						}
-						await app.vault.modify(f, next);
-						changedFiles++;
-					}
+					new ObsidianNotice(
+						`Canonical formatting complete: ${changedFiles} file(s), ${changedLines} line(s) updated.`
+					);
+				} catch (e) {
+					new ObsidianNotice(
+						`Canonical formatting failed: ${
+							e instanceof Error ? e.message : String(e)
+						}`
+					);
 				}
-
-				new ObsidianNotice(
-					`Canonical formatting complete: ${changedFiles} file(s), ${changedLines} line(s) updated.`
-				);
-			} catch (e) {
-				new ObsidianNotice(
-					`Canonical formatting failed: ${e instanceof Error ? e.message : String(e)
-					}`
-				);
-			}
+			})();
 		})
 	);
 
@@ -134,22 +140,33 @@ export async function registerEvents(container: Container) {
 		const orgPorts = { orgStructure: orgStructurePort };
 		const view = app.workspace.getActiveViewOfType(MarkdownView);
 		if (!view) return;
-		try {
-			const {
-				wireTaskAssignmentDomHandlers,
-			} = require("@features/task-assignment") as {
-				wireTaskAssignmentDomHandlers: (
-					app: App,
-					view: MarkdownView,
-					plugin: Plugin,
-					orgPorts: { orgStructure: OrgStructurePort }
-				) => void;
-			};
-			wireTaskAssignmentDomHandlers(app, view, plugin, orgPorts);
-		} catch {
-			// Feature may not expose dom wiring in this runtime, ignore.
-		}
+
+		// Dynamic import to satisfy no-require-imports
+		void import("@features/task-assignment")
+			.then(
+				(mod: {
+					wireTaskAssignmentDomHandlers?: (
+						app: App,
+						view: MarkdownView,
+						plugin: Plugin,
+						orgPorts: { orgStructure: OrgStructurePort }
+					) => void;
+				}) => {
+					if (typeof mod.wireTaskAssignmentDomHandlers === "function") {
+						mod.wireTaskAssignmentDomHandlers(
+							app,
+							view,
+							plugin,
+							orgPorts
+						);
+					}
+				}
+			)
+			.catch(() => {
+				// Feature may not expose DOM wiring in this runtime; ignore.
+			});
 	};
+
 	wireAssignmentHandlersForActive();
 	plugin.registerEvent(
 		app.workspace.on("active-leaf-change", (_leaf) =>

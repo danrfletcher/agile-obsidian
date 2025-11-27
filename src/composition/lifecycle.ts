@@ -14,14 +14,14 @@ export class DisposableStack {
 
 	/** Adds a timeout and returns a cancel function. */
 	setTimeout(fn: () => void, ms: number): Disposer {
-		const id = window.setTimeout(fn, ms);
-		return this.add(() => window.clearTimeout(id));
+		const id = globalThis.setTimeout(fn, ms);
+		return this.add(() => globalThis.clearTimeout(id));
 	}
 
 	/** Adds a rAF and returns a cancel function. */
 	requestAnimationFrame(fn: FrameRequestCallback): Disposer {
-		const id = window.requestAnimationFrame(fn);
-		return this.add(() => window.cancelAnimationFrame(id));
+		const id = globalThis.requestAnimationFrame(fn);
+		return this.add(() => globalThis.cancelAnimationFrame(id));
 	}
 
 	/** Runs all disposers LIFO. Swallows errors to avoid partial leaks. */
