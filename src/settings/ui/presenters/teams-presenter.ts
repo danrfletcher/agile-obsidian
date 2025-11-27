@@ -36,7 +36,7 @@ export class TeamsPresenter {
 		_identityContainer: HTMLElement,
 		onRefreshUI: () => void
 	) {
-		const teams = (this.settings.teams ?? []) as TeamInfo[];
+		const teams: TeamInfo[] = this.settings.teams ?? [];
 		const { orgs, orphanTeams, children } = computeOrgStructureView(teams);
 
 		// Teams header
@@ -58,7 +58,7 @@ export class TeamsPresenter {
 				attr: {
 					style: "flex:1; min-width:0; white-space:nowrap; overflow-x:auto; padding:2px 6px;",
 				},
-			}) as HTMLInputElement;
+			});
 			pathInput.value = t.rootPath;
 			pathInput.readOnly = true;
 			pathInput.disabled = true;
@@ -67,10 +67,10 @@ export class TeamsPresenter {
 				attr: { style: "display:flex; gap:6px; align-items:center;" },
 			});
 			const viewMembersBtn = btns.createEl("button", {
-				text: "View Members",
+				text: "View members",
 			});
 			const createOrgBtn = btns.createEl("button", {
-				text: "Create Organization",
+				text: "Create organization",
 			});
 
 			const membersContainer = container.createEl("div", {
@@ -131,7 +131,7 @@ export class TeamsPresenter {
 				attr: {
 					style: "flex:1; min-width:0; white-space:nowrap; overflow-x:auto; padding:2px 6px;",
 				},
-			}) as HTMLInputElement;
+			});
 			pathInput.value = org.rootPath;
 			pathInput.readOnly = true;
 			pathInput.disabled = true;
@@ -140,9 +140,9 @@ export class TeamsPresenter {
 				attr: { style: "display:flex; gap:6px; align-items:center;" },
 			});
 			const toggleBtn = btns.createEl("button", {
-				text: "View Members & Teams",
+				text: "View members and teams",
 			});
-			const addTeamsBtn = btns.createEl("button", { text: "Add Teams" });
+			const addTeamsBtn = btns.createEl("button", { text: "Add teams" });
 
 			const orgContainer = container.createEl("div", {
 				attr: {
@@ -158,7 +158,9 @@ export class TeamsPresenter {
 
 			toggleBtn.addEventListener("click", () => {
 				orgContainer.style.display =
-					orgContainer.style.display === "none" ? "block" : "none";
+					orgContainer.style.display === "none"
+						? "block"
+						: "none";
 			});
 
 			addTeamsBtn.addEventListener("click", () => {
@@ -182,9 +184,9 @@ export class TeamsPresenter {
 						}
 					},
 					{
-						title: "Add Teams",
-						addRowText: "Add Team",
-						submitText: "Add Teams",
+						title: "Add teams",
+						addRowText: "Add team",
+						submitText: "Add teams",
 						emptyNoticeText: "Add at least one team.",
 					}
 				).open();
@@ -233,7 +235,7 @@ export class TeamsPresenter {
 				attr: {
 					style: "flex:1; min-width:0; white-space:nowrap; overflow-x:auto; padding:2px 6px;",
 				},
-			}) as HTMLInputElement;
+			});
 			aliasInput.value = m.alias;
 			aliasInput.readOnly = true;
 			aliasInput.disabled = true;
@@ -279,7 +281,7 @@ export class TeamsPresenter {
 					attr: {
 						style: "flex:1; min-width:0; white-space:nowrap; overflow-x:auto; padding:2px 6px;",
 					},
-				}) as HTMLInputElement;
+				});
 				aliasInput.value = m.alias;
 				aliasInput.readOnly = true;
 				aliasInput.disabled = true;
@@ -317,10 +319,10 @@ export class TeamsPresenter {
 				attr: { style: "display:flex; gap:6px; align-items:center;" },
 			});
 			const viewBtn = tBtns.createEl("button", {
-				text: "View Members & Subteams",
+				text: "View members and subteams",
 			});
 			const createSubBtn = tBtns.createEl("button", {
-				text: "Add Subteams",
+				text: "Add subteams",
 			});
 
 			const tContainer = container.createEl("div", {
@@ -343,7 +345,10 @@ export class TeamsPresenter {
 							);
 							if (!root.startsWith(prefix)) return false;
 							const rest = root.slice(prefix.length);
-							return rest.length > 0 && !rest.includes("/Teams/");
+							return (
+								rest.length > 0 &&
+								!rest.includes("/Teams/")
+							);
 						})
 						.sort((a, b) => a.name.localeCompare(b.name));
 				};
@@ -361,8 +366,10 @@ export class TeamsPresenter {
 							const ra = classifyMember(a).rank;
 							const rb = classifyMember(b).rank;
 							if (ra !== rb) return ra - rb;
-							const an = getDisplayNameFromAlias(a.alias);
-							const bn = getDisplayNameFromAlias(b.alias);
+							const an =
+								getDisplayNameFromAlias(a.alias);
+							const bn =
+								getDisplayNameFromAlias(b.alias);
 							return an.localeCompare(bn);
 						});
 					nodeContainer.createEl("div", {
@@ -383,17 +390,20 @@ export class TeamsPresenter {
 							line.createEl("span", {
 								text: getDisplayNameFromAlias(m.alias),
 							});
-							const { label: typeLabel } = classifyMember(m);
+							const { label: typeLabel } =
+								classifyMember(m);
 							line.createEl("span", {
 								text: `(${typeLabel})`,
-								attr: { style: "color: var(--text-muted);" },
+								attr: {
+									style: "color: var(--text-muted);",
+								},
 							});
 							const aliasInput = line.createEl("input", {
 								type: "text",
 								attr: {
 									style: "flex:1; min-width:0; white-space:nowrap; overflow-x:auto; padding:2px 6px;",
 								},
-							}) as HTMLInputElement;
+							});
 							aliasInput.value = m.alias;
 							aliasInput.readOnly = true;
 							aliasInput.disabled = true;
@@ -425,17 +435,20 @@ export class TeamsPresenter {
 								},
 							});
 							const stViewBtn = stBtns.createEl("button", {
-								text: "View Members & Subteams",
+								text: "View members and subteams",
 							});
 							const stCreateBtn = stBtns.createEl("button", {
-								text: "Add Subteams",
+								text: "Add subteams",
 							});
 
-							const stContainer = nodeContainer.createEl("div", {
-								attr: {
-									style: "margin:6px 0 8px 16px; display:none; border-left:2px solid var(--background-modifier-border); padding-left:10px;",
-								},
-							});
+							const stContainer = nodeContainer.createEl(
+								"div",
+								{
+									attr: {
+										style: "margin:6px 0 8px 16px; display:none; border-left:2px solid var(--background-modifier-border); padding-left:10px;",
+									},
+								}
+							);
 
 							const renderStDetails = () => {
 								renderNode(st, stContainer);
@@ -482,7 +495,9 @@ export class TeamsPresenter {
 
 			viewBtn.addEventListener("click", () => {
 				tContainer.style.display =
-					tContainer.style.display === "none" ? "block" : "none";
+					tContainer.style.display === "none"
+						? "block"
+						: "none";
 			});
 
 			createSubBtn.addEventListener("click", () => {

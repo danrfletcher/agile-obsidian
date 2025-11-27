@@ -1,6 +1,9 @@
 import type { Container } from "../container";
 import { wireTaskAssignmentCascade } from "@features/task-assignment-cascade";
-import { wireTaskClosedCascade, wireTaskClosedCascadeObserver } from "@features/task-close-cascade";
+import {
+	wireTaskClosedCascade,
+	wireTaskClosedCascadeObserver,
+} from "@features/task-close-cascade";
 import { registerTaskMetadataCleanup } from "@features/task-metadata-cleanup";
 import { wireTaskCloseManager } from "@features/task-close-manager";
 import { wireTaskStatusSequence } from "@features/task-status-sequencer";
@@ -18,7 +21,10 @@ export function wireTaskFlows(container: Container): void {
 			});
 		}
 	} catch (e) {
-		console.error("[boot] assignment cascade wiring failed", e);
+		globalThis.console?.error?.(
+			"[boot] assignment cascade wiring failed",
+			e
+		);
 	}
 
 	try {
@@ -30,12 +36,18 @@ export function wireTaskFlows(container: Container): void {
 		wireTaskClosedCascade(app, plugin);
 		wireTaskClosedCascadeObserver(app, plugin);
 	} catch (e) {
-		console.error("[boot] closed cascade wiring failed", e);
+		globalThis.console?.error?.(
+			"[boot] closed cascade wiring failed",
+			e
+		);
 	}
 
 	try {
 		registerTaskMetadataCleanup(container);
 	} catch (e) {
-		console.error("[boot] task-metadata-cleanup wiring failed", e);
+		globalThis.console?.error?.(
+			"[boot] task-metadata-cleanup wiring failed",
+			e
+		);
 	}
 }

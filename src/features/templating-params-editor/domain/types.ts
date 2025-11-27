@@ -6,10 +6,17 @@ export interface EventBusLike {
 	dispatch<N extends string, P = unknown>(name: N, payload: P): void;
 }
 
+export type ParamFieldType =
+	| "string"
+	| "number"
+	| "boolean"
+	| "any"
+	| (string & {});
+
 export interface ParamField {
 	name: string;
 	label?: string;
-	type?: "string" | "number" | "boolean" | "any" | string;
+	type?: ParamFieldType;
 	placeholder?: string;
 	defaultValue?: string | number | boolean | null;
 	description?: string;

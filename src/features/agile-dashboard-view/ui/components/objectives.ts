@@ -1,4 +1,4 @@
-import { App } from "obsidian";
+import { App, sanitizeHTMLToDom } from "obsidian";
 import { TaskItem, TaskParams } from "@features/task-index";
 import { renderTaskTree } from "./task-renderer";
 import { activeForMember, getAgileArtifactType } from "@features/task-filter";
@@ -36,7 +36,7 @@ export function processAndRenderObjectives(
 	childrenMap: Map<string, TaskItem[]>,
 	taskParams: TaskParams,
 	registerDomEvent?: RegisterDomEvent
-) {
+): void {
 	const sectionTasks = currentTasks.filter((task) =>
 		isShownByParams(task, taskMap, selectedAlias, taskParams)
 	);
@@ -126,7 +126,7 @@ export function processAndRenderObjectives(
 
 	// Render only if we're in "Active" mode and there is at least one selected OKR
 	if (entriesToRender.length > 0 && status) {
-		container.createEl("h2", { text: "🎯 Objectives" });
+		container.createEl("h2", { text: "🎯 objectives overview" });
 
 		entriesToRender.forEach(({ okr, linkedTrees }) => {
 			// Render the OKR itself without its native children
@@ -159,7 +159,7 @@ export function processAndRenderObjectives(
 			// If there are linked items, render the Linked Items sub-section
 			if (linkedTrees.length > 0) {
 				container.createEl("h5", {
-					text: "🔗 Linked Items",
+					text: "🔗 linked items",
 					attr: { style: "margin-left: 20px;" },
 				});
 
@@ -218,22 +218,22 @@ function hasOkrBlockRefLink(task: TaskItem, blockId: string): boolean {
 
 /**
  * Extract all OKR blockRef attribute values from the task's raw text/HTML.
- * This parses the raw string as HTML and returns values of the attributes indicated
+ * This parses the raw string as HTML (sanitized) and returns values of the attributes indicated
  * by data-tpl-attr-var-<attribute>="blockRef" under a wrapper span with
  * data-linked-artifact-type="okr".
  */
 function extractOkrBlockRefsFromText(raw: string): string[] {
 	try {
-		const container = document.createElement("div");
-		container.innerHTML = raw;
+		const fragment = sanitizeHTMLToDom(raw);
 
 		const results = new Set<string>();
-		const wrappers = container.querySelectorAll(
-			'span[data-linked-artifact-type="okr"]'
-		) as NodeListOf<HTMLElement>;
+		const wrappers =
+			fragment.querySelectorAll<HTMLElement>(
+				'span[data-linked-artifact-type="okr"]'
+			);
 
 		wrappers.forEach((span) => {
-			const els = span.querySelectorAll("*") as NodeListOf<HTMLElement>;
+			const els = span.querySelectorAll<HTMLElement>("*");
 			els.forEach((el) => {
 				for (const attr of Array.from(el.attributes)) {
 					const m = attr.name.match(/^data-tpl-attr-var-(.+)$/);

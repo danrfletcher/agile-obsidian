@@ -31,9 +31,7 @@ export async function registerAllCommands(container: Container): Promise<void> {
 
 	await registerTemplatingDynamicCommands(
 		container.app,
-		container.plugin as Parameters<
-			typeof registerTemplatingDynamicCommands
-		>[1],
+		container.plugin,
 		container.manifestId,
 		taskIndexPorts
 	);
@@ -42,9 +40,7 @@ export async function registerAllCommands(container: Container): Promise<void> {
 	if (container.orgStructurePorts?.orgStructure) {
 		await registerTaskAssignmentDynamicCommands(
 			container.app,
-			container.plugin as Parameters<
-				typeof registerTaskAssignmentDynamicCommands
-			>[1],
+			container.plugin,
 			container.manifestId,
 			{ orgStructure: container.orgStructurePorts.orgStructure }
 		);

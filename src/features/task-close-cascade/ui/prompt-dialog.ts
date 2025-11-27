@@ -1,19 +1,122 @@
 import { PromptPort } from "../domain/ports";
 
+const STYLE_ID = "agile-task-cascade-dialog-styles";
+
+const CASCADE_PROMPT_CSS = `
+.agile-task-cascade-backdrop {
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.35);
+	z-index: 9999;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.agile-task-cascade-backdrop--hidden {
+	display: none;
+	pointer-events: none;
+}
+
+.agile-task-cascade-panel {
+	background: var(--background-primary, #1e1e1e);
+	color: var(--text-normal, #ddd);
+	min-width: 340px;
+	max-width: 520px;
+	padding: 16px 18px;
+	border-radius: 10px;
+	box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+	border: 1px solid var(--background-modifier-border, #444);
+}
+
+.agile-task-cascade-title {
+	font-weight: 700;
+	margin-bottom: 6px;
+}
+
+.agile-task-cascade-desc {
+	font-size: 13px;
+	margin-bottom: 12px;
+}
+
+.agile-task-cascade-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	margin: 8px 0 16px;
+}
+
+.agile-task-cascade-label {
+	font-size: 13px;
+}
+
+.agile-task-cascade-buttons {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+}
+
+.agile-task-cascade-button {
+	padding: 6px 10px;
+	border-radius: 6px;
+	cursor: pointer;
+	font-size: 13px;
+}
+
+.agile-task-cascade-button--secondary {
+	background: transparent;
+	color: var(--text-muted, #aaa);
+	border: 1px solid var(--background-modifier-border, #444);
+}
+
+.agile-task-cascade-button--primary {
+	background: var(--interactive-accent, #6c9);
+	color: #000;
+	border: none;
+	padding: 6px 12px;
+	font-weight: 600;
+}
+`;
+
+function ensureCascadePromptStyles(doc: Document): void {
+	if (doc.getElementById(STYLE_ID)) return;
+
+	const styleEl = doc.createElement("style");
+	styleEl.id = STYLE_ID;
+	styleEl.textContent = CASCADE_PROMPT_CSS;
+
+	if (doc.head) {
+		doc.head.appendChild(styleEl);
+	} else {
+		doc.appendChild(styleEl);
+	}
+}
+
 /**
  * Minimal DOM-based prompt asking whether to cascade to incomplete subtasks.
  * Lifecycle-safe: adds/removes elements and listeners eagerly.
  */
 export class PromptDialog implements PromptPort {
+	private readonly doc: Document;
+
+	constructor(doc: Document) {
+		this.doc = doc;
+	}
+
 	async askCascadeConfirm(): Promise<boolean> {
+		ensureCascadePromptStyles(this.doc);
+
 		return new Promise((resolve) => {
 			// Ensure there is no lingering dialog from previous runs.
 			const EXISTING_SELECTOR = '[data-agile-cascade="backdrop"]';
 			for (const el of Array.from(
-				document.querySelectorAll(EXISTING_SELECTOR)
+				this.doc.querySelectorAll(EXISTING_SELECTOR)
 			)) {
 				try {
-					(el as HTMLElement).style.display = "none";
+					if (el instanceof HTMLElement) {
+						el.classList.add("agile-task-cascade-backdrop--hidden");
+					}
 					el.remove();
 				} catch {
 					try {
@@ -24,53 +127,33 @@ export class PromptDialog implements PromptPort {
 				}
 			}
 
-			const backdrop = document.createElement("div");
+			const backdrop = this.doc.createElement("div");
 			backdrop.dataset.agileCascade = "backdrop";
-			backdrop.style.position = "fixed";
-			backdrop.style.inset = "0";
-			backdrop.style.background = "rgba(0,0,0,0.35)";
-			backdrop.style.zIndex = "9999";
-			backdrop.style.display = "flex";
-			backdrop.style.alignItems = "center";
-			backdrop.style.justifyContent = "center";
+			backdrop.classList.add("agile-task-cascade-backdrop");
 
-			const panel = document.createElement("div");
-			panel.style.background = "var(--background-primary, #1e1e1e)";
-			panel.style.color = "var(--text-normal, #ddd)";
-			panel.style.minWidth = "340px";
-			panel.style.maxWidth = "520px";
-			panel.style.padding = "16px 18px";
-			panel.style.borderRadius = "10px";
-			panel.style.boxShadow = "0 8px 30px rgba(0,0,0,0.35)";
-			panel.style.border =
-				"1px solid var(--background-modifier-border, #444)";
+			const panel = this.doc.createElement("div");
+			panel.classList.add("agile-task-cascade-panel");
 			panel.setAttribute("role", "dialog");
 			panel.setAttribute("aria-modal", "true");
 			panel.setAttribute("aria-labelledby", "agile-cascade-title");
 
-			const title = document.createElement("div");
+			const title = this.doc.createElement("div");
 			title.id = "agile-cascade-title";
-			title.textContent = "Cascade Close";
-			title.style.fontWeight = "700";
-			title.style.marginBottom = "6px";
+			title.textContent = "Cascade close";
+			title.classList.add("agile-task-cascade-title");
 
-			const desc = document.createElement("div");
+			const desc = this.doc.createElement("div");
 			desc.textContent = "This task has incomplete subtasks.";
-			desc.style.fontSize = "13px";
-			desc.style.marginBottom = "12px";
+			desc.classList.add("agile-task-cascade-desc");
 
-			const row = document.createElement("label");
-			row.style.display = "flex";
-			row.style.alignItems = "center";
-			row.style.justifyContent = "space-between";
-			row.style.gap = "12px";
-			row.style.margin = "8px 0 16px";
+			const row = this.doc.createElement("label");
+			row.classList.add("agile-task-cascade-row");
 
-			const lbl = document.createElement("span");
+			const lbl = this.doc.createElement("span");
 			lbl.textContent = "Close all incomplete subtasks under this task?";
-			lbl.style.fontSize = "13px";
+			lbl.classList.add("agile-task-cascade-label");
 
-			const input = document.createElement("input");
+			const input = this.doc.createElement("input");
 			input.type = "checkbox";
 			// Default to unchecked
 			input.checked = false;
@@ -79,30 +162,22 @@ export class PromptDialog implements PromptPort {
 			row.appendChild(lbl);
 			row.appendChild(input);
 
-			const btns = document.createElement("div");
-			btns.style.display = "flex";
-			btns.style.justifyContent = "flex-end";
-			btns.style.gap = "8px";
+			const btns = this.doc.createElement("div");
+			btns.classList.add("agile-task-cascade-buttons");
 
-			const cancel = document.createElement("button");
+			const cancel = this.doc.createElement("button");
 			cancel.textContent = "Dismiss";
-			cancel.style.background = "transparent";
-			cancel.style.color = "var(--text-muted, #aaa)";
-			cancel.style.border =
-				"1px solid var(--background-modifier-border, #444)";
-			cancel.style.padding = "6px 10px";
-			cancel.style.borderRadius = "6px";
-			cancel.style.cursor = "pointer";
+			cancel.classList.add(
+				"agile-task-cascade-button",
+				"agile-task-cascade-button--secondary"
+			);
 
-			const confirm = document.createElement("button");
+			const confirm = this.doc.createElement("button");
 			confirm.textContent = "Apply";
-			confirm.style.background = "var(--interactive-accent, #6c9)";
-			confirm.style.color = "#000";
-			confirm.style.border = "none";
-			confirm.style.padding = "6px 12px";
-			confirm.style.borderRadius = "6px";
-			confirm.style.cursor = "pointer";
-			confirm.style.fontWeight = "600";
+			confirm.classList.add(
+				"agile-task-cascade-button",
+				"agile-task-cascade-button--primary"
+			);
 
 			btns.appendChild(cancel);
 			btns.appendChild(confirm);
@@ -116,7 +191,10 @@ export class PromptDialog implements PromptPort {
 			panel.addEventListener("click", (e) => e.stopPropagation());
 
 			backdrop.appendChild(panel);
-			document.body.appendChild(backdrop);
+
+			const container: HTMLElement | Document =
+				this.doc.body ?? this.doc;
+			container.appendChild(backdrop);
 
 			// Focus the checkbox for quick keyboard toggle
 			setTimeout(() => {
@@ -152,12 +230,13 @@ export class PromptDialog implements PromptPort {
 			const cleanup = () => {
 				// Immediately hide to avoid any lingering visual
 				try {
-					(backdrop as HTMLElement).style.display = "none";
-					(backdrop as HTMLElement).style.pointerEvents = "none";
+					backdrop.classList.add(
+						"agile-task-cascade-backdrop--hidden"
+					);
 				} catch {
 					/* ignore */
 				}
-				removeListener(document, "keydown", onKey);
+				removeListener(this.doc, "keydown", onKey);
 				removeListener(confirm, "click", onConfirm);
 				removeListener(cancel, "click", onCancel);
 				removeListener(backdrop, "click", onBackdropClick);
@@ -219,7 +298,7 @@ export class PromptDialog implements PromptPort {
 			confirm.addEventListener("click", onConfirm);
 			cancel.addEventListener("click", onCancel);
 			backdrop.addEventListener("click", onBackdropClick);
-			document.addEventListener("keydown", onKey);
+			this.doc.addEventListener("keydown", onKey);
 		});
 	}
 }

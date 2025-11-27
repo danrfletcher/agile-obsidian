@@ -7,7 +7,7 @@ export async function refreshForFile(
 	app: App,
 	taskIndexService: TaskIndexService,
 	filePath?: string | null
-) {
+): Promise<void> {
 	try {
 		if (filePath) {
 			const af = app.vault.getAbstractFileByPath(filePath);
@@ -26,15 +26,14 @@ export async function refreshTaskTreeByUid(
 	viewRoot: HTMLElement,
 	uid: string,
 	selectedAlias: string | null
-) {
-	const contentRoot = viewRoot.querySelector(
-		".content-container"
-	) as HTMLElement | null;
+): Promise<void> {
+	const contentRoot =
+		viewRoot.querySelector<HTMLElement>(".content-container");
 	if (!contentRoot) return;
 
 	const allLis = Array.from(
-		contentRoot.querySelectorAll("li[data-task-uid]")
-	) as HTMLElement[];
+		contentRoot.querySelectorAll<HTMLElement>("li[data-task-uid]")
+	);
 	const li = allLis.find(
 		(el) => (el.getAttribute("data-task-uid") || "") === uid
 	);
@@ -43,12 +42,9 @@ export async function refreshTaskTreeByUid(
 	// Prefer most-local section type: LI -> nearest UL -> enclosing section root -> fallback
 	const rawSectionType =
 		li.getAttribute("data-section") ||
-		(
-			li.closest(
-				"ul.agile-dashboard.contains-task-list"
-			) as HTMLElement | null
-		)?.getAttribute("data-section") ||
-		(li.closest("[data-section-root]") as HTMLElement | null)?.getAttribute(
+		li.closest<HTMLElement>("ul.agile-dashboard.contains-task-list")
+			?.getAttribute("data-section") ||
+		li.closest<HTMLElement>("[data-section-root]")?.getAttribute(
 			"data-section-root"
 		) ||
 		"tasks";
@@ -61,9 +57,9 @@ export async function refreshTaskTreeByUid(
 	const tmp = document.createElement("div");
 
 	renderTaskTree([task], tmp, app, 0, false, sectionType, selectedAlias);
-	const newLi = tmp.querySelector(
+	const newLi = tmp.querySelector<HTMLElement>(
 		"ul.agile-dashboard.contains-task-list > li"
-	) as HTMLElement | null;
+	);
 	if (!newLi) return;
 
 	li.replaceWith(newLi);

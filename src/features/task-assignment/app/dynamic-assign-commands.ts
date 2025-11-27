@@ -61,7 +61,7 @@ function buildAssignmentTargets(
 	const out: Array<{
 		memberName: string;
 		memberSlug: string;
-		memberLabel: string; // e.g. "External Delegate"
+		memberLabel: string; // e.g. "External delegate"
 		memberType:
 			| "teamMember"
 			| "delegateTeam"
@@ -93,28 +93,28 @@ function makeAssigneeCommandName(
 	state: "active" | "inactive",
 	memberName: string
 ): string {
-	const State = state === "active" ? "Active" : "Inactive";
-	return `Set ${State} Assignee as ${memberName}`;
+	const stateLabel = state === "active" ? "active" : "inactive";
+	return `Set ${stateLabel} assignee as ${memberName}`;
 }
 function makeDelegateCommandName(
 	state: "active" | "inactive",
 	memberName: string,
 	memberLabel: string
 ): string {
-	const State = state === "active" ? "Active" : "Inactive";
-	return `Set ${State} Delegate as ${memberName} (${memberLabel})`;
+	const stateLabel = state === "active" ? "active" : "inactive";
+	return `Set ${stateLabel} delegate as ${memberName} (${memberLabel})`;
 }
 function makeAssigneeNewMemberCommandName(
 	state: "active" | "inactive"
 ): string {
-	const State = state === "active" ? "Active" : "Inactive";
-	return `Set ${State} Assignee as New Member`;
+	const stateLabel = state === "active" ? "active" : "inactive";
+	return `Set ${stateLabel} assignee as new member`;
 }
 function makeDelegateNewMemberCommandName(
 	state: "active" | "inactive"
 ): string {
-	const State = state === "active" ? "Active" : "Inactive";
-	return `Set ${State} Delegate as New Member`;
+	const stateLabel = state === "active" ? "active" : "inactive";
+	return `Set ${stateLabel} delegate as new member`;
 }
 
 function clearExistingOfTypeOnCurrentLine(
@@ -143,14 +143,33 @@ function clearExistingOfTypeOnCurrentLine(
 function getEventTargets(app: App): EventTarget[] {
 	const targets: EventTarget[] = [];
 
-	if (typeof document !== "undefined") {
-		targets.push(document);
+	const maybeWindow =
+		typeof globalThis !== "undefined" && "window" in globalThis
+			? (globalThis as typeof globalThis & {
+					window?: Window & typeof globalThis;
+			  }).window
+			: undefined;
+	if (maybeWindow) {
+		targets.push(maybeWindow);
+	}
+
+	const maybeDocument =
+		typeof globalThis !== "undefined" && "document" in globalThis
+			? (globalThis as typeof globalThis & {
+					document?: Document;
+			  }).document
+			: undefined;
+	if (maybeDocument) {
+		targets.push(maybeDocument);
 	}
 
 	const view = getActiveMarkdownView(app);
-	const cmHolder = view as unknown as {
-		editor?: { cm?: { contentDOM?: HTMLElement } };
-	};
+	const cmHolder =
+		view as
+			| (MarkdownView & {
+					editor?: { cm?: { contentDOM?: HTMLElement } };
+			  })
+			| null;
 	const cmContent =
 		cmHolder?.editor?.cm?.contentDOM ??
 		view?.containerEl?.querySelector?.(".cm-content") ??
@@ -196,7 +215,7 @@ export async function registerTaskAssignmentDynamicCommands(
 	ports: { orgStructure: OrgStructurePort }
 ): Promise<void> {
 	const currentIds = new Set<string>();
-	let debounceTimer: number | null = null;
+	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 	const removeCommand = (id: string): void => {
 		try {
@@ -312,7 +331,7 @@ export async function registerTaskAssignmentDynamicCommands(
 							const ok = await whenAllowed();
 							if (!ok) {
 								new Notice(
-									"Assignee/Delegate can only be inserted on task or empty lines."
+									"Assignee/delegate can only be inserted on task or empty lines."
 								);
 								return;
 							}
@@ -363,14 +382,16 @@ export async function registerTaskAssignmentDynamicCommands(
 									}
 								}
 							} catch (err) {
+								const error =
+									err instanceof Error
+										? err
+										: new Error(String(err));
 								console.error(
 									"[assign] unexpected error",
-									err
+									error
 								);
 								new Notice(
-									`Insert failed: ${String(
-										(err as Error)?.message ?? err
-									)}`
+									`Insert failed: ${error.message}`
 								);
 							}
 						})();
@@ -386,7 +407,7 @@ export async function registerTaskAssignmentDynamicCommands(
 		// Special "Everyone" assignee command (team files)
 		if (team) {
 			const id = `${manifestId}:assignee:everyone:active`;
-			const name = `Set Active Assignee as Everyone`;
+			const name = "Set active assignee as everyone";
 
 			plugin.addCommand({
 				id,
@@ -477,14 +498,16 @@ export async function registerTaskAssignmentDynamicCommands(
 								}
 							}
 						} catch (err) {
+							const error =
+								err instanceof Error
+									? err
+									: new Error(String(err));
 							console.error(
 								"[assign] unexpected error",
-								err
+								error
 							);
 							new Notice(
-								`Insert failed: ${String(
-									(err as Error)?.message ?? err
-								)}`
+								`Insert failed: ${error.message}`
 							);
 						}
 					})();
@@ -496,7 +519,7 @@ export async function registerTaskAssignmentDynamicCommands(
 			currentIds.add(id);
 		}
 
-		// New Member commands (assignee + delegate)
+		// New member commands (assignee + delegate)
 		const registerNewMemberCommand = (
 			role: "assignee" | "delegate",
 			state: "active" | "inactive"
@@ -542,7 +565,7 @@ export async function registerTaskAssignmentDynamicCommands(
 						const ok = await isAssigneeAllowedHere(app);
 						if (!ok) {
 							new Notice(
-								"Assignee/Delegate can only be inserted on task or empty lines."
+								"Assignee/delegate can only be inserted on task or empty lines."
 							);
 							return;
 						}
@@ -555,15 +578,15 @@ export async function registerTaskAssignmentDynamicCommands(
 								);
 							const teamName = ctx.team?.name ?? "Team";
 							const existingMembers = (ctx.members ??
-								[]) as MemberInfo[];
+								[]);
 							// We don't have a global teams list here; restrict options accordingly
 							const allTeams: string[] = [];
 							const internalTeamCodes = new Map<string, string>();
 
 							const submitButtonText =
 								role === "assignee"
-									? "Assign to New Member"
-									: "Delegate to New Member";
+									? "Assign to new member"
+									: "Delegate to new member";
 
 							const allowedTypes =
 								role === "assignee"
@@ -634,16 +657,21 @@ export async function registerTaskAssignmentDynamicCommands(
 									allowedTypes: [...allowedTypes],
 									titleText:
 										role === "assignee"
-											? "Assign to New Member"
-											: "Delegate to New Member",
+											? "Assign to new member"
+											: "Delegate to new member",
 								}
 							).open();
 						} catch (err) {
-							console.error("[assign-new] error", err);
+							const error =
+								err instanceof Error
+									? err
+									: new Error(String(err));
+							console.error(
+								"[assign-new] error",
+								error
+							);
 							new Notice(
-								`New member insert failed: ${String(
-									(err as Error)?.message ?? err
-								)}`
+								`New member insert failed: ${error.message}`
 							);
 						}
 					})();
@@ -663,13 +691,13 @@ export async function registerTaskAssignmentDynamicCommands(
 
 	const scheduleRecompute = () => {
 		if (debounceTimer != null) {
-			window.clearTimeout(debounceTimer);
+			clearTimeout(debounceTimer);
 			debounceTimer = null;
 		}
-		debounceTimer = window.setTimeout(() => {
+		debounceTimer = setTimeout(() => {
 			debounceTimer = null;
 			void recompute();
-		}, 350) as unknown as number;
+		}, 350);
 	};
 
 	// Initial build

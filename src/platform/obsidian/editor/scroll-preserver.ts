@@ -45,12 +45,17 @@ export function getEditorScroller(editor: Editor): HTMLElement | null {
 		/* ignore and fall through to DOM query */
 	}
 	try {
-		const active = document.querySelector(
+		const doc = (globalThis as { document?: Document }).document;
+		if (!doc) {
+			return null;
+		}
+
+		const active = doc.querySelector(
 			".workspace-leaf.mod-active .cm-scroller"
 		);
 		if (active instanceof HTMLElement) return active;
 
-		const anyScroller = document.querySelector(".cm-scroller");
+		const anyScroller = doc.querySelector(".cm-scroller");
 		return anyScroller instanceof HTMLElement ? anyScroller : null;
 	} catch {
 		return null;
@@ -160,9 +165,18 @@ export function restoreEditorScrollLater(snap: ScrollSnapshot): void {
 		}
 	};
 
-	requestAnimationFrame(() => {
+	const raf = (globalThis as {
+		requestAnimationFrame?: (callback: FrameRequestCallback) => number;
+	}).requestAnimationFrame;
+
+	if (typeof raf !== "function") {
 		tryRestoreWithAnchor();
-		requestAnimationFrame(() => {
+		return;
+	}
+
+	raf(() => {
+		tryRestoreWithAnchor();
+		raf(() => {
 			tryRestoreWithAnchor();
 		});
 	});

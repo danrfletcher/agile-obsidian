@@ -19,12 +19,18 @@ export function wireTemplatingForView(
 		wireTemplatingDomHandlers(app, view, plugin, {
 			taskIndex: ports.taskIndex,
 		});
-	} catch {}
+	} catch {
+		// Swallow: templating DOM handlers are optional and should not break startup.
+	}
 	try {
 		wireTemplatingUxShortcutsDomHandlers(app, view, plugin);
-	} catch {}
+	} catch {
+		// Swallow: UX shortcuts are optional.
+	}
 	try {
 		// NEW: floating sequencing menu for note editor
 		wireTemplatingSequencerDomHandlers(app, view, plugin);
-	} catch {}
+	} catch {
+		// Swallow: sequencer is optional.
+	}
 }

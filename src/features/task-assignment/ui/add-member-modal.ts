@@ -13,13 +13,13 @@ export type AddMemberKind =
 
 export type AddMemberModalOptions = {
 	/**
-	 * Override button text (e.g. "Assign to New Member", "Delegate to New Member").
+	 * Override button text (e.g. "Assign to new member", "Delegate to new member").
 	 */
 	submitButtonText?: string;
 	/**
 	 * Limit which kinds the user can pick. Defaults to all if not provided.
-	 * Values: "member" (Team Member), "external" (External Delegate),
-	 *         "team" (Internal Team), "existing" (Existing Member with role dropdown).
+	 * Values: "member" (Team member), "external" (External delegate),
+	 *         "team" (Internal team), "existing" (Existing member with role dropdown).
 	 */
 	allowedTypes?: Array<"member" | "external" | "team" | "existing">;
 	/**
@@ -27,6 +27,10 @@ export type AddMemberModalOptions = {
 	 */
 	titleText?: string;
 };
+
+function setSectionVisible(element: HTMLElement, visible: boolean): void {
+	element.classList.toggle("is-hidden", !visible);
+}
 
 export class AddMemberModal extends Modal {
 	private onSubmit: (
@@ -117,7 +121,7 @@ export class AddMemberModal extends Modal {
 		contentEl.createEl("h3", {
 			text:
 				this.options?.titleText ??
-				`Add Member to ${this.teamName || "Team"}`,
+				`Add member to ${this.teamName || "Team"}`,
 		});
 
 		const allowedTypes =
@@ -131,26 +135,26 @@ export class AddMemberModal extends Modal {
 			text: "Member type",
 			attr: { style: "display:block; margin-bottom:4px;" },
 		});
-		const typeSelect = typeWrapper.createEl("select", {
+		const typeSelect: HTMLSelectElement = typeWrapper.createEl("select", {
 			attr: { style: "width: 100%;" },
-		}) as HTMLSelectElement;
+		});
 
 		const addOpt = (value: string, text: string) => {
-			const opt = document.createElement("option");
-			opt.value = value;
-			opt.text = text;
-			typeSelect.appendChild(opt);
+			typeSelect.createEl("option", {
+				text,
+				attr: { value },
+			});
 		};
 
-		if (allowedTypes.includes("member")) addOpt("member", "Team Member");
+		if (allowedTypes.includes("member")) addOpt("member", "Team member");
 		if (allowedTypes.includes("external"))
-			addOpt("external", "External Delegate");
-		if (allowedTypes.includes("team")) addOpt("team", "Internal Team");
+			addOpt("external", "External delegate");
+		if (allowedTypes.includes("team")) addOpt("team", "Internal team");
 		if (allowedTypes.includes("existing"))
-			addOpt("existing", "Existing Member");
+			addOpt("existing", "Existing member");
 
 		// If nothing was added (defensive), default to "member"
-		if (typeSelect.options.length === 0) addOpt("member", "Team Member");
+		if (typeSelect.options.length === 0) addOpt("member", "Team member");
 
 		typeSelect.value = typeSelect.options[0].value;
 		let isExternal = typeSelect.value === "external";
@@ -164,63 +168,71 @@ export class AddMemberModal extends Modal {
 			text: "Member name",
 			attr: { style: "display:block; margin-bottom:4px;" },
 		});
-		const nameInput = nameWrapper.createEl("input", {
+		const nameInput: HTMLInputElement = nameWrapper.createEl("input", {
 			type: "text",
-			attr: { placeholder: "e.g., Dan Fletcher", style: "width: 100%;" },
-		}) as HTMLInputElement;
+			attr: {
+				placeholder: "For example, team member name",
+				style: "width: 100%;",
+			},
+		});
 
 		const teamWrapper = contentEl.createEl("div", {
-			attr: { style: "margin-bottom: 12px; display: none;" },
+			attr: { style: "margin-bottom: 12px;" },
+			cls: "is-hidden",
 		});
 		teamWrapper.createEl("label", {
 			text: "Select team",
 			attr: { style: "display:block; margin-bottom:4px;" },
 		});
-		const teamSelect = teamWrapper.createEl("select", {
+		const teamSelect: HTMLSelectElement = teamWrapper.createEl("select", {
 			attr: { style: "width: 100%;" },
-		}) as HTMLSelectElement;
+		});
 		for (const tn of this.allTeams) {
-			const opt = document.createElement("option");
-			opt.value = tn;
-			opt.text = tn;
-			teamSelect.appendChild(opt);
+			teamSelect.createEl("option", {
+				text: tn,
+				attr: { value: tn },
+			});
 		}
 
 		const existingWrapper = contentEl.createEl("div", {
-			attr: { style: "margin-bottom: 12px; display: none;" },
+			attr: { style: "margin-bottom: 12px;" },
+			cls: "is-hidden",
 		});
 		existingWrapper.createEl("label", {
 			text: "Select existing member",
 			attr: { style: "display:block; margin-bottom:4px;" },
 		});
-		const existingSelect = existingWrapper.createEl("select", {
-			attr: { style: "width: 100%;" },
-		}) as HTMLSelectElement;
-		for (const m of this.existingMembers || []) {
-			const opt = document.createElement("option");
-			opt.value = m.alias;
-			opt.text = `${m.name} (${m.alias})`;
-			existingSelect.appendChild(opt);
+		const existingSelect: HTMLSelectElement =
+			existingWrapper.createEl("select", {
+				attr: { style: "width: 100%;" },
+			});
+		for (const m of this.existingMembers ?? []) {
+			const alias = m.alias ?? "";
+			existingSelect.createEl("option", {
+				text: `${m.name} (${alias})`,
+				attr: { value: alias },
+			});
 		}
 
 		const roleWrapper = contentEl.createEl("div", {
-			attr: { style: "margin-bottom: 12px; display: none;" },
+			attr: { style: "margin-bottom: 12px;" },
+			cls: "is-hidden",
 		});
 		roleWrapper.createEl("label", {
 			text: "Existing member role",
 			attr: { style: "display:block; margin-bottom:4px;" },
 		});
-		const roleSelect = roleWrapper.createEl("select", {
+		const roleSelect: HTMLSelectElement = roleWrapper.createEl("select", {
 			attr: { style: "width: 100%;" },
-		}) as HTMLSelectElement;
-		const roleMember = document.createElement("option");
-		roleMember.value = "member";
-		roleMember.text = "Team Member";
-		roleSelect.appendChild(roleMember);
-		const roleInternal = document.createElement("option");
-		roleInternal.value = "internal-team-member";
-		roleInternal.text = "Internal Team Member";
-		roleSelect.appendChild(roleInternal);
+		});
+		roleSelect.createEl("option", {
+			text: "Team member",
+			attr: { value: "member" },
+		});
+		roleSelect.createEl("option", {
+			text: "Internal team member",
+			attr: { value: "internal-team-member" },
+		});
 		roleSelect.value = "member";
 
 		const aliasPreview = contentEl.createEl("div", {
@@ -263,17 +275,10 @@ export class AddMemberModal extends Modal {
 			isInternal = typeSelect.value === "team";
 			isExisting = typeSelect.value === "existing";
 
-			// Toggle UI blocks
-			nameWrapper.style.display =
-				!isInternal && !isExisting ? "" : "none";
-			teamWrapper.style.display = isInternal ? "" : "none";
-			existingWrapper.style.display = isExisting ? "" : "none";
-			roleWrapper.style.display = isExisting ? "" : "none";
-
-			// If Internal Team option is allowed but no teams are available, hide the selector block
-			if (isInternal && this.allTeams.length === 0) {
-				teamWrapper.style.display = "none";
-			}
+			setSectionVisible(nameWrapper, !isInternal && !isExisting);
+			setSectionVisible(teamWrapper, isInternal && this.allTeams.length > 0);
+			setSectionVisible(existingWrapper, isExisting);
+			setSectionVisible(roleWrapper, isExisting);
 
 			updateAlias();
 		});
@@ -294,57 +299,65 @@ export class AddMemberModal extends Modal {
 		cancelBtn.addEventListener("click", () => this.close());
 
 		const addBtn = buttons.createEl("button", {
-			text: this.options?.submitButtonText ?? "Add Member",
+			text: this.options?.submitButtonText ?? "Add member",
 		});
-		addBtn.addEventListener("click", async () => {
-			let memberName: string;
-			let memberAlias: string;
-			let selectedKind: AddMemberKind;
+		addBtn.addEventListener("click", () => {
+			void (async () => {
+				let memberName: string;
+				let memberAlias: string;
+				let selectedKind: AddMemberKind;
 
-			if (isInternal) {
-				// Internal Team
-				memberName = (teamSelect.value || "").trim();
-				if (!memberName) {
-					new Notice("Please select a team.");
-					return;
-				}
-				const codeToUse =
-					this.internalTeamCodes.get(memberName) ?? code;
-				memberAlias = this.teamAlias(memberName, codeToUse);
-				selectedKind = "team";
-			} else if (isExisting) {
-				// Existing -> pick role
-				const selectedAlias = existingSelect.value || "";
-				if (!selectedAlias) {
-					new Notice("Please select an existing member.");
-					return;
-				}
-				const found = (this.existingMembers || []).find(
-					(m) => m.alias === selectedAlias
-				);
-				memberName = found?.name ?? selectedAlias;
-				if (roleSelect.value === "internal-team-member") {
-					memberAlias = selectedAlias.toLowerCase().endsWith("-int")
-						? selectedAlias
-						: `${selectedAlias}-int`;
-					selectedKind = "internal-team-member";
+				if (isInternal) {
+					// Internal team
+					memberName = (teamSelect.value || "").trim();
+					if (!memberName) {
+						new Notice("Please select a team.");
+						return;
+					}
+					const codeToUse =
+						this.internalTeamCodes.get(memberName) ?? code;
+					memberAlias = this.teamAlias(memberName, codeToUse);
+					selectedKind = "team";
+				} else if (isExisting) {
+					// Existing -> pick role
+					const selectedAlias = existingSelect.value || "";
+					if (!selectedAlias) {
+						new Notice("Please select an existing member.");
+						return;
+					}
+					const found = (this.existingMembers || []).find(
+						(m) => m.alias === selectedAlias
+					);
+					memberName = found?.name ?? selectedAlias;
+					if (roleSelect.value === "internal-team-member") {
+						memberAlias = selectedAlias
+							.toLowerCase()
+							.endsWith("-int")
+							? selectedAlias
+							: `${selectedAlias}-int`;
+						selectedKind = "internal-team-member";
+					} else {
+						memberAlias = selectedAlias;
+						selectedKind = "member";
+					}
 				} else {
-					memberAlias = selectedAlias;
-					selectedKind = "member";
+					// New person
+					memberName = nameInput.value.trim();
+					if (!memberName) {
+						new Notice("Please enter a member name.");
+						return;
+					}
+					memberAlias = this.nameToAlias(
+						memberName,
+						code,
+						isExternal
+					);
+					selectedKind = isExternal ? "external" : "member";
 				}
-			} else {
-				// New person
-				memberName = nameInput.value.trim();
-				if (!memberName) {
-					new Notice("Please enter a member name.");
-					return;
-				}
-				memberAlias = this.nameToAlias(memberName, code, isExternal);
-				selectedKind = isExternal ? "external" : "member";
-			}
 
-			await this.onSubmit(memberName, memberAlias, selectedKind);
-			this.close();
+				await this.onSubmit(memberName, memberAlias, selectedKind);
+				this.close();
+			})();
 		});
 	}
 

@@ -28,7 +28,7 @@ export function processAndRenderInitiatives(
 	childrenMap: Map<string, TaskItem[]>,
 	taskParams: TaskParams,
 	registerDomEvent?: RegisterDomEvent
-) {
+): void {
 	// 1) Filter to tasks shown by current view toggles
 	const sectionTasks = currentTasks.filter((task) =>
 		isShownByParams(task, taskMap, selectedAlias, taskParams)
@@ -51,7 +51,7 @@ export function processAndRenderInitiatives(
 	);
 
 	if (initiativesOnly.length > 0) {
-		container.createEl("h2", { text: "🎖️ Initiatives" });
+		container.createEl("h2", { text: "🎖️ initiatives overview" });
 
 		// Render initiatives with no children
 		renderTaskTree(

@@ -30,19 +30,21 @@ export class IdentityPresenter {
 					lower.endsWith("-ext") ||
 					lower.endsWith("-team") ||
 					lower.endsWith("-int")
-				)
+				) {
 					continue;
-				if (!uniq.has(alias))
+				}
+				if (!uniq.has(alias)) {
 					uniq.set(alias, {
 						alias,
 						name: getDisplayNameFromAlias(alias),
 					});
+				}
 			}
 		}
 		if (uniq.size === 0) {
 			const emptyEl = container.createEl("div");
 			emptyEl.createEl("em", {
-				text: "Cannot select identity - no team members detected yet.",
+				text: "Cannot select identity: no team members detected yet.",
 			});
 			return;
 		}
@@ -51,11 +53,12 @@ export class IdentityPresenter {
 		);
 		new Setting(container)
 			.setName("Identity")
-			.setDesc("Select your identity for Agile Obsidian.")
+			.setDesc("Select your identity.")
 			.addDropdown((dropdown) => {
-				dropdown.addOption("", "(Not set)");
-				for (const m of members)
+				dropdown.addOption("", "(not set)");
+				for (const m of members) {
 					dropdown.addOption(m.alias, `${m.name} (${m.alias})`);
+				}
 				const current = this.settings.currentUserAlias ?? "";
 				dropdown.setValue(uniq.has(current) ? current : "");
 				dropdown.onChange(async (value) => {

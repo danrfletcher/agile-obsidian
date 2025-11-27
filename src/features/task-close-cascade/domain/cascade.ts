@@ -17,7 +17,7 @@ export function extractParentCloseIntent(
 		"i"
 	);
 	const m = re.exec(line);
-	const date = (m?.[1] ?? null) as string | null;
+	const date = m?.[1] ?? null;
 	return { intent: status === "x" ? "complete" : "cancel", date };
 }
 

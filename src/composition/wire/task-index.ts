@@ -1,4 +1,4 @@
-import type { TAbstractFile, TFile } from "obsidian";
+import { TFile, type TAbstractFile } from "obsidian";
 import type { Container } from "../container";
 import { createObsidianAppAdapter } from "@platform/obsidian";
 import {
@@ -25,7 +25,7 @@ export async function wireTaskIndex(container: Container): Promise<{
 	await taskIndexOrchestrator.buildAll();
 
 	const asFile = (f: TAbstractFile | null): f is TFile =>
-		!!f && (f as TFile).extension !== undefined;
+		f instanceof TFile;
 
 	plugin.registerEvent(
 		app.vault.on("create", async (file) => {
@@ -49,9 +49,9 @@ export async function wireTaskIndex(container: Container): Promise<{
 		})
 	);
 	plugin.registerEvent(
-		app.vault.on("rename", async (file, oldPath) => {
+		app.vault.on("rename", (file, oldPath) => {
 			if (asFile(file)) {
-				await taskIndexOrchestrator.onFileRenamed(oldPath, file.path);
+				taskIndexOrchestrator.onFileRenamed(oldPath, file.path);
 			}
 		})
 	);

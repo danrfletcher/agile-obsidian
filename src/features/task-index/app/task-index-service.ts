@@ -10,6 +10,9 @@ import { createTaskParser } from "../parsing/task-parser";
 import type { TaskIndexRepository } from "../repository/task-index-repository";
 import { createInMemoryTaskIndexRepository } from "../repository/task-index-repository";
 
+declare const document: Document;
+declare const console: Console;
+
 /**
  * Service that coordinates reading files, parsing items, and storing snapshots in a repository.
  * This is the main entrypoint for programmatic control; orchestration will call into this.

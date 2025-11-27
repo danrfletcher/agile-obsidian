@@ -31,14 +31,15 @@ export function attachDashboardAssignmentHandler(
 
 	const handleOpenMenu = (evt: MouseEvent) => {
 		try {
-			const tgt = evt.target as HTMLElement | null;
-			if (!tgt) return;
+			const tgt = evt.target;
+			if (!(tgt instanceof HTMLElement)) return;
 
 			// Intercept clicks on the rendered assignee wrapper
-			const span = tgt.closest(
+			const spanEl = tgt.closest(
 				'span[data-template-key="members.assignee"]'
-			) as HTMLElement | null;
-			if (!span) return;
+			);
+			if (!(spanEl instanceof HTMLElement)) return;
+			const span = spanEl;
 
 			// Prevent default navigation/handlers early
 			evt.preventDefault();
@@ -62,7 +63,7 @@ export function attachDashboardAssignmentHandler(
 				).toLowerCase() === "inactive"
 					? "inactive"
 					: "active"
-			) as "active" | "inactive";
+			);
 
 			const currentSlug = (
 				span.getAttribute("data-member-slug") || ""
@@ -72,12 +73,13 @@ export function attachDashboardAssignmentHandler(
 			const li =
 				span.closest("li[data-file-path]") ||
 				span.closest("[data-file-path]"); // fallback if structure changes
-			const liEl = li as HTMLElement | null;
-			const filePath = liEl?.getAttribute("data-file-path") || "";
+			if (!(li instanceof HTMLElement)) return;
+			const liEl = li;
+			const filePath = liEl.getAttribute("data-file-path") || "";
 			if (!filePath) return;
 
-			const parentUid = liEl?.getAttribute("data-task-uid") || null;
-			const lineHintStr = liEl?.getAttribute("data-line") || "";
+			const parentUid = liEl.getAttribute("data-task-uid") || null;
+			const lineHintStr = liEl.getAttribute("data-line") || "";
 			const lineHint0 =
 				lineHintStr && /^\d+$/.test(lineHintStr)
 					? parseInt(lineHintStr, 10)
@@ -110,11 +112,12 @@ export function attachDashboardAssignmentHandler(
 		viewContainer,
 		"contextmenu",
 		(evt: MouseEvent) => {
-			const tgt = evt.target as HTMLElement | null;
-			const span = tgt?.closest(
+			const target = evt.target;
+			if (!(target instanceof HTMLElement)) return;
+			const spanEl = target.closest(
 				'span[data-template-key="members.assignee"]'
-			) as HTMLElement | null;
-			if (!span) return;
+			);
+			if (!(spanEl instanceof HTMLElement)) return;
 			handleOpenMenu(evt);
 		},
 		{ capture: true }

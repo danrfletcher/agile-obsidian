@@ -36,11 +36,11 @@ export class AddTeamModal extends Modal {
 		const { contentEl } = this;
 		contentEl.empty();
 
-		const submitLabel = this.options?.submitLabel || "Add Team";
+		const submitLabel = this.options?.submitLabel || "Add team";
 		const presetName = (this.options?.presetName || "").trim();
 		const disableName = !!this.options?.disableNameInput;
 
-		contentEl.createEl("h3", { text: "Add Team" });
+		contentEl.createEl("h3", { text: "Add team" });
 
 		const nameWrapper = contentEl.createEl("div", {
 			attr: { style: "margin-bottom: 12px;" },
@@ -51,13 +51,13 @@ export class AddTeamModal extends Modal {
 		});
 		const nameInput = nameWrapper.createEl("input", {
 			type: "text",
-			attr: { placeholder: "e.g., Sample Team", style: "width: 100%;" },
-		}) as HTMLInputElement;
+			attr: { placeholder: "E.g., sample team", style: "width: 100%;" },
+		});
 		if (presetName) nameInput.value = presetName;
 		if (disableName) {
 			nameInput.readOnly = true;
 			nameInput.disabled = true;
-			nameInput.style.opacity = "0.7";
+			nameInput.addClass("agile-disabled-input");
 		}
 
 		const folderWrapper = contentEl.createEl("div", {
@@ -69,7 +69,7 @@ export class AddTeamModal extends Modal {
 		});
 		const selectEl = folderWrapper.createEl("select", {
 			attr: { style: "width: 100%;" },
-		}) as HTMLSelectElement;
+		});
 
 		const all = this.app.vault.getAllLoadedFiles();
 		const folders = all.filter((f) => f instanceof TFolder) as TFolder[];
@@ -77,10 +77,10 @@ export class AddTeamModal extends Modal {
 			new Set<string>(["/", ...folders.map((f) => f.path)])
 		).sort((a, b) => a.localeCompare(b));
 		for (const p of paths) {
-			const opt = document.createElement("option");
+			const opt = selectEl.createEl("option", {
+				text: p === "/" ? "(vault root)" : p,
+			});
 			opt.value = p;
-			opt.text = p === "/" ? "(vault root)" : p;
-			selectEl.appendChild(opt);
 		}
 		selectEl.value = this.defaultParentPath ?? "/";
 
@@ -89,15 +89,16 @@ export class AddTeamModal extends Modal {
 		const aliasPreview = contentEl.createEl("div", {
 			attr: { style: "margin-top: 8px; color: var(--text-muted);" },
 		});
-		aliasPreview.createEl("div", {
+		const aliasTitle = aliasPreview.createEl("div", {
 			text: "Alias (auto-generated)",
-		}).style.fontWeight = "600";
+		});
+		aliasTitle.addClass("agile-alias-label");
 		const aliasValue = aliasPreview.createEl("code", { text: "" });
 		const updateAlias = () => {
 			const teamName =
 				(nameInput.value.trim() || "sample") + (disableName ? "" : "");
-			// Pass a properly typed null instead of `null as any`
-			aliasValue.textContent = buildTeamSlug(teamName, code, null);
+			const slug = buildTeamSlug(teamName, code, null);
+			aliasValue.textContent = slug;
 		};
 		nameInput.addEventListener("input", updateAlias);
 		updateAlias();
@@ -110,19 +111,20 @@ export class AddTeamModal extends Modal {
 		const cancelBtn = btns.createEl("button", { text: "Cancel" });
 		cancelBtn.addEventListener("click", () => this.close());
 		const addBtn = btns.createEl("button", { text: submitLabel });
-		addBtn.addEventListener("click", async () => {
-			const teamName = nameInput.value.trim();
-			const parentPath = selectEl.value;
-			if (!teamName) {
-				new Notice("Please enter a team name.");
-				return;
-			}
-			// Pass a properly typed null instead of `null as any`
-			const slug = buildTeamSlug(teamName, code, null);
-			await this.onSubmit(teamName, parentPath, slug, code, {
-				seedWithSampleData: !!this.options?.seedWithSampleData,
-			});
-			this.close();
+		addBtn.addEventListener("click", () => {
+			void (async () => {
+				const teamName = nameInput.value.trim();
+				const parentPath = selectEl.value;
+				if (!teamName) {
+					new Notice("Please enter a team name.");
+					return;
+				}
+				const slug = buildTeamSlug(teamName, code, null);
+				await this.onSubmit(teamName, parentPath, slug, code, {
+					seedWithSampleData: !!this.options?.seedWithSampleData,
+				});
+				this.close();
+			})();
 		});
 	}
 

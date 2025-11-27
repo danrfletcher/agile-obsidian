@@ -16,7 +16,7 @@ export interface ControlsBarOptions {
 	onMemberChange: (alias: string | null) => void;
 	onSelectTeamsClick: (anchor: HTMLElement) => void;
 	/** New: trigger a full task-index rebuild */
-	onRebuildIndexClick: () => void;
+	onRebuildIndexClick: () => void | Promise<void>;
 
 	/** New: provide current team selection state so we can filter the member dropdown */
 	getSelectedTeamSlugs: () => Set<string>;
@@ -67,21 +67,25 @@ export function renderControlsBar(opts: ControlsBarOptions): ControlsBarRefs {
 	// Rebuild index icon button (moved here: right after version text)
 	const rebuildBtn = controlsContainer.createEl("button", {
 		text: "↻",
-	}) as HTMLButtonElement;
-	rebuildBtn.title = "Rebuild Task Index";
-	rebuildBtn.setAttribute("aria-label", "Rebuild Task Index");
+	});
+	rebuildBtn.title = "Rebuild task index";
+	rebuildBtn.setAttribute("aria-label", "Rebuild task index");
 	rebuildBtn.addEventListener("click", (ev) => {
 		ev.preventDefault();
 		ev.stopPropagation();
-		onRebuildIndexClick();
+		void onRebuildIndexClick();
 	});
 
 	// View selector comes after the rebuild button
 	const viewSelect = controlsContainer.createEl("select");
-	viewSelect.innerHTML = `
-    <option value="projects">🚀 Projects</option>
-    <option value="completed">✅ Completed</option>
-  `;
+	viewSelect.createEl("option", {
+		value: "projects",
+		text: "🚀 projects view",
+	});
+	viewSelect.createEl("option", {
+		value: "completed",
+		text: "✅ completed view",
+	});
 	viewSelect.value = initialView;
 	viewSelect.addEventListener("change", () => {
 		onViewChange(
@@ -105,8 +109,8 @@ export function renderControlsBar(opts: ControlsBarOptions): ControlsBarRefs {
 
 	// Team selection button
 	const selectTeamsBtn = controlsContainer.createEl("button", {
-		text: "Select Teams",
-	}) as HTMLButtonElement;
+		text: "Select teams",
+	});
 	selectTeamsBtn.addEventListener("click", (ev) => {
 		ev.preventDefault();
 		ev.stopPropagation();
@@ -120,9 +124,10 @@ export function renderControlsBar(opts: ControlsBarOptions): ControlsBarRefs {
 	const activeToggleLabel = statusToggleContainer.createEl("span", {
 		text: initialActiveOnly ? "Active" : "Inactive",
 	});
-	const activeToggle = statusToggleContainer.createEl("input", {
-		type: "checkbox",
-	}) as HTMLInputElement;
+	const activeToggle: HTMLInputElement = statusToggleContainer.createEl(
+		"input",
+		{ type: "checkbox" }
+	);
 	activeToggle.checked = initialActiveOnly;
 	statusToggleContainer.style.display =
 		initialView === "projects" ? "inline-flex" : "none";
@@ -152,8 +157,6 @@ export function renderControlsBar(opts: ControlsBarOptions): ControlsBarRefs {
 				implicitAllSelected: getImplicitAllSelected(),
 			}
 		);
-		// Fire onMemberChange if selection actually changed due to filtering, so the controller
-		// can react if needed. We do not auto-fire here to avoid recursion; controller can compare.
 		return applied;
 	};
 

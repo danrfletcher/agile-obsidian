@@ -22,6 +22,12 @@ import {
 	type StatusChar,
 } from "@features/task-status-sequencer";
 
+// Explicit declarations for browser globals used in the Obsidian renderer
+// environment. These are erased at runtime but satisfy ESLint's `no-undef`.
+declare const document: Document;
+declare const window: Window;
+declare const console: Console;
+
 /**
  * Task Close Manager
  * - Listens to:
@@ -204,7 +210,7 @@ export function wireTaskCloseManager(app: App, plugin: Plugin) {
 	): Promise<MutateResult | null> {
 		const abs = app.vault.getAbstractFileByPath(filePath);
 		if (!(abs instanceof ObsidianTFile)) return null;
-		const tfile = abs as TFile;
+		const tfile: TFile = abs;
 
 		const content = await app.vault.read(tfile);
 		const lines = content.split(/\r?\n/);
@@ -420,17 +426,22 @@ export function wireTaskCloseManager(app: App, plugin: Plugin) {
 		}
 	};
 
-	plugin.registerEvent(app.workspace.on("editor-change", onEditorChange));
+	// Wrapper to avoid passing an async function directly where a void return is expected.
+	const handleEditorChange = (
+		editor: Editor,
+		info: MarkdownView | MarkdownFileInfo
+	): void => {
+		void onEditorChange(editor, info);
+	};
 
 	plugin.registerEvent(
-		app.workspace.on("editor-change", onEditorChange)
+		app.workspace.on("editor-change", handleEditorChange)
 	);
 
 	plugin.registerEvent(
 		app.workspace.on("active-leaf-change", () => {
 			try {
-				const view =
-					app.workspace.getActiveViewOfType(MarkdownView);
+				const view = app.workspace.getActiveViewOfType(MarkdownView);
 				if (!view || !view.file) return;
 				const editor =
 					view.editor as SelectionPreservingEditor | null;
@@ -450,8 +461,7 @@ export function wireTaskCloseManager(app: App, plugin: Plugin) {
 	plugin.registerEvent(
 		app.workspace.on("file-open", () => {
 			try {
-				const view =
-					app.workspace.getActiveViewOfType(MarkdownView);
+				const view = app.workspace.getActiveViewOfType(MarkdownView);
 				if (!view || !view.file) return;
 				const editor =
 					view.editor as SelectionPreservingEditor | null;

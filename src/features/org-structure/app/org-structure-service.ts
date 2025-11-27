@@ -1,6 +1,7 @@
-import type { App, EventRef, TAbstractFile, TFile } from "obsidian";
+import type { App, EventRef, TAbstractFile } from "obsidian";
+import { TFile } from "obsidian";
 import type { AgileObsidianSettings } from "src/settings";
-import { hydrateTeamsFromVault, type MutableSettings } from "../domain/org-detection";
+import { hydrateTeamsFromVault } from "../domain/org-detection";
 import type { MemberInfo, TeamInfo } from "../domain/org-types";
 import type {
 	MembersBuckets,
@@ -255,11 +256,25 @@ export function createOrgStructureService(opts: {
 	// Debounced rebuild to coalesce rapid vault events
 	const scheduleRebuild = () => {
 		if (disposed) return;
-		if (rebuildTimer !== null) window.clearTimeout(rebuildTimer);
-		rebuildTimer = window.setTimeout(() => {
+
+		if (
+			rebuildTimer !== null &&
+			typeof globalThis.clearTimeout === "function"
+		) {
+			globalThis.clearTimeout(rebuildTimer);
+		}
+
+		const timeoutId = globalThis.setTimeout?.(() => {
 			rebuildTimer = null;
 			void buildAll();
 		}, 400);
+
+		if (typeof timeoutId === "number") {
+			rebuildTimer = timeoutId;
+		} else if (!timeoutId) {
+			// Fallback: rebuild immediately if timers are unavailable
+			void buildAll();
+		}
 	};
 
 	// Only care about relevant files/folders; skip hidden/system paths
@@ -270,14 +285,22 @@ export function createOrgStructureService(opts: {
 
 		// Ignore Obsidian internals and trash
 		const lower = p.toLowerCase();
-		if (lower.startsWith(".obsidian/") || lower.includes("/.obsidian/"))
+		const configDirLower = app.vault.configDir.toLowerCase();
+
+		if (
+			lower === configDirLower ||
+			lower.startsWith(`${configDirLower}/`) ||
+			lower.includes(`/${configDirLower}/`)
+		) {
 			return false;
+		}
+
 		if (lower.startsWith(".trash/") || lower.includes("/.trash/"))
 			return false;
 
 		// Files: only markdown edits affect member detection; folders affect structure
-		if ((file as TFile).extension !== undefined) {
-			return (file as TFile).extension.toLowerCase() === "md";
+		if (file instanceof TFile) {
+			return file.extension.toLowerCase() === "md";
 		}
 
 		// Folders: relevant (naming/relocation can change org detection)
@@ -287,24 +310,25 @@ export function createOrgStructureService(opts: {
 	async function buildAll() {
 		if (disposed) return;
 		try {
-			await hydrateTeamsFromVault(app.vault, settings as unknown as MutableSettings);
+			await hydrateTeamsFromVault(app.vault, settings);
 			// hydrate mutates settings.teams in memory.
 		} catch (e) {
-			console.warn("[OrgStructureService] buildAll failed:", e);
+			if (globalThis.console?.warn) {
+				globalThis.console.warn(
+					"[OrgStructureService] buildAll failed:",
+					e
+				);
+			}
 		}
 	}
 
 	function getOrgStructure(): OrgStructureResult {
-		const teams = Array.isArray(settings.teams)
-			? (settings.teams as TeamInfo[])
-			: [];
+		const teams = Array.isArray(settings.teams) ? settings.teams : [];
 		return toOrgStructureResult(teams);
 	}
 
 	function getTeamMembersForPath(filePath: string) {
-		const teams = Array.isArray(settings.teams)
-			? (settings.teams as TeamInfo[])
-			: [];
+		const teams = Array.isArray(settings.teams) ? settings.teams : [];
 		const team = resolveTeamForPath(filePath, teams);
 		const members: MemberInfo[] = team?.members ? team.members.slice() : [];
 		const buckets = bucketizeMembers(members);
@@ -312,8 +336,8 @@ export function createOrgStructureService(opts: {
 		const sortedMembers = members
 			.slice()
 			.sort((a: MemberInfo, b: MemberInfo) => {
-				const ca = classifyMember(a),
-					cb = classifyMember(b);
+				const ca = classifyMember(a);
+				const cb = classifyMember(b);
 				if (ca.rank !== cb.rank) return ca.rank - cb.rank;
 				return getDisplayNameFromAlias(a.alias).localeCompare(
 					getDisplayNameFromAlias(b.alias)
@@ -339,8 +363,11 @@ export function createOrgStructureService(opts: {
 
 	function dispose() {
 		disposed = true;
-		if (rebuildTimer !== null) {
-			window.clearTimeout(rebuildTimer);
+		if (
+			rebuildTimer !== null &&
+			typeof globalThis.clearTimeout === "function"
+		) {
+			globalThis.clearTimeout(rebuildTimer);
 			rebuildTimer = null;
 		}
 		for (const ref of eventRefs) app.vault.offref(ref);

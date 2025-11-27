@@ -1,5 +1,5 @@
 import type { SettingsService } from "@settings";
-import type { TeamInfo, MemberInfo } from "@features/org-structure";
+import type { TeamInfo } from "@features/org-structure";
 
 type MemberSelectFilter = {
 	selectedTeamSlugs?: Set<string> | null;
@@ -37,14 +37,14 @@ function computeEntries(
 		? teams
 		: teams.filter((t) => {
 				const slug = (t.slug ?? "").toString().toLowerCase().trim();
-				return slug && selectedSet!.has(slug);
+				return slug && selectedSet?.has(slug);
 		  });
 
 	const entries: Entry[] = [];
 	const seen = new Set<string>();
 
 	for (const t of includedTeams) {
-		for (const m of (t.members || []) as (MemberInfo | string)[]) {
+		for (const m of t.members ?? []) {
 			const aliasRaw =
 				typeof m === "string" ? m : m.alias || m.name || "";
 			const alias = normalizeAlias(aliasRaw);
@@ -52,8 +52,7 @@ function computeEntries(
 			if (seen.has(alias)) continue;
 			seen.add(alias);
 
-			const dispName =
-				(typeof m === "string" ? "" : m.name) || alias;
+			const dispName = (typeof m === "string" ? "" : m.name) || alias;
 
 			const lower = alias.toLowerCase();
 			let role: Entry["role"] = "member";
@@ -63,12 +62,12 @@ function computeEntries(
 
 			const roleLabel =
 				role === "member"
-					? "Team Member"
+					? "Team member"
 					: role === "internal-team-member"
-					? "Internal Team Member"
+					? "Internal team member"
 					: role === "team"
-					? "Internal Team"
-					: "External Delegate";
+					? "Internal team"
+					: "External delegate";
 
 			const label = `${dispName} (${roleLabel} - ${alias})`;
 			entries.push({ alias, name: dispName, role, label });
@@ -104,9 +103,9 @@ function groupAndAppendOptions(select: HTMLSelectElement, entries: Entry[]) {
 		select.appendChild(og);
 	};
 
-	addGroup("Team Members", groupTeamMembers);
-	addGroup("Delegates – Internal Teams", groupDelegatesInternalTeams);
-	addGroup("Delegates – External", groupDelegatesExternal);
+	addGroup("Team members", groupTeamMembers);
+	addGroup("Delegates – internal teams", groupDelegatesInternalTeams);
+	addGroup("Delegates – external", groupDelegatesExternal);
 }
 
 function resolveAppliedAlias(

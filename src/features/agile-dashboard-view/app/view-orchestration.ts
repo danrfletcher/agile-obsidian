@@ -10,7 +10,9 @@ import { WorkspaceLeaf } from "obsidian";
  * Keeps registration self-contained so additional feature registrations
  * can be added the same way in the future.
  */
-export async function registerAgileDashboardView(container: Container) {
+export async function registerAgileDashboardView(
+	container: Container
+): Promise<void> {
 	const { app, plugin } = container;
 
 	plugin.registerView(
@@ -25,24 +27,43 @@ export async function registerAgileDashboardView(container: Container) {
 	);
 
 	// Helper: open or reveal singleton dashboard leaf
-	const openOrRevealDashboard = async () => {
+	const openOrRevealDashboard: () => Promise<void> = async () => {
 		const existing = app.workspace.getLeavesOfType(
 			VIEW_TYPE_AGILE_DASHBOARD
 		);
+
 		if (existing.length > 0) {
 			// Reveal the first existing dashboard leaf
-			app.workspace.revealLeaf(existing[0]);
+			app.workspace
+				.revealLeaf(existing[0])
+				.catch((error: unknown) => {
+					console.warn(
+						"Failed to reveal existing Agile Dashboard leaf",
+						error
+					);
+				});
 			return;
 		}
+
 		// No existing leaf — create one
 		const leaf = app.workspace.getLeaf(true); // create a new leaf only the first time
+
 		await leaf.setViewState({ type: VIEW_TYPE_AGILE_DASHBOARD });
-		app.workspace.revealLeaf(leaf);
+
+		app.workspace
+			.revealLeaf(leaf)
+			.catch((error: unknown) => {
+				console.warn(
+					"Failed to reveal newly created Agile Dashboard leaf",
+					error
+				);
+			});
 	};
 
 	// Ensure any open leaves are detached when the plugin unloads
 	plugin.register(() => {
-		app.workspace.detachLeavesOfType(VIEW_TYPE_AGILE_DASHBOARD);
+		// detachLeavesOfType can be async; explicitly ignore the returned Promise
+		void app.workspace.detachLeavesOfType(VIEW_TYPE_AGILE_DASHBOARD);
 	});
 
 	// Prune duplicates if they somehow exist (keep the first one)
@@ -52,7 +73,8 @@ export async function registerAgileDashboardView(container: Container) {
 			// Keep the first, detach the rest
 			for (let i = 1; i < leaves.length; i++) {
 				try {
-					leaves[i].detach();
+					// detach() can be async; explicitly ignore the returned Promise
+					void leaves[i].detach();
 				} catch (e) {
 					console.warn(
 						"Failed to detach duplicate Agile Dashboard leaf",
@@ -73,9 +95,9 @@ export async function registerAgileDashboardView(container: Container) {
 	// Register a simple command to open the dashboard (can be triggered by a status bar click)
 	plugin.addCommand({
 		id: "agile-open-dashboard",
-		name: "Open Agile Dashboard",
-		callback: async () => {
-			await openOrRevealDashboard();
+		name: "Open agile dashboard",
+		callback: () => {
+			void openOrRevealDashboard();
 		},
 	});
 
@@ -83,9 +105,9 @@ export async function registerAgileDashboardView(container: Container) {
 	try {
 		const ribbonEl = plugin.addRibbonIcon(
 			"list",
-			"Open Agile Dashboard",
-			async () => {
-				await openOrRevealDashboard();
+			"Open agile dashboard",
+			() => {
+				void openOrRevealDashboard();
 			}
 		);
 		// Ensure removal on unload
@@ -99,12 +121,12 @@ export async function registerAgileDashboardView(container: Container) {
 	try {
 		const statusEl = plugin.addStatusBarItem();
 		statusEl.classList.add("agile-dashboard-status");
-		statusEl.setAttribute("title", "Open Agile Dashboard");
+		statusEl.setAttribute("title", "Open agile dashboard");
 		statusEl.textContent = "⚡"; // Simple icon — replace with desired markup
 
 		// Use registerDomEvent so it is cleaned up on unload
-		plugin.registerDomEvent(statusEl, "click", async () => {
-			await openOrRevealDashboard();
+		plugin.registerDomEvent(statusEl, "click", () => {
+			void openOrRevealDashboard();
 		});
 
 		// Also ensure removal on unload

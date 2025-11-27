@@ -217,7 +217,7 @@ function getEditorPositionFromMouseEvent(
 ): EditorPosition | null {
 	// Preferred: Obsidian typed API (available in newer versions)
 	try {
-		const editorWithMouse = editor as EditorWithPosAtMouseEvent;
+		const editorWithMouse: EditorWithPosAtMouseEvent = editor;
 		const pos = editorWithMouse.posAtMouseEvent?.(ev);
 		if (pos && typeof pos.line === "number" && typeof pos.ch === "number") {
 			return pos;
@@ -228,7 +228,7 @@ function getEditorPositionFromMouseEvent(
 
 	// Fallback: CM6 internals (typed via a minimal structural type, no hard dependency)
 	try {
-		const editorWithCm = editor as EditorWithCm6;
+		const editorWithCm: EditorWithCm6 = editor;
 		const cm = editorWithCm.cm;
 		if (!cm || typeof cm.posAtCoords !== "function") return null;
 
@@ -264,13 +264,24 @@ export function wireTemplatingUxShortcutsDomHandlers(
 	plugin: Plugin
 ) {
 	// Resolve content root for the editor
-	const cmHolder = view as MarkdownViewWithCm;
+	const cmHolder: MarkdownViewWithCm = view;
 	const cmContent = cmHolder.editor?.cm?.contentDOM;
-	const contentRoot = (cmContent ??
-		view.containerEl.querySelector(".cm-content")) as HTMLElement | null;
+
+	let contentRoot: HTMLElement | null = null;
+
+	if (cmContent) {
+		contentRoot = cmContent;
+	} else {
+		const el = view.containerEl.querySelector(".cm-content");
+		// Narrow Element -> HTMLElement safely
+		if (el instanceof HTMLElement) {
+			contentRoot = el;
+		}
+	}
+
 	const targetEl: HTMLElement = contentRoot ?? view.containerEl;
 
-	const uxPlugin = plugin as TemplatingUxPlugin;
+	const uxPlugin: TemplatingUxPlugin = plugin;
 
 	// 1) Double-Enter repeat (existing behavior)
 	const onKeyDown = (evt: KeyboardEvent) => {
@@ -294,7 +305,7 @@ export function wireTemplatingUxShortcutsDomHandlers(
 
 	const onContextMenu = (ev: MouseEvent) => {
 		try {
-			const editor = view.editor as Editor;
+			const editor: Editor = view.editor;
 			const pos = getEditorPositionFromMouseEvent(editor, view, ev);
 			lastContextClick = pos ? { ...pos, ts: Date.now() } : null;
 		} catch {
@@ -371,7 +382,7 @@ export function wireTemplatingUxShortcutsDomHandlers(
 
 					menu.addItem((item) => {
 						item.setIcon?.("trash");
-						item.setTitle("Remove Template");
+						item.setTitle("Remove template");
 						item.onClick(() => {
 							try {
 								const { nextLine, nextCh } =
@@ -397,7 +408,7 @@ export function wireTemplatingUxShortcutsDomHandlers(
 									});
 								}
 							} catch (e) {
-								console.error(
+								globalThis.console?.error(
 									"[templating-ux-shortcuts] Remove Template failed",
 									e
 								);

@@ -10,7 +10,6 @@ import {
 	attachDashboardTemplatingHandler as attachGenericTemplatingHandler,
 	type TemplatingPorts,
 	type NoticePort,
-	type TemplateParams, // Editor params type
 } from "@features/templating-params-editor";
 
 import { createPathFileRepository } from "@platform/obsidian";
@@ -91,14 +90,14 @@ export function attachDashboardTemplatingHandler(
 		},
 
 		prefillTemplateParams: (templateId, wrapperEl) =>
-			realPrefillTemplateParams(templateId, wrapperEl) as TemplateParams,
+			realPrefillTemplateParams(templateId, wrapperEl),
 
 		renderTemplateOnly: (templateId, params) =>
 			realRenderTemplateOnly(templateId, params),
 
 		// IMPORTANT: Show schema modal expects the editor's rich (engine) ParamsSchema; pass through directly
-		showSchemaModal: async (templateId, schema, isEdit) => {
-			const result = await realShowSchemaModal(
+		showSchemaModal: async (templateId, schema, isEdit) =>
+			realShowSchemaModal(
 				app,
 				templateId,
 				{
@@ -106,27 +105,38 @@ export function attachDashboardTemplatingHandler(
 					fields: schema.fields?.map((f) => ({ ...f })) ?? [],
 				},
 				isEdit
-			);
-			return result as TemplateParams | undefined;
-		},
+			),
 
 		showJsonModal: (templateId, initialJson) =>
-			realShowJsonModal(app, templateId, initialJson) as Promise<
-				TemplateParams | undefined
-			>,
+			realShowJsonModal(app, templateId, initialJson),
 	};
 
 	// Use platform/obsidian file repository as VaultPort (fileExists optional)
 	const repo = createPathFileRepository(app);
 	const vault = {
-		readFile: repo.readFile,
-		writeFile: repo.writeFile,
+		readFile: (...args: Parameters<typeof repo.readFile>) =>
+			repo.readFile(...args),
+		writeFile: (...args: Parameters<typeof repo.writeFile>) =>
+			repo.writeFile(...args),
+	};
+
+	// Bridge our generic registerDomEvent (Event) to the templating editor's MouseEvent-specific API.
+	const registerDomEventForMouse = (
+		el: HTMLElement | Window | Document,
+		type: string,
+		handler: (evt: MouseEvent) => void,
+		options?: AddEventListenerOptions | boolean
+	): void => {
+		const wrappedHandler = (evt: Event): void => {
+			handler(evt as MouseEvent);
+		};
+		registerDomEvent(el, type, wrappedHandler, options);
 	};
 
 	attachGenericTemplatingHandler({
 		app,
 		viewContainer,
-		registerDomEvent,
+		registerDomEvent: registerDomEventForMouse,
 		deps: {
 			templating,
 			vault,

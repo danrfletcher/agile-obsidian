@@ -23,15 +23,19 @@ export function markChip(opts: {
 		? ` style="${styleParts.join(" ")}"`
 		: "";
 
-	const attrs: string[] = [
-		kind ? `data-kind="${escapeHtml(kind)}"` : "",
-	].filter(Boolean) as string[];
+	const attrs: string[] = [];
+	if (kind) {
+		attrs.push(`data-kind="${escapeHtml(kind)}"`);
+	}
 
 	if (extraAttrs) {
 		for (const [k, v] of Object.entries(extraAttrs)) {
 			if (v === undefined || v === false) continue;
-			if (v === true) attrs.push(`${escapeHtml(k)}`);
-			else attrs.push(`${escapeHtml(k)}="${escapeHtml(String(v))}"`);
+			if (v === true) {
+				attrs.push(`${escapeHtml(k)}`);
+			} else {
+				attrs.push(`${escapeHtml(k)}="${escapeHtml(String(v))}"`);
+			}
 		}
 	}
 
@@ -53,10 +57,10 @@ export function listLine(inner: string, indent = 0): string {
 
 // Helper to convert camelCase/PascalCase/space/underscore to kebab-case
 function toKebabCase(input: string): string {
-  return input
-    .replace(/([a-z0-9])([A-Z])/g, "$1-$2") // camelCase -> camel-Case
-    .replace(/[_\s]+/g, "-")                // spaces/underscores -> -
-    .toLowerCase();
+	return input
+		.replace(/([a-z0-9])([A-Z])/g, "$1-$2") // camelCase -> camel-Case
+		.replace(/[_\s]+/g, "-") // spaces/underscores -> -
+		.toLowerCase();
 }
 
 /**
@@ -65,32 +69,32 @@ function toKebabCase(input: string): string {
  * data-{kebab-cased-key}="{escaped value}" on the wrapper span.
  */
 export function wrapTemplate(
-  templateKey: string,
-  innerHtml: string,
-  props?: Record<string, unknown>
+	templateKey: string,
+	innerHtml: string,
+	props?: Record<string, unknown>
 ): string {
-  const instanceId = makeInstanceId();
+	const instanceId = makeInstanceId();
 
-  const dataAttrs =
-    props && typeof props === "object"
-      ? Object.entries(props)
-          .filter(([_, v]) => v != null) 
-          .map(([k, v]) => {
-            const kebabKey = toKebabCase(k);
-            const value =
-              typeof v === "string"
-                ? v
-                : typeof v === "number" || typeof v === "boolean"
-                ? String(v)
-                : JSON.stringify(v);
-            return ` data-${kebabKey}="${escapeHtml(value)}"`;
-          })
-          .join("")
-      : "";
+	const dataAttrs =
+		props && typeof props === "object"
+			? Object.entries(props)
+					.filter(([, v]) => v != null)
+					.map(([k, v]) => {
+						const kebabKey = toKebabCase(k);
+						const value =
+							typeof v === "string"
+								? v
+								: typeof v === "number" || typeof v === "boolean"
+								? String(v)
+								: JSON.stringify(v);
+						return ` data-${kebabKey}="${escapeHtml(value)}"`;
+					})
+					.join("")
+			: "";
 
-  return `<span data-template-wrapper="${instanceId}" data-template-key="${escapeHtml(
-    templateKey
-  )}"${dataAttrs}>${innerHtml}</span>`;
+	return `<span data-template-wrapper="${instanceId}" data-template-key="${escapeHtml(
+		templateKey
+	)}"${dataAttrs}>${innerHtml}</span>`;
 }
 
 export function makeInstanceId(): string {

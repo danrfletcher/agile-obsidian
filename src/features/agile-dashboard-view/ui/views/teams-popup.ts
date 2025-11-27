@@ -3,6 +3,7 @@ import type {
 	OrganizationNode,
 	TeamNode,
 } from "@features/org-structure";
+import { setCssProps } from "../utils/css";
 
 /**
  * Context/state/accessors needed to render the Teams popup.
@@ -30,7 +31,7 @@ export interface TeamsPopupContext {
 /**
  * Render the entire content of the Teams popup into root.
  */
-export function renderTeamsPopupContent(ctx: TeamsPopupContext) {
+export function renderTeamsPopupContent(ctx: TeamsPopupContext): void {
 	const root = ctx.root;
 	root.innerHTML = "";
 
@@ -39,12 +40,14 @@ export function renderTeamsPopupContent(ctx: TeamsPopupContext) {
 			style: "display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px;",
 		},
 	});
-	header.createEl("strong", { text: "Select Teams" });
+	header.createEl("strong", { text: "Select teams" });
 	const help = header.createEl("span", {
-		text: "Choose organizations/teams to show in the dashboard",
+		text: "Choose organizations and teams to show in the dashboard",
 	});
-	help.style.opacity = "0.7";
-	help.style.fontSize = "12px";
+	setCssProps(help, {
+		opacity: "0.7",
+		fontSize: "12px",
+	});
 
 	if (!ctx.orgStructurePort) {
 		root.createEl("em", { text: "Organization data unavailable." });
@@ -87,9 +90,11 @@ export function renderTeamsPopupContent(ctx: TeamsPopupContext) {
 			"Organizations",
 			() => {
 				const wrapper = document.createElement("div");
-				wrapper.style.display = "flex";
-				wrapper.style.flexDirection = "column";
-				wrapper.style.gap = "6px";
+				setCssProps(wrapper, {
+					display: "flex",
+					flexDirection: "column",
+					gap: "6px",
+				});
 
 				for (const org of filteredOrgs) {
 					const orgEl = renderOrganizationEntryFiltered(
@@ -111,15 +116,19 @@ export function renderTeamsPopupContent(ctx: TeamsPopupContext) {
 			"Teams",
 			() => {
 				const wrapper = document.createElement("div");
-				wrapper.style.display = "flex";
-				wrapper.style.flexDirection = "column";
-				wrapper.style.gap = "6px";
+				setCssProps(wrapper, {
+					display: "flex",
+					flexDirection: "column",
+					gap: "6px",
+				});
 
 				for (const t of independents) {
 					const row = document.createElement("div");
-					row.style.display = "flex";
-					row.style.alignItems = "center";
-					row.style.gap = "6px";
+					setCssProps(row, {
+						display: "flex",
+						alignItems: "center",
+						gap: "6px",
+					});
 
 					const cb = document.createElement("input");
 					cb.type = "checkbox";
@@ -137,7 +146,7 @@ export function renderTeamsPopupContent(ctx: TeamsPopupContext) {
 					const label = document.createElement("label");
 					const name = extractPossibleName(t);
 					label.textContent = `${name} (${extractPossibleSlug(t)})`;
-					label.style.cursor = "pointer";
+					setCssProps(label, { cursor: "pointer" });
 					label.addEventListener("click", () => cb.click());
 
 					row.appendChild(cb);
@@ -157,7 +166,7 @@ function renderAccordion(
 	title: string,
 	contentBuilder: () => HTMLElement,
 	defaultOpen = false
-) {
+): void {
 	const section = parent.createEl("div", {
 		attr: {
 			style: "border-top:1px solid var(--background-modifier-border); padding-top:8px; margin-top:8px;",
@@ -176,12 +185,14 @@ function renderAccordion(
 	});
 
 	const content = contentBuilder();
-	content.style.display = defaultOpen ? "block" : "none";
+	setCssProps(content, {
+		display: defaultOpen ? "block" : "none",
+	});
 	section.appendChild(content);
 
 	hdr.addEventListener("click", () => {
 		const open = content.style.display !== "none";
-		content.style.display = open ? "none" : "block";
+		setCssProps(content, { display: open ? "none" : "block" });
 		chev.textContent = open ? "▸" : "▾";
 	});
 }
@@ -198,14 +209,18 @@ function renderOrganizationEntryFiltered(
 	}
 
 	const container = document.createElement("div");
-	container.style.display = "flex";
-	container.style.flexDirection = "column";
-	container.style.gap = "4px";
+	setCssProps(container, {
+		display: "flex",
+		flexDirection: "column",
+		gap: "4px",
+	});
 
 	const row = document.createElement("div");
-	row.style.display = "flex";
-	row.style.alignItems = "center";
-	row.style.gap = "6px";
+	setCssProps(row, {
+		display: "flex",
+		alignItems: "center",
+		gap: "6px",
+	});
 
 	const cb = document.createElement("input");
 	cb.type = "checkbox";
@@ -226,16 +241,18 @@ function renderOrganizationEntryFiltered(
 	label.textContent = `${extractPossibleName(org)} (${extractPossibleSlug(
 		org
 	)})`;
-	label.style.cursor = "pointer";
+	setCssProps(label, { cursor: "pointer" });
 	label.addEventListener("click", () => cb.click());
 
 	const expandBtn = document.createElement("button");
 	expandBtn.type = "button";
 	expandBtn.textContent = "▸";
-	expandBtn.style.border = "none";
-	expandBtn.style.background = "none";
-	expandBtn.style.cursor = "pointer";
-	expandBtn.style.fontSize = "12px";
+	setCssProps(expandBtn, {
+		border: "none",
+		background: "none",
+		cursor: "pointer",
+		fontSize: "12px",
+	});
 	expandBtn.title = "Show teams";
 
 	row.appendChild(cb);
@@ -243,13 +260,15 @@ function renderOrganizationEntryFiltered(
 	row.appendChild(expandBtn);
 
 	const nested = document.createElement("div");
-	nested.style.display = "none";
-	nested.style.marginLeft = "18px";
-	nested.style.marginTop = "4px";
+	setCssProps(nested, {
+		display: "none",
+		marginLeft: "18px",
+		marginTop: "4px",
+	});
 
 	expandBtn.addEventListener("click", () => {
 		const open = nested.style.display !== "none";
-		nested.style.display = open ? "none" : "block";
+		setCssProps(nested, { display: open ? "none" : "block" });
 		expandBtn.textContent = open ? "▸" : "▾";
 	});
 
@@ -277,15 +296,19 @@ function renderTeamNodeEntryFiltered(
 	const visibleSlugsHere = allSlugsHere.filter(isAllowed);
 
 	const wrapper = document.createElement("div");
-	wrapper.style.display = "flex";
-	wrapper.style.flexDirection = "column";
-	wrapper.style.gap = "4px";
+	setCssProps(wrapper, {
+		display: "flex",
+		flexDirection: "column",
+		gap: "4px",
+	});
 
 	const row = document.createElement("div");
-	row.style.display = "flex";
-	row.style.alignItems = "center";
-	row.style.gap = "6px";
-	row.style.paddingLeft = `${Math.min(24, level * 12)}px`;
+	setCssProps(row, {
+		display: "flex",
+		alignItems: "center",
+		gap: "6px",
+		paddingLeft: `${Math.min(24, level * 12)}px`,
+	});
 
 	const cb = document.createElement("input");
 	cb.type = "checkbox";
@@ -306,7 +329,7 @@ function renderTeamNodeEntryFiltered(
 	label.textContent = `${extractPossibleName(node)} (${extractPossibleSlug(
 		node
 	)})`;
-	label.style.cursor = "pointer";
+	setCssProps(label, { cursor: "pointer" });
 	label.addEventListener("click", () => cb.click());
 
 	row.appendChild(cb);
@@ -317,21 +340,27 @@ function renderTeamNodeEntryFiltered(
 		const expandBtn = document.createElement("button");
 		expandBtn.type = "button";
 		expandBtn.textContent = "▸";
-		expandBtn.style.border = "none";
-		expandBtn.style.background = "none";
-		expandBtn.style.cursor = "pointer";
-		expandBtn.style.fontSize = "12px";
+		setCssProps(expandBtn, {
+			border: "none",
+			background: "none",
+			cursor: "pointer",
+			fontSize: "12px",
+		});
 		expandBtn.title = "Show subteams";
 		row.appendChild(expandBtn);
 
 		nestedChildren = document.createElement("div");
-		nestedChildren.style.display = "none";
-		nestedChildren.style.marginLeft = "18px";
-		nestedChildren.style.marginTop = "4px";
+		setCssProps(nestedChildren, {
+			display: "none",
+			marginLeft: "18px",
+			marginTop: "4px",
+		});
 
 		expandBtn.addEventListener("click", () => {
 			const open = nestedChildren!.style.display !== "none";
-			nestedChildren!.style.display = open ? "none" : "block";
+			setCssProps(nestedChildren!, {
+				display: open ? "none" : "block",
+			});
 			expandBtn.textContent = open ? "▸" : "▾";
 		});
 	}
@@ -401,11 +430,10 @@ function extractPossibleSlug(obj: unknown): string {
 		anyObj.id ??
 		anyObj.key ??
 		anyObj.code;
-	return typeof cand === "string"
-		? cand.toLowerCase().trim()
-		: String(cand || "")
-			.toLowerCase()
-			.trim();
+	if (typeof cand === "string" || typeof cand === "number") {
+		return String(cand).toLowerCase().trim();
+	}
+	return "";
 }
 
 function extractPossibleName(obj: unknown): string {

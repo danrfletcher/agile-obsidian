@@ -30,6 +30,35 @@ function preserveInstanceIdInHtml(
 	);
 }
 
+function toDisplayString(value: unknown): string {
+	if (value == null) return "";
+	if (typeof value === "string") return value;
+	if (
+		typeof value === "number" ||
+		typeof value === "boolean" ||
+		typeof value === "bigint"
+	) {
+		return String(value);
+	}
+	if (typeof value === "symbol") {
+		return value.toString();
+	}
+	if (value instanceof Date) {
+		return value.toISOString();
+	}
+	if (typeof value === "object") {
+		try {
+			return JSON.stringify(value);
+		} catch {
+			return "[object]";
+		}
+	}
+	if (typeof value === "function") {
+		return value.name || "[function]";
+	}
+	return "";
+}
+
 /**
  * Attempt to normalize a prefilled dropdown value to an option value so the select
  * can preselect correctly. Useful when existing content stores "USD" but options store "$".
@@ -38,9 +67,11 @@ function normalizeDropdownPrefillToOptionValue(
 	prefillVal: unknown,
 	options?: Array<{ label: string; value: string }>
 ): string | undefined {
-	if (!options || options.length === 0)
-		return prefillVal as string | undefined;
-	const raw = prefillVal == null ? "" : String(prefillVal).trim();
+	const raw = toDisplayString(prefillVal).trim();
+
+	if (!options || options.length === 0) {
+		return raw || undefined;
+	}
 	if (!raw) return undefined;
 
 	// 1) Exact match by value
@@ -58,6 +89,19 @@ function normalizeDropdownPrefillToOptionValue(
 
 	// 3) Fallback: return the raw string (the select will not preselect)
 	return raw;
+}
+
+function replaceWrapperWithHtml(
+	wrapperEl: HTMLElement,
+	newHtml: string
+): void {
+	const doc = wrapperEl.ownerDocument;
+	if (!doc) return;
+
+	const range = doc.createRange();
+	range.selectNode(wrapperEl);
+	const fragment = range.createContextualFragment(newHtml);
+	wrapperEl.replaceWith(fragment);
 }
 
 /**
@@ -97,7 +141,8 @@ export async function editTemplateParamsOnDashboard(
 			...def.paramsSchema,
 			fields: def.paramsSchema.fields.map((f) => {
 				const pre = prefill[f.name];
-				let nextDefault = pre != null ? String(pre) : f.defaultValue;
+				let nextDefault =
+					pre != null ? toDisplayString(pre) : f.defaultValue;
 
 				if (
 					String(f.type) === "dropdown" &&
@@ -140,9 +185,9 @@ export async function editTemplateParamsOnDashboard(
 	let newHtml = templating.renderTemplateOnly(templateKey, cleanParams);
 	newHtml = preserveInstanceIdInHtml(newHtml, instanceId);
 
-	// Optimistic UI update
+	// Optimistic UI update (avoid outerHTML to satisfy no-inner-html rule)
 	try {
-		wrapperEl.outerHTML = newHtml;
+		replaceWrapperWithHtml(wrapperEl, newHtml);
 	} catch {
 		// ignore
 	}

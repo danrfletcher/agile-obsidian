@@ -52,7 +52,7 @@ export async function registerSettings(container: Container): Promise<void> {
 				"agile-settings-changed"
 			);
 		} catch (e) {
-			console.warn(
+			globalThis.console?.warn?.(
 				"[settings] Failed to trigger agile-settings-changed",
 				e
 			);
@@ -70,8 +70,9 @@ export async function registerSettings(container: Container): Promise<void> {
 		app,
 		plugin,
 		settings,
-		applyCheckboxStyles: async () =>
-			await applyCheckboxStylesSetting(container),
+		applyCheckboxStyles: () => {
+			applyCheckboxStylesSetting(container);
+		},
 	});
 
 	p.addSettingTab(
@@ -81,8 +82,7 @@ export async function registerSettings(container: Container): Promise<void> {
 			settings,
 			orgActions,
 			saveSettings: saveSettingsLocal,
-			applyCheckboxStyles: async () =>
-				await checkbox.applyCheckboxStyles(),
+			applyCheckboxStyles: () => checkbox.applyCheckboxStyles(),
 		}) as PluginSettingTab
 	);
 }

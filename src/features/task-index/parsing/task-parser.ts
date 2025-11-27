@@ -191,7 +191,7 @@ function parseLineText(line: string): {
 	const rawStatus = match ? match[1] : undefined;
 	const isTask = rawStatus !== undefined;
 
-	const blockIdMatch = rawText.match(/\s*\^([A-Za-z0-9\-]+)$/);
+	const blockIdMatch = rawText.match(/\s*\^([A-Za-z0-9-]+)$/);
 	const text = blockIdMatch
 		? rawText.slice(0, blockIdMatch.index).trim()
 		: rawText;
@@ -230,5 +230,3 @@ function assignUniqueIds(items: TaskItem[], filePath: string) {
 	};
 	items.forEach((it) => recurse(it, null));
 }
-
-

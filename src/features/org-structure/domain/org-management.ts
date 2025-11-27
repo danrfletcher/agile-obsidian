@@ -15,7 +15,7 @@ import {
 	joinPath,
 	safeRename,
 } from "@platform/obsidian";
-import { TeamInfo } from "./org-types";
+import type { TeamInfo } from "./org-types";
 import { slugifyName, TEAM_CODE_RE } from "@shared/identity";
 import {
 	NEW_TEAM_BLUEPRINT,
@@ -313,7 +313,7 @@ export async function createSubteams(
 	const parsed = parseTeamFolderName(parentFolderName);
 	if (!parsed) throw new Error("Parent team folder has no slug.");
 	const slug = parsed.slug;
-	const code = getBaseCodeFromSlug(slug) as string;
+	const code = getBaseCodeFromSlug(slug);
 	if (!code) throw new Error("Parent team folder has no code.");
 	const orgName = parsed.name;
 
@@ -417,7 +417,7 @@ async function materializeBlueprint(params: {
 		parentRenameEnabled: boolean
 	) {
 		// Inherit rename flag down the tree; default to true
-		const selfRenameEnabled = (node as BlueprintNode & { renameWithSlug?: boolean }).renameWithSlug ?? true;
+		const selfRenameEnabled = node.renameWithSlug ?? true;
 		const effectiveRename = parentRenameEnabled && selfRenameEnabled;
 
 		if (node.type === "folder") {
@@ -465,22 +465,37 @@ async function materializeBlueprint(params: {
 			let fileName = node.name;
 
 			if (effectiveRename) {
-				// If inside Initiatives, use specific builders for known stems
 				const stemSlugLower = stem.trim().toLowerCase();
-				const isKnownInitiativesStem =
-					ancestorInitiatives &&
-					(stemSlugLower === "completed" ||
-						stemSlugLower === "initiatives" ||
-						stemSlugLower === "priorities");
 
-				if (isKnownInitiativesStem) {
-					fileName = buildResourceFileName(
-						stemSlugLower as "completed" | "initiatives" | "priorities",
-						code,
-						pathId
-					);
+				if (ancestorInitiatives) {
+					if (stemSlugLower === "completed") {
+						fileName = buildResourceFileName(
+							"completed",
+							code,
+							pathId
+						);
+					} else if (stemSlugLower === "initiatives") {
+						fileName = buildResourceFileName(
+							"initiatives",
+							code,
+							pathId
+						);
+					} else if (stemSlugLower === "priorities") {
+						fileName = buildResourceFileName(
+							"priorities",
+							code,
+							pathId
+						);
+					} else {
+						// Generic rename inside Initiatives subtree
+						const genericSlug =
+							slugifyName(stem) +
+							(pathId ? `-${pathId}` : "") +
+							`-${code}`;
+						fileName = `${stem} (${genericSlug}).md`;
+					}
 				} else {
-					// Generic: "<Stem> (<slugified-stem>[-<pathId>]-<code>).md"
+					// Generic rename outside Initiatives
 					const genericSlug =
 						slugifyName(stem) +
 						(pathId ? `-${pathId}` : "") +

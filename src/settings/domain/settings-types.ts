@@ -21,6 +21,12 @@ export interface AgileObsidianSettings {
 	uiFoldAgileDashboard: boolean;
 
 	/**
+	 * UI fold state for Styles section (persisted).
+	 * Default: true (minimized)
+	 */
+	uiFoldStyles: boolean;
+
+	/**
 	 * UI fold state for UX Shortcuts section (persisted).
 	 * Default: true (minimized)
 	 */

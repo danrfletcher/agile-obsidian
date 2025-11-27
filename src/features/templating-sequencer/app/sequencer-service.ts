@@ -99,6 +99,50 @@ export function getCurrentParamsFromWrapper(
 	}
 }
 
+// Safely coerce known primitive values to strings for UI/schema usage.
+// Avoids accidentally stringifying objects as "[object Object]".
+function toSafeString(value: unknown): string | undefined {
+	if (value == null) {
+		return undefined;
+	}
+
+	if (typeof value === "string") {
+		return value;
+	}
+
+	if (
+		typeof value === "number" ||
+		typeof value === "boolean" ||
+		typeof value === "bigint"
+	) {
+		return String(value);
+	}
+
+	// For objects/functions/symbols we don't attempt coercion here.
+	return undefined;
+}
+
+// Determine whether a required field value should be treated as "missing".
+function isMissingRequiredParamValue(value: unknown): boolean {
+	const str = toSafeString(value);
+	if (str == null) {
+		return true;
+	}
+	return str.trim().length === 0;
+}
+
+/**
+ * Narrow to fields that actually carry a `defaultValue` property.
+ *
+ * Using `in` avoids `no-unsafe-return`, and requiring `defaultValue`
+ * in the narrowed type sidesteps `no-redundant-type-constituents`.
+ */
+function hasDefaultValue(
+	field: ModalSchemaField
+): field is ModalSchemaField & { defaultValue: unknown } {
+	return typeof field === "object" && field !== null && "defaultValue" in field;
+}
+
 /**
  * Produce a filtered schema that contains only fields missing on "candidate" params,
  * to be used by the "Additional Properties" modal.
@@ -128,9 +172,8 @@ function makeMissingOnlySchema(
 		const name = String(f.name ?? "").trim();
 		if (!name) return false;
 
-		const v = candidate[name];
-		const str = v == null ? "" : String(v).trim();
-		return str.length === 0; // missing or empty -> needs collection (only for required)
+		const value = candidate[name];
+		return isMissingRequiredParamValue(value);
 	});
 
 	if (missingFields.length === 0) return undefined;
@@ -159,7 +202,8 @@ function getSchemaFieldNames(def: TemplateWithSchema | undefined): string[] {
 }
 
 function normalizeString(v: unknown): string {
-	return v == null ? "" : String(v).trim();
+	const str = toSafeString(v);
+	return typeof str === "string" ? str.trim() : "";
 }
 
 function computeAutoMappedParams(
@@ -273,15 +317,18 @@ export async function executeSequenceMove(args: {
 			targetTemplate,
 			{
 				...missingSchema,
-				fields: missingSchema.fields.map((f) => ({
-					...f,
-					defaultValue:
-						f.name && finalParams[f.name] != null
-							? String(finalParams[f.name])
-							: f.defaultValue != null
-							? String(f.defaultValue)
-							: undefined,
-				})),
+				fields: missingSchema.fields.map((f) => {
+					const fromFinal =
+						f.name != null ? toSafeString(finalParams[f.name]) : undefined;
+					const fromDefault = hasDefaultValue(f)
+						? toSafeString(f.defaultValue)
+						: undefined;
+
+					return {
+						...f,
+						defaultValue: fromFinal ?? fromDefault,
+					};
+				}),
 			},
 			false
 		);
@@ -538,15 +585,18 @@ export async function executeSequenceMoveOnFile(args: {
 			targetTemplate,
 			{
 				...missingSchema,
-				fields: missingSchema.fields.map((f) => ({
-					...f,
-					defaultValue:
-						f.name && finalParams[f.name] != null
-							? String(finalParams[f.name])
-							: f.defaultValue != null
-							? String(f.defaultValue)
-							: undefined,
-				})),
+				fields: missingSchema.fields.map((f) => {
+					const fromFinal =
+						f.name != null ? toSafeString(finalParams[f.name]) : undefined;
+					const fromDefault = hasDefaultValue(f)
+						? toSafeString(f.defaultValue)
+						: undefined;
+
+					return {
+						...f,
+						defaultValue: fromFinal ?? fromDefault,
+					};
+				}),
 			},
 			false
 		);

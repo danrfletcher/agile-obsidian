@@ -55,13 +55,13 @@ export function attachDashboardTemplatingHandler(
 
 	const onDblClick = async (evt: MouseEvent) => {
 		try {
-			const target = evt.target as HTMLElement | null;
-			if (!target) return;
+			const target = evt.target;
+			if (!(target instanceof HTMLElement)) return;
 
 			const wrapper = target.closest(
 				"span[data-template-wrapper][data-template-key]"
-			) as HTMLElement | null;
-			if (!wrapper) return;
+			);
+			if (!wrapper || !(wrapper instanceof HTMLElement)) return;
 
 			const templateKey = wrapper.getAttribute("data-template-key") || "";
 			if (!templateKey) return;
@@ -78,9 +78,7 @@ export function attachDashboardTemplatingHandler(
 			// @ts-ignore
 			evt.stopImmediatePropagation?.();
 
-			const li = wrapper.closest(
-				"li[data-file-path]"
-			) as HTMLElement | null;
+			const li = wrapper.closest("li[data-file-path]");
 			const filePath = li?.getAttribute("data-file-path") || "";
 			if (!filePath) return;
 
@@ -114,7 +112,14 @@ export function attachDashboardTemplatingHandler(
 		}
 	};
 
-	// Listen on double click instead of single click
-	registerDomEvent(viewContainer, "dblclick", onDblClick, { capture: true });
+	// Listen on double click instead of single click; wrap async handler to satisfy no-misused-promises
+	registerDomEvent(
+		viewContainer,
+		"dblclick",
+		(evt: MouseEvent) => {
+			void onDblClick(evt);
+		},
+		{ capture: true }
+	);
 	return () => {};
 }

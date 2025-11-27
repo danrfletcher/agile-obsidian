@@ -8,9 +8,7 @@ import {
 	getAgileArtifactType,
 } from "@features/task-filter";
 import { isRelevantToday } from "@features/task-date-manager";
-import {
-	buildPrunedMergedTrees,
-} from "@features/task-tree-builder";
+import { buildPrunedMergedTrees } from "@features/task-tree-builder";
 import { isShownByParams } from "../utils/filters";
 import { attachSectionFolding } from "@features/task-tree-fold";
 
@@ -45,7 +43,7 @@ export function processAndRenderPriorities(
 	childrenMap: Map<string, TaskItem[]>,
 	taskParams: TaskParams,
 	registerDomEvent?: RegisterDomEvent
-) {
+): void {
 	const { inProgress, completed, sleeping, cancelled } = taskParams;
 	void inProgress;
 	void completed;
@@ -134,24 +132,18 @@ export function processAndRenderPriorities(
 	}
 
 	// 6) Clip/anchor the merged result at the original priority roots.
-	//    We traverse the merged trees, and any node whose _uniqueId is in priorityRootIds
-	//    becomes a root of a priority tree. We dedupe by _uniqueId and preserve the
-	//    original priorityRoots order where possible.
 	const rootsById = new Map<string, TaskItem>();
 
 	const collectPriorityRootSubtrees = (node: TaskItem) => {
 		const id = node._uniqueId ?? "";
 		const isPriorityRoot = id && priorityRootIds.has(id);
 		if (isPriorityRoot) {
-			// Only keep first occurrence for each root to avoid duplicates.
 			if (!rootsById.has(id)) {
-				// Clone shallowly; children are already pruned/merged.
 				rootsById.set(id, {
 					...node,
 					children: node.children ? [...node.children] : [],
 				});
 			}
-			// Do not descend further from a root: its subtree is already captured.
 			return;
 		}
 		for (const child of node.children || []) {
@@ -163,7 +155,6 @@ export function processAndRenderPriorities(
 		collectPriorityRootSubtrees(tree);
 	}
 
-	// Order the final priority trees according to the original priorityRoots order.
 	const orderedPriorityTrees: TaskItem[] = [];
 	for (const root of priorityRoots) {
 		const id = root._uniqueId ?? "";
@@ -185,7 +176,7 @@ export function processAndRenderPriorities(
 	});
 
 	// Heading
-	sectionRoot.createEl("h2", { text: "📂 Priorities" });
+	sectionRoot.createEl("h2", { text: "📂 priorities overview" });
 
 	// Render pruned priority trees
 	renderTaskTree(
@@ -217,15 +208,15 @@ export function processAndRenderPriorities(
 	try {
 		const restamp = (rootEl: HTMLElement, value: string) => {
 			const uls = Array.from(
-				rootEl.querySelectorAll(
+				rootEl.querySelectorAll<HTMLElement>(
 					"ul.agile-dashboard.contains-task-list"
 				)
-			) as HTMLElement[];
+			);
 			uls.forEach((ul) => ul.setAttribute("data-section", value));
 
 			const lis = Array.from(
-				rootEl.querySelectorAll("li.task-list-item")
-			) as HTMLElement[];
+				rootEl.querySelectorAll<HTMLElement>("li.task-list-item")
+			);
 			lis.forEach((li) => li.setAttribute("data-section", value));
 		};
 		restamp(sectionRoot, "priorities");

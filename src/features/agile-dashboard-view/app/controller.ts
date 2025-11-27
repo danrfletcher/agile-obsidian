@@ -14,13 +14,14 @@ import type { DashboardState } from "../domain/view-state";
 import { captureScroll, restoreScroll } from "../ui/utils/scroll";
 import {
 	renderTeamsPopupContent,
-	TeamsPopupContext,
+	type TeamsPopupContext,
 } from "../ui/views/teams-popup";
 import { renderProjectView } from "../ui/views/project-view";
 import { refreshForFile } from "./refresh-service";
 
 // NEW: generalized custom-view sequencer handler
 import { attachCustomViewTemplatingSequencerHandler } from "@features/templating-sequencer";
+import { setCssProps } from "../ui/utils/css";
 
 type RegisterFn = (fn: () => void) => void;
 type RegisterEventFn = (evt: EventRef) => void;
@@ -68,7 +69,7 @@ export class DashboardController {
 		};
 	}
 
-	mount() {
+	mount(): void {
 		const container = this.getViewContainer();
 		container.empty();
 
@@ -86,16 +87,16 @@ export class DashboardController {
 				this.teamSelection.getImplicitAllSelected(),
 			onViewChange: (v) => {
 				this.state.selectedView = v;
-				this.updateView();
+				void this.updateView();
 			},
 			onActiveToggleChange: (active) => {
 				this.state.activeOnly = active;
-				this.updateView();
+				void this.updateView();
 			},
 			onMemberChange: (alias) => {
 				// Note: Do NOT restrict teams based on selected member anymore.
 				this.state.selectedAlias = alias;
-				this.updateView();
+				void this.updateView();
 				if (this.teamsPopupEl) this.renderTeamsPopup();
 			},
 			onSelectTeamsClick: (anchor) => this.toggleTeamsPopup(anchor),
@@ -105,7 +106,10 @@ export class DashboardController {
 					await this.deps.taskIndexService.buildAll();
 					new Notice("Task index rebuilt.", 2000);
 				} catch (e) {
-					console.error("[agile-dashboard] Rebuild index failed", e);
+					console.error(
+						"[agile-dashboard] Rebuild index failed",
+						e
+					);
 					new Notice(
 						"Failed to rebuild task index. See console for details.",
 						4000
@@ -178,14 +182,20 @@ export class DashboardController {
 		});
 	}
 
-	unmount() {
+	unmount(): void {
 		this.closeTeamsPopup();
 		if (this.outsideClickHandler) {
 			try {
-				window.removeEventListener("click", this.outsideClickHandler, {
-					capture: true,
-				});
-			} catch {}
+				window.removeEventListener(
+					"click",
+					this.outsideClickHandler,
+					{
+						capture: true,
+					}
+				);
+			} catch {
+				/* ignore */
+			}
 			this.outsideClickHandler = null;
 		}
 	}
@@ -196,39 +206,42 @@ export class DashboardController {
 	}
 
 	private getOrCreateContentContainer(parent: HTMLElement): HTMLElement {
-		const existing = parent.querySelector(
-			".content-container"
-		) as HTMLElement | null;
-		return existing ?? parent.createEl("div", { cls: "content-container" });
+		const existing =
+			parent.querySelector<HTMLElement>(".content-container");
+		return (
+			existing ?? parent.createEl("div", { cls: "content-container" })
+		);
 	}
 
-	async updateView() {
-		const parent = this.getViewContainer();
-		const scroll = captureScroll(parent);
+async updateView(): Promise<void> {
+	const parent = this.getViewContainer();
+	const scroll = captureScroll(parent);
 
-		const content = this.getOrCreateContentContainer(parent);
-		content.empty();
+	const content = this.getOrCreateContentContainer(parent);
+	content.empty();
 
-		if (this.state.selectedView === "projects") {
-			await renderProjectView({
-				app: this.deps.app,
-				container: content,
-				taskIndexService: this.deps.taskIndexService,
-				settingsService: this.deps.settingsService,
-				teamSelection: this.teamSelection,
-				statusActive: this.state.activeOnly,
-				selectedAlias: this.state.selectedAlias,
-				registerDomEvent: this.deps.registerDomEvent,
-			});
-		} else {
-			content.createEl("h2", { text: "✅ Completed (Coming Soon)" });
-		}
-
-		restoreScroll(parent, scroll);
+	if (this.state.selectedView === "projects") {
+		await renderProjectView({
+			app: this.deps.app,
+			container: content,
+			taskIndexService: this.deps.taskIndexService,
+			settingsService: this.deps.settingsService,
+			teamSelection: this.teamSelection,
+			statusActive: this.state.activeOnly,
+			selectedAlias: this.state.selectedAlias,
+			registerDomEvent: this.deps.registerDomEvent,
+		});
+	} else {
+		content.createEl("h2", {
+			text: "✅ completed (coming soon)",
+		});
 	}
+
+	restoreScroll(parent, scroll);
+}
 
 	// Teams popup
-	private toggleTeamsPopup(anchor: HTMLElement) {
+	private toggleTeamsPopup(anchor: HTMLElement): void {
 		if (this.teamsPopupEl) {
 			this.closeTeamsPopup();
 			return;
@@ -236,38 +249,44 @@ export class DashboardController {
 		this.openTeamsPopup(anchor);
 	}
 
-	private openTeamsPopup(anchor: HTMLElement) {
+	private openTeamsPopup(anchor: HTMLElement): void {
 		this.closeTeamsPopup();
 		const popup = document.createElement("div");
 		this.teamsPopupEl = popup;
 		popup.classList.add("agile-teams-popup");
-		popup.style.position = "absolute";
-		popup.style.right = "0";
-		popup.style.top = "calc(100% + 8px)";
-		popup.style.zIndex = "9999";
-		popup.style.minWidth = "320px";
-		popup.style.maxWidth = "520px";
-		popup.style.maxHeight = "60vh";
-		popup.style.overflow = "auto";
-		popup.style.padding = "10px";
-		popup.style.border = "1px solid var(--background-modifier-border)";
-		popup.style.borderRadius = "8px";
-		popup.style.background = "var(--background-primary)";
-		popup.style.boxShadow = "0 6px 24px rgba(0,0,0,0.2)";
+
+		setCssProps(popup, {
+			position: "absolute",
+			right: "0",
+			top: "calc(100% + 8px)",
+			zIndex: "9999",
+			minWidth: "320px",
+			maxWidth: "520px",
+			maxHeight: "60vh",
+			overflow: "auto",
+			padding: "10px",
+			border: "1px solid var(--background-modifier-border)",
+			borderRadius: "8px",
+			background: "var(--background-primary)",
+			boxShadow: "0 6px 24px rgba(0,0,0,0.2)",
+		});
+
 		anchor.parentElement?.appendChild(popup);
 		this.renderTeamsPopup();
 	}
 
-	private closeTeamsPopup() {
+	private closeTeamsPopup(): void {
 		if (this.teamsPopupEl) {
 			try {
 				this.teamsPopupEl.remove();
-			} catch {}
+			} catch {
+				/* ignore */
+			}
 			this.teamsPopupEl = null;
 		}
 	}
 
-	private renderTeamsPopup() {
+	private renderTeamsPopup(): void {
 		if (!this.teamsPopupEl) return;
 
 		const prevAlias = this.state.selectedAlias;
@@ -299,7 +318,7 @@ export class DashboardController {
 					this.state.selectedAlias = appliedAlias;
 				}
 				// Update the main view
-				this.updateView();
+				void this.updateView();
 			},
 			// IMPORTANT: Do NOT restrict the teams list by selected user anymore.
 			// Returning null signals "no restriction" to the popup implementation.

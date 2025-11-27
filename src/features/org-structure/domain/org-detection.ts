@@ -8,11 +8,9 @@ import type {
 } from "./org-types";
 import { getDisplayNameFromAlias, TEAM_CODE_RE } from "@shared/identity";
 
-export type MutableSettings = {
-	teamsFolder: string;
+export interface MutableSettings {
 	teams?: CanonicalTeamInfo[];
-	[k: string]: unknown;
-};
+}
 
 interface DetectedFolderTeam {
 	name: string;

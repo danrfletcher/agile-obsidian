@@ -65,14 +65,14 @@ export function attachEditorTemplatingHandler(
 
 	const onDblClick = async (evt: MouseEvent) => {
 		try {
-			const target = evt.target as HTMLElement | null;
-			if (!target) return;
+			const target = evt.target;
+			if (!(target instanceof HTMLElement)) return;
 
 			// Detect parameterized template wrapper (rendered in live preview)
 			const wrapper = target.closest(
 				"span[data-template-wrapper][data-template-key]"
-			) as HTMLElement | null;
-			if (!wrapper) return;
+			);
+			if (!wrapper || !(wrapper instanceof HTMLElement)) return;
 
 			const templateKey = wrapper.getAttribute("data-template-key") || "";
 			if (!templateKey) return;
@@ -124,7 +124,14 @@ export function attachEditorTemplatingHandler(
 	};
 
 	// Use capture to intercept double-clicks before default behaviors in the editor
-	registerDomEvent(viewContainer, "dblclick", onDblClick, { capture: true });
+	registerDomEvent(
+		viewContainer,
+		"dblclick",
+		(evt: MouseEvent) => {
+			void onDblClick(evt);
+		},
+		{ capture: true }
+	);
 
 	// Obsidian will auto-clean via registerDomEvent. Return no-op for interface symmetry.
 	return () => {};

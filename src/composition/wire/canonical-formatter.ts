@@ -215,9 +215,8 @@ export function wireCanonicalFormatterForView(
 				editorWithDom.cm?.contentDOM;
 			const queriedContent = view.containerEl.querySelector(
 				".cm-content"
-			) as HTMLElement | null;
-			const el: HTMLElement | null =
-				(cmContent ?? queriedContent) || null;
+			);
+			const el = (cmContent ?? queriedContent) || null;
 
 			const keyHandler = (ev: KeyboardEvent) => {
 				if (isMutating) return;
@@ -270,14 +269,18 @@ export function wireCanonicalFormatterForView(
 				editorWithDom.cm?.contentDOM;
 			const queriedContent = view.containerEl.querySelector(
 				".cm-content"
-			) as HTMLElement | null;
-			const targetEl: HTMLElement | null =
-				(cmContent ?? queriedContent) || null;
+			);
+			const targetEl = (cmContent ?? queriedContent) || null;
 
 			let rafId: number | null = null;
 			const scheduleNotify = () => {
 				if (rafId != null) return;
-				rafId = requestAnimationFrame(() => {
+				const raf = globalThis.requestAnimationFrame;
+				if (!raf) {
+					notifyIfChanged();
+					return;
+				}
+				rafId = raf(() => {
 					rafId = null;
 					notifyIfChanged();
 				});
@@ -305,7 +308,10 @@ export function wireCanonicalFormatterForView(
 
 			const selectionHandler = () => {
 				try {
-					const sel = document.getSelection();
+					const doc = globalThis.document;
+					if (!doc) return;
+
+					const sel = doc.getSelection();
 					if (!sel || !sel.anchorNode) return;
 
 					if (targetEl && targetEl.contains(sel.anchorNode)) {
@@ -321,18 +327,22 @@ export function wireCanonicalFormatterForView(
 					// swallow
 				}
 			};
-			document.addEventListener(
-				"selectionchange",
-				selectionHandler,
-				true
-			);
-			detachFns.push(() =>
-				document.removeEventListener(
+
+			const doc = globalThis.document;
+			if (doc) {
+				doc.addEventListener(
 					"selectionchange",
 					selectionHandler,
 					true
-				)
-			);
+				);
+				detachFns.push(() =>
+					doc.removeEventListener(
+						"selectionchange",
+						selectionHandler,
+						true
+					)
+				);
+			}
 
 			if (targetEl) {
 				const pointerUp = () => scheduleNotify();
@@ -390,7 +400,10 @@ export function wireCanonicalFormatterForView(
 				}
 				if (rafId != null) {
 					try {
-						cancelAnimationFrame(rafId);
+						const cancelRaf = globalThis.cancelAnimationFrame;
+						if (cancelRaf) {
+							cancelRaf(rafId);
+						}
 					} catch {
 						// ignore
 					}
@@ -433,11 +446,11 @@ export function wireCanonicalFormatterForView(
 		shouldRun: () => getFlags(),
 	});
 
-	(view as MarkdownView & { __canonicalProbe?: () => void })
-		.__canonicalProbe = () => {
-		orchestrator.triggerOnceNow("manual", "line");
-		// Optional: could log or notify here.
-	};
+	(view as MarkdownView & { __canonicalProbe?: () => void }).__canonicalProbe =
+		() => {
+			orchestrator.triggerOnceNow("manual", "line");
+			// Optional: could log or notify here.
+		};
 
 	const flagsAtWire = getFlags();
 	if (flagsAtWire.master && flagsAtWire.onLeafChange) {

@@ -13,63 +13,39 @@ export function createSnoozeButton(options: {
 }): HTMLButtonElement {
 	const { icon = "💤", title, getTomorrowISO, onPerform } = options;
 
-	const btn = document.createElement("button");
+	const btn = globalThis.document.createElement("button");
 	btn.type = "button";
 	btn.textContent = icon;
 	btn.classList.add("agile-snooze-btn");
-	btn.style.cursor = "pointer";
-	btn.style.background = "none";
-	btn.style.border = "none";
-	btn.style.fontSize = "1em";
-	btn.style.verticalAlign = "baseline";
-	btn.style.marginLeft = "0";
 	if (title) btn.title = title;
 
-	let longPressTimer: number | null = null;
+	let longPressTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 	let longPressed = false;
 	const LONG_PRESS_MS = 500;
 
-	const clearTimer = () => {
+	const clearTimer = (): void => {
 		if (longPressTimer !== null) {
-			window.clearTimeout(longPressTimer);
+			globalThis.clearTimeout(longPressTimer);
 			longPressTimer = null;
 		}
 	};
 
-	const restoreButton = (input: HTMLInputElement) => {
-		if (input.isConnected) {
-			try {
-				input.replaceWith(btn);
-				btn.style.display = "";
-			} catch {
-				input.remove();
-				btn.style.display = "";
-			}
-		}
+	const restoreButton = (input: HTMLInputElement): void => {
+		if (!input.isConnected) return;
+		input.replaceWith(btn);
 	};
 
-	const showCustomDateInput = () => {
+	const showCustomDateInput = (): void => {
 		longPressed = true;
 
-		const input = document.createElement("input");
+		const input = globalThis.document.createElement("input");
 		input.type = "text";
-		input.placeholder = "YYYY-MM-DD";
+		input.placeholder = "Enter date (yyyy-mm-dd)";
 		input.classList.add("agile-snooze-input");
-		input.style.width = "120px";
-		input.style.display = "inline-block";
-		input.style.marginLeft = "8px";
-		input.style.fontSize = "0.95em";
-		input.style.verticalAlign = "baseline";
 
-		const parent = btn.parentElement!;
-		try {
-			btn.replaceWith(input);
-		} catch {
-			btn.style.display = "none";
-			parent.insertBefore(input, btn.nextSibling);
-		}
+		btn.replaceWith(input);
 
-		const submit = async () => {
+		const submit = async (): Promise<void> => {
 			const val = input.value.trim();
 			const isValid = /^\d{4}-\d{2}-\d{2}$/.test(val);
 			if (!isValid) {
@@ -86,35 +62,44 @@ export function createSnoozeButton(options: {
 		};
 
 		input.addEventListener("keydown", (e: KeyboardEvent) => {
-			if (e.key === "Enter") submit();
-			if (e.key === "Escape") restoreButton(input);
+			if (e.key === "Enter") {
+				void submit();
+			}
+			if (e.key === "Escape") {
+				restoreButton(input);
+			}
 		});
 		input.addEventListener("blur", () => restoreButton(input));
 
 		input.focus();
 	};
 
-	const startLongPress = (ev: Event) => {
+	const startLongPress = (ev: Event): void => {
 		ev.stopPropagation();
 		clearTimer();
 		longPressed = false;
-		longPressTimer = window.setTimeout(showCustomDateInput, LONG_PRESS_MS);
+		longPressTimer = globalThis.setTimeout(
+			showCustomDateInput,
+			LONG_PRESS_MS
+		);
 	};
 
-	const cancelLongPress = () => {
+	const cancelLongPress = (): void => {
 		clearTimer();
 	};
 
-	btn.addEventListener("click", async (e) => {
+	btn.addEventListener("click", (e) => {
 		e.preventDefault();
 		e.stopPropagation();
 		if (longPressed) return;
 		btn.textContent = "⏳";
-		try {
-			await onPerform(getTomorrowISO());
-		} finally {
-			btn.textContent = icon;
-		}
+		void (async () => {
+			try {
+				await onPerform(getTomorrowISO());
+			} finally {
+				btn.textContent = icon;
+			}
+		})();
 	});
 
 	btn.addEventListener("mousedown", startLongPress);

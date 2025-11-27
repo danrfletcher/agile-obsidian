@@ -1,9 +1,37 @@
-import { App, Notice, TFile } from "obsidian";
+import {
+	App,
+	Notice,
+	TFile,
+	type Component,
+	type EventRef,
+} from "obsidian";
 import type { Container } from "src/composition/container";
 import type { TaskItem, TaskIndexService } from "@features/task-index";
 import { cleanupExpiredSnoozes } from "@features/task-snooze";
 import { getCurrentUserDisplayName } from "@settings/index";
 import { slugifyName } from "@shared/identity";
+
+// Exclude non-style members (methods, number-index, etc.) and keep only
+// CSS properties whose values are simple strings.
+type CssWritableKeys = Exclude<
+	{
+		[K in keyof CSSStyleDeclaration]:
+			CSSStyleDeclaration[K] extends string ? K : never;
+	}[keyof CSSStyleDeclaration],
+	number
+>;
+
+type CssProps = Partial<Record<CssWritableKeys, string>>;
+
+function setCssProps(element: HTMLElement, props: CssProps): void {
+	const { style } = element;
+	for (const key in props) {
+		const styleKey = key as CssWritableKeys;
+		const value = props[styleKey];
+		if (value == null) continue;
+		style[styleKey] = value;
+	}
+}
 
 // Module augmentation: add a strongly-typed custom workspace event
 declare module "obsidian" {
@@ -17,7 +45,7 @@ declare module "obsidian" {
 }
 
 type NoticeWithElement = Notice & {
-	noticeEl: HTMLElement;
+	messageEl: HTMLElement;
 };
 
 interface MetadataCleanupSettings {
@@ -71,44 +99,60 @@ class GlobalProgressNotice {
 	private pendingPct = 0;
 	private pendingText = "";
 
+	constructor(
+		private readonly doc: Document,
+		private readonly win: Window
+	) {}
+
 	private ensureElements(title: string) {
 		if (this.notice && this.wrapper && this.bar && this.label) return;
 
 		this.notice = new Notice("", 0);
-		const wrapper = document.createElement("div");
-		wrapper.style.minWidth = "260px";
-		wrapper.style.maxWidth = "360px";
-		wrapper.style.display = "flex";
-		wrapper.style.flexDirection = "column";
-		wrapper.style.gap = "8px";
 
-		const titleEl = document.createElement("div");
+		const wrapper = this.doc.createElement("div");
+		setCssProps(wrapper, {
+			minWidth: "260px",
+			maxWidth: "360px",
+			display: "flex",
+			flexDirection: "column",
+			gap: "8px",
+		});
+
+		const titleEl = this.doc.createElement("div");
 		titleEl.textContent = title;
-		titleEl.style.fontWeight = "600";
-		titleEl.style.fontSize = "12px";
+		setCssProps(titleEl, {
+			fontWeight: "600",
+			fontSize: "12px",
+		});
 		wrapper.appendChild(titleEl);
 
-		const barOuter = document.createElement("div");
-		barOuter.style.height = "6px";
-		barOuter.style.background = "var(--background-modifier-border)";
-		barOuter.style.borderRadius = "3px";
-		barOuter.style.overflow = "hidden";
+		const barOuter = this.doc.createElement("div");
+		setCssProps(barOuter, {
+			height: "6px",
+			background: "var(--background-modifier-border)",
+			borderRadius: "3px",
+			overflow: "hidden",
+		});
 
-		const barInner = document.createElement("div");
-		barInner.style.height = "100%";
-		barInner.style.width = "0%";
-		barInner.style.background = "var(--interactive-accent)";
-		barInner.style.transition = "width 140ms linear";
+		const barInner = this.doc.createElement("div");
+		setCssProps(barInner, {
+			height: "100%",
+			width: "0%",
+			background: "var(--interactive-accent)",
+			transition: "width 140ms linear",
+		});
 		barOuter.appendChild(barInner);
 
-		const label = document.createElement("div");
-		label.style.fontSize = "11px";
-		label.style.opacity = "0.8";
+		const label = this.doc.createElement("div");
+		setCssProps(label, {
+			fontSize: "11px",
+			opacity: "0.8",
+		});
 
 		wrapper.appendChild(barOuter);
 		wrapper.appendChild(label);
 
-		const noticeEl = (this.notice as NoticeWithElement).noticeEl;
+		const noticeEl = (this.notice as NoticeWithElement).messageEl;
 
 		// Clear any existing children without relying on non-standard `.empty()`
 		while (noticeEl.firstChild) {
@@ -123,10 +167,14 @@ class GlobalProgressNotice {
 
 	private schedulePaint() {
 		if (this.rafId != null) return;
-		this.rafId = requestAnimationFrame(() => {
+		this.rafId = this.win.requestAnimationFrame(() => {
 			this.rafId = null;
-			if (this.bar) this.bar.style.width = `${this.pendingPct}%`;
-			if (this.label) this.label.textContent = this.pendingText;
+			if (this.bar) {
+				setCssProps(this.bar, { width: `${this.pendingPct}%` });
+			}
+			if (this.label) {
+				this.label.textContent = this.pendingText;
+			}
 		});
 	}
 
@@ -159,7 +207,7 @@ class GlobalProgressNotice {
 
 	private cleanup() {
 		if (this.rafId != null) {
-			cancelAnimationFrame(this.rafId);
+			this.win.cancelAnimationFrame(this.rafId);
 			this.rafId = null;
 		}
 		this.notice = null;
@@ -171,7 +219,9 @@ class GlobalProgressNotice {
 }
 
 // Build a file->set-of-line-numbers map using TaskIndexService snapshot
-function buildLinesByFile(tasks: TaskItem[]): Map<string, Set<number>> {
+function buildLinesByFile(
+	tasks: CleanupExpiredSnoozesTasks
+): Map<string, Set<number>> {
 	const linesByFile = new Map<string, Set<number>>();
 	for (const t of tasks as (TaskItem & { _uniqueId?: string })[]) {
 		const uid = t._uniqueId;
@@ -271,7 +321,7 @@ async function runMetadataCleanupOnce(
 	taskIndex: TaskIndexService,
 	userDisplayName: string
 ): Promise<void> {
-	const tasks = taskIndex.getAllTasks() as TaskItem[];
+	const tasks: CleanupExpiredSnoozesTasks = taskIndex.getAllTasks();
 	const linesByFile = buildLinesByFile(tasks);
 	const totalFiles = linesByFile.size;
 
@@ -282,11 +332,15 @@ async function runMetadataCleanupOnce(
 	let progress: GlobalProgressNotice | null = null;
 	let lastUpdateTs = 0;
 
+	const doc = app.workspace.containerEl.ownerDocument;
+	const win = doc.defaultView;
+
 	const maybeStartProgress = () => {
 		if (progressVisible) return;
+		if (!win) return;
 		if (Date.now() - startTs >= PROGRESS_SHOW_AFTER_MS) {
 			progressVisible = true;
-			progress = new GlobalProgressNotice();
+			progress = new GlobalProgressNotice(doc, win);
 			progress.start("Cleaning up task metadata…", totalFiles);
 			lastUpdateTs = 0;
 		}
@@ -310,7 +364,7 @@ async function runMetadataCleanupOnce(
 	// 1) Use existing cleanup for per-user single-task snoozes (💤<span>user</span> date)
 	await cleanupExpiredSnoozes(
 		app,
-		tasks as CleanupExpiredSnoozesTasks,
+		tasks,
 		userDisplayName || ""
 	);
 	// Check if we need to show a notice after this stage
@@ -350,7 +404,7 @@ async function runMetadataCleanupOnce(
 		batchCounter++;
 		if (batchCounter >= batchSize) {
 			batchCounter = 0;
-			await new Promise<void>((r) => setTimeout(r, 0));
+			void new Promise<void>((r) => setTimeout(r, 0));
 			maybeStartProgress();
 		}
 	}
@@ -368,8 +422,8 @@ export function registerTaskMetadataCleanup(container: Container) {
 
 	let running = false;
 	let disposed = false;
-	let midnightTimeout: number | null = null;
-	let dailyInterval: number | null = null;
+	let midnightTimeout: ReturnType<typeof setTimeout> | null = null;
+	let dailyInterval: ReturnType<typeof setInterval> | null = null;
 
 	const getSettingsSnapshot = (): MetadataCleanupSettings => {
 		try {
@@ -400,11 +454,11 @@ export function registerTaskMetadataCleanup(container: Container) {
 
 	const clearTimers = () => {
 		if (midnightTimeout != null) {
-			window.clearTimeout(midnightTimeout);
+			clearTimeout(midnightTimeout);
 			midnightTimeout = null;
 		}
 		if (dailyInterval != null) {
-			window.clearInterval(dailyInterval);
+			clearInterval(dailyInterval);
 			dailyInterval = null;
 		}
 	};
@@ -442,13 +496,13 @@ export function registerTaskMetadataCleanup(container: Container) {
 		// Schedule next midnight only if master + atMidnight
 		if (flags.master && flags.atMidnight) {
 			const delay = msUntilNextLocalMidnight();
-			midnightTimeout = window.setTimeout(async () => {
+			midnightTimeout = setTimeout(() => {
 				if (disposed) return;
-				await runIfEnabled();
+				void runIfEnabled();
 				// Then every 24h while enabled
-				dailyInterval = window.setInterval(async () => {
+				dailyInterval = setInterval(() => {
 					if (disposed) return;
-					await runIfEnabled();
+					void runIfEnabled();
 				}, 24 * 60 * 60 * 1000);
 			}, delay);
 		}
@@ -476,18 +530,20 @@ export function registerTaskMetadataCleanup(container: Container) {
 	// Manual “run across vault now” trigger (like canonical formatter’s format-all)
 	plugin.registerEvent(
 		// @ts-ignore - custom workspace events supported
-		app.workspace.on("agile-metadata-cleanup-all", async () => {
-			try {
-				new Notice("Starting metadata cleanup across vault…");
-				await runManual();
-				new Notice("Metadata cleanup complete.");
-			} catch (e) {
-				new Notice(
-					`Metadata cleanup failed: ${
-						e instanceof Error ? e.message : String(e)
-					}`
-				);
-			}
+		app.workspace.on("agile-metadata-cleanup-all", () => {
+			void (async () => {
+				try {
+					new Notice("Starting metadata cleanup across vault…");
+					await runManual();
+					new Notice("Metadata cleanup complete.");
+				} catch (e) {
+					new Notice(
+						`Metadata cleanup failed: ${
+							e instanceof Error ? e.message : String(e)
+						}`
+					);
+				}
+			})();
 		})
 	);
 

@@ -34,45 +34,39 @@ export class ProgressNotice {
 	private ensureElements(title: string): void {
 		if (this.notice && this.wrapper && this.bar && this.label) return;
 
-		this.notice = new ObsidianNotice("", 0);
-		const wrapper = document.createElement("div");
-		wrapper.style.minWidth = "260px";
-		wrapper.style.maxWidth = "360px";
-		wrapper.style.display = "flex";
-		wrapper.style.flexDirection = "column";
-		wrapper.style.gap = "8px";
+		const doc = globalThis.document;
+		if (!doc) {
+			return;
+		}
 
-		const titleEl = document.createElement("div");
+		this.notice = new ObsidianNotice("", 0);
+
+		const wrapper = doc.createElement("div");
+		wrapper.addClass("agile-progress-notice-wrapper");
+
+		const titleEl = doc.createElement("div");
 		titleEl.textContent = title;
-		titleEl.style.fontWeight = "600";
-		titleEl.style.fontSize = "12px";
+		titleEl.addClass("agile-progress-notice-title");
 		wrapper.appendChild(titleEl);
 
-		const barOuter = document.createElement("div");
-		barOuter.style.height = "6px";
-		barOuter.style.background = "var(--background-modifier-border)";
-		barOuter.style.borderRadius = "3px";
-		barOuter.style.overflow = "hidden";
+		const barOuter = doc.createElement("div");
+		barOuter.addClass("agile-progress-notice-bar-outer");
 
-		const barInner = document.createElement("div");
-		barInner.style.height = "100%";
-		barInner.style.width = "0%";
-		barInner.style.background = "var(--interactive-accent)";
-		barInner.style.transition = "width 140ms linear";
+		const barInner = doc.createElement("div");
+		barInner.addClass("agile-progress-notice-bar-inner");
 		barOuter.appendChild(barInner);
 
-		const label = document.createElement("div");
-		label.style.fontSize = "11px";
-		label.style.opacity = "0.8";
+		const label = doc.createElement("div");
+		label.addClass("agile-progress-notice-label");
 
 		wrapper.appendChild(barOuter);
 		wrapper.appendChild(label);
 
 		const noticeWithEl = this.notice as ObsidianNotice & {
-			noticeEl?: HTMLElement & { empty?: () => void };
+			messageEl?: HTMLElement & { empty?: () => void };
 		};
-		noticeWithEl.noticeEl?.empty?.();
-		noticeWithEl.noticeEl?.appendChild(wrapper);
+		noticeWithEl.messageEl?.empty?.();
+		noticeWithEl.messageEl?.appendChild(wrapper);
 
 		this.wrapper = wrapper;
 		this.bar = barInner;
@@ -81,7 +75,16 @@ export class ProgressNotice {
 
 	private schedulePaint(): void {
 		if (this.rafId != null) return;
-		this.rafId = requestAnimationFrame(() => {
+
+		const raf = globalThis.requestAnimationFrame;
+		if (!raf) {
+			// Fallback: update immediately if rAF is unavailable.
+			if (this.bar) this.bar.style.width = `${this.pendingPct}%`;
+			if (this.label) this.label.textContent = this.pendingText;
+			return;
+		}
+
+		this.rafId = raf(() => {
 			this.rafId = null;
 			if (this.bar) this.bar.style.width = `${this.pendingPct}%`;
 			if (this.label) this.label.textContent = this.pendingText;
@@ -117,7 +120,10 @@ export class ProgressNotice {
 
 	private cleanup(): void {
 		if (this.rafId != null) {
-			cancelAnimationFrame(this.rafId);
+			const cancelRaf = globalThis.cancelAnimationFrame;
+			if (cancelRaf) {
+				cancelRaf(this.rafId);
+			}
 			this.rafId = null;
 		}
 		this.notice = null;

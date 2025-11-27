@@ -1,5 +1,7 @@
-/* Task icon styling – clean-room implementation (no external fonts) */
-:root {
+/* Task icon styling – clean-room implementation (no external fonts).
+   All rules are scoped behind body[data-agile-checkbox-styles] so we can
+   enable/disable them at runtime from the plugin. */
+body[data-agile-checkbox-styles] {
 	--task-icon: "";
 	--task-fg: currentColor;
 	--task-size: 1em; /* tweak icon size */
@@ -7,8 +9,13 @@
 }
 
 /* Make rendered checkboxes visible regardless of container/theme */
-li > input[type="checkbox"],
-li > p > input[type="checkbox"] {
+body[data-agile-checkbox-styles]
+	li
+	> input[type="checkbox"],
+body[data-agile-checkbox-styles]
+	li
+	> p
+	> input[type="checkbox"] {
 	opacity: 1 !important;
 	visibility: visible !important;
 	display: inline-block !important;
@@ -16,19 +23,28 @@ li > p > input[type="checkbox"] {
 
 /* Base hook for editor tokens and rendered checkboxes
    Apply ONLY to custom tokens (not [ ], [x], [X], [""]) */
-.markdown-source-view.mod-cm6
+body[data-agile-checkbox-styles]
+	.markdown-source-view.mod-cm6
 	.task-list-item-checkbox[data-task]:not([data-task=" "]):not(
 		[data-task="x"]
 	):not([data-task="X"]):not([data-task=""])::before,
-.cm-s-obsidian
+body[data-agile-checkbox-styles]
+	.cm-s-obsidian
 	span.hmd-hidden-token.cm-formatting-task[data-task]:not(
 		[data-task=" "]
 	):not([data-task="x"]):not([data-task="X"]):not([data-task=""])::before,
 /* Rendered/reading/preview/custom views – support both li > input and li > p > input */
-li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]):not([data-task=""])
+body[data-agile-checkbox-styles]
+	li[data-task]:not([data-task=" "]):not([data-task="x"]):not(
+		[data-task="X"]
+	):not([data-task=""])
 	> input[type="checkbox"]::before,
-li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]):not([data-task=""])
-	> p > input[type="checkbox"]::before {
+body[data-agile-checkbox-styles]
+	li[data-task]:not([data-task=" "]):not([data-task="x"]):not(
+		[data-task="X"]
+	):not([data-task=""])
+	> p
+	> input[type="checkbox"]::before {
 	content: var(--task-icon);
 	display: inline-block;
 	color: var(--task-fg);
@@ -40,46 +56,61 @@ li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]):not
 
 /* Ensure default checkbox visuals don’t fight ours
    Apply ONLY to custom tokens */
-.markdown-source-view.mod-cm6
+body[data-agile-checkbox-styles]
+	.markdown-source-view.mod-cm6
 	.task-list-item-checkbox[data-task]:not([data-task=" "]):not(
 		[data-task="x"]
 	):not([data-task="X"]):not([data-task=""]),
-li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]):not([data-task=""])
+body[data-agile-checkbox-styles]
+	li[data-task]:not([data-task=" "]):not([data-task="x"]):not(
+		[data-task="X"]
+	):not([data-task=""])
 	> input[type="checkbox"],
-li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]):not([data-task=""])
-	> p > input[type="checkbox"] {
+body[data-agile-checkbox-styles]
+	li[data-task]:not([data-task=" "]):not([data-task="x"]):not(
+		[data-task="X"]
+	):not([data-task=""])
+	> p
+	> input[type="checkbox"] {
 	background: transparent !important;
 	box-shadow: none !important;
 }
 
 /* Optional: normalize strike behavior
    Keep strike for [x] and [-]; remove it for other custom tokens when .chkbx-strike is not set */
-body:not(.chkbx-strike)
+body[data-agile-checkbox-styles]:not(.chkbx-strike)
 	.markdown-source-view.mod-cm6
-	.HyperMD-task-line[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="-"]),
-body:not(.chkbx-strike) .task-list-item.is-checked:not([data-task="x"]):not([data-task="-"]) {
+	.HyperMD-task-line[data-task]:not([data-task=" "]):not(
+		[data-task="x"]
+	):not([data-task="-"]),
+body[data-agile-checkbox-styles]:not(.chkbx-strike)
+	.task-list-item.is-checked:not([data-task="x"]):not([data-task="-"]) {
 	text-decoration: none !important;
 }
 
 /* Checked text variants (edit as you prefer) */
-.HyperMD-task-line[data-task="x"],
-.task-list-item.is-checked[data-task="x"] {
-  font-weight: 600;
+body[data-agile-checkbox-styles]
+	.HyperMD-task-line[data-task="x"],
+body[data-agile-checkbox-styles]
+	.task-list-item.is-checked[data-task="x"] {
+	font-weight: 600;
 }
 
 /* Ensure cancelled [-] is struck through and greyed out like [x] */
-.HyperMD-task-line[data-task="-"],
-.task-list-item.is-checked[data-task="-"] {
-  color: var(--lines, var(--text-faint));
-  text-decoration: line-through !important;
-  text-decoration-thickness: inherit;
-  text-decoration-color: currentColor;
-  opacity: 0.8; /* subtle dim effect */
-  font-weight: inherit; /* keep same weight as other tasks */
+body[data-agile-checkbox-styles]
+	.HyperMD-task-line[data-task="-"],
+body[data-agile-checkbox-styles]
+	.task-list-item.is-checked[data-task="-"] {
+	color: var(--lines, var(--text-faint));
+	text-decoration: line-through !important;
+	text-decoration-thickness: inherit;
+	text-decoration-color: currentColor;
+	opacity: 0.8; /* subtle dim effect */
+	font-weight: inherit; /* keep same weight as other tasks */
 }
 
 /* Token → icon + color mapping */
-:root.theme-dark {
+body.theme-dark[data-agile-checkbox-styles] {
 	--col-q: #fdaf00;
 	--col-h: #5c7699;
 	--col-d: #3e4552;
@@ -96,7 +127,8 @@ body:not(.chkbx-strike) .task-list-item.is-checked:not([data-task="x"]):not([dat
 	--col-c: #95e9ee;
 	--col-r: #f9be7b;
 }
-:root.theme-light {
+
+body.theme-light[data-agile-checkbox-styles] {
 	--col-q: #fdaf00;
 	--col-h: #a8b1bd;
 	--col-d: #cad3eb;
@@ -115,190 +147,226 @@ body:not(.chkbx-strike) .task-list-item.is-checked:not([data-task="x"]):not([dat
 }
 
 /* Helper to assign icon/color per token */
-[data-task] {
+body[data-agile-checkbox-styles] [data-task] {
 	--task-icon: "";
 	--task-fg: var(--text-normal);
 }
 
 /* [X] Checked */
-[data-task="X"] {
+body[data-agile-checkbox-styles] [data-task="X"] {
 	--task-icon: "✔️";
 	--task-fg: var(--text-accent, var(--accent));
 }
+
 /* [>] Forward */
-[data-task=">"] {
+body[data-agile-checkbox-styles] [data-task=">"] {
 	--task-icon: "➤";
 }
+
 /* [D] Deferred / Calendar */
-[data-task="D"] {
+body[data-agile-checkbox-styles] [data-task="D"] {
 	--task-icon: "📅";
 	--task-fg: var(--col-h);
 }
+
 /* [-] Cancelled / line */
-[data-task="-"] {
+body[data-agile-checkbox-styles] [data-task="-"] {
 	--task-icon: "❌";
 	--task-fg: var(--col-d);
 }
+
 /* [?] Question */
-[data-task="?"] {
+body[data-agile-checkbox-styles] [data-task="?"] {
 	--task-icon: "❓";
 	--task-fg: var(--col-q);
 }
+
 /* [!] Important */
-[data-task="!"] {
+body[data-agile-checkbox-styles] [data-task="!"] {
 	--task-icon: "❗";
 	--task-fg: var(--col-i);
 }
+
 /* [+] Add */
-[data-task="+"] {
+body[data-agile-checkbox-styles] [data-task="+"] {
 	--task-icon: "➕";
 	--task-fg: var(--col-a);
 }
+
 /* [/] Half done */
-[data-task="/"] {
+body[data-agile-checkbox-styles] [data-task="/"] {
 	--task-icon: "⛛";
 	--task-fg: var(--text-accent, var(--accent));
 }
+
 /* [R] Review */
-[data-task="R"] {
+body[data-agile-checkbox-styles] [data-task="R"] {
 	--task-icon: "🔎";
 	--task-fg: var(--col-R);
 }
+
 /* [i] Idea */
-[data-task="i"] {
+body[data-agile-checkbox-styles] [data-task="i"] {
 	--task-icon: "💡";
 	--task-fg: var(--col-id);
 }
+
 /* [B] Brainstorm */
-[data-task="B"] {
+body[data-agile-checkbox-styles] [data-task="B"] {
 	--task-icon: "💭";
 	--task-fg: var(--col-B);
 }
+
 /* [P] Pro */
-[data-task="P"] {
+body[data-agile-checkbox-styles] [data-task="P"] {
 	--task-icon: "👍";
 	--task-fg: var(--col-P);
 }
+
 /* [C] Con */
-[data-task="C"] {
+body[data-agile-checkbox-styles] [data-task="C"] {
 	--task-icon: "👎";
 	--task-fg: var(--col-C);
 }
+
 /* [I] Info */
-[data-task="I"] {
+body[data-agile-checkbox-styles] [data-task="I"] {
 	--task-icon: "ℹ️";
 	--task-fg: var(--col-I);
 }
+
 /* [Q] Quote (closing) */
-[data-task="Q"] {
+body[data-agile-checkbox-styles] [data-task="Q"] {
 	--task-icon: "🔊";
 	--task-fg: var(--col-R);
 }
+
 /* [N] Note */
-[data-task="N"] {
+body[data-agile-checkbox-styles] [data-task="N"] {
 	--task-icon: "📝";
 	--task-fg: var(--col-N);
 }
+
 /* [b] Bookmark */
-[data-task="b"] {
+body[data-agile-checkbox-styles] [data-task="b"] {
 	--task-icon: "⛔";
 	--task-fg: var(--col-b);
 }
+
 /* [p] Prioritize */
-[data-task="p"] {
+body[data-agile-checkbox-styles] [data-task="p"] {
 	--task-icon: "→";
 	--task-fg: var(--col-R);
 }
+
 /* [E] Example */
-[data-task="E"] {
+body[data-agile-checkbox-styles] [data-task="E"] {
 	--task-icon: "✎";
 	--task-fg: var(--col-I);
 }
+
 /* [L] Location */
-[data-task="L"] {
+body[data-agile-checkbox-styles] [data-task="L"] {
 	--task-icon: "📍";
 	--task-fg: var(--col-N);
 }
+
 /* [A] Answer */
-[data-task="A"] {
+body[data-agile-checkbox-styles] [data-task="A"] {
 	--task-icon: "🅰️";
 	--task-fg: var(--col-P);
 }
+
 /* [r] Recurring */
-[data-task="r"] {
+body[data-agile-checkbox-styles] [data-task="r"] {
 	--task-icon: "🔁";
 	--task-fg: var(--col-r);
 }
+
 /* [c] Choice */
-[data-task="c"] {
+body[data-agile-checkbox-styles] [data-task="c"] {
 	--task-icon: "🔘";
 	--task-fg: var(--col-c);
 }
+
 /* [o] Option */
-[data-task="o"] {
+body[data-agile-checkbox-styles] [data-task="o"] {
 	--task-icon: "⚙️";
 	--task-fg: var(--col-b);
 }
+
 /* [d] Doing */
-[data-task="d"] {
+body[data-agile-checkbox-styles] [data-task="d"] {
 	--task-icon: "⚬";
 	--task-fg: var(--col-I);
 }
+
 /* [T] Time */
-[data-task="T"] {
+body[data-agile-checkbox-styles] [data-task="T"] {
 	--task-icon: "⏰";
 	--task-fg: var(--col-R);
 }
+
 /* [@] Person / Character */
-[data-task="@"] {
+body[data-agile-checkbox-styles] [data-task="@"] {
 	--task-icon: "👤";
 	--task-fg: var(--col-b);
 }
+
 /* [t] Talk */
-[data-task="t"] {
+body[data-agile-checkbox-styles] [data-task="t"] {
 	--task-icon: "💬";
 	--task-fg: var(--col-R);
 }
+
 /* [O] Outline */
-[data-task="O"] {
+body[data-agile-checkbox-styles] [data-task="O"] {
 	--task-icon: "🗂️";
 }
+
 /* [W] World */
-[data-task="W"] {
+body[data-agile-checkbox-styles] [data-task="W"] {
 	--task-icon: "🌍";
 	--task-fg: var(--col-P);
 }
+
 /* [F] Foreshadow */
-[data-task="F"] {
+body[data-agile-checkbox-styles] [data-task="F"] {
 	--task-icon: "🌘";
 	--task-fg: var(--col-h);
 }
+
 /* [f] Clue / Find */
-[data-task="f"] {
+body[data-agile-checkbox-styles] [data-task="f"] {
 	--task-icon: "🧭";
 	--task-fg: var(--col-N);
 }
+
 /* [~] Conflict */
-[data-task="~"] {
+body[data-agile-checkbox-styles] [data-task="~"] {
 	--task-icon: "⚔️";
 	--task-fg: var(--col-C);
 }
+
 /* [H] Health */
-[data-task="H"] {
+body[data-agile-checkbox-styles] [data-task="H"] {
 	--task-icon: "❤️";
 	--task-fg: var(--col-a);
 }
+
 /* [&] Symbolism */
-[data-task="&"] {
+body[data-agile-checkbox-styles] [data-task="&"] {
 	--task-icon: "♾️";
 	--task-fg: var(--col-B);
 }
+
 /* [s] Secret */
-[data-task="s"] {
+body[data-agile-checkbox-styles] [data-task="s"] {
 	--task-icon: "🔒";
 	--task-fg: var(--col-d);
 }
-[data-task="w"] {
+
+body[data-agile-checkbox-styles] [data-task="w"] {
 	--task-icon: "⏳";
 	--task-fg: var(--col-d);
 }
@@ -307,12 +375,20 @@ body:not(.chkbx-strike) .task-list-item.is-checked:not([data-task="x"]):not([dat
    Apply ONLY to custom tokens (not [ ], [x], [X], [""]) */
 
 /* Rendered/reading/preview/custom views – remove the native box so only the emoji shows */
-li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]):not([data-task=""])
+body[data-agile-checkbox-styles]
+	li[data-task]:not([data-task=" "]):not([data-task="x"]):not(
+		[data-task="X"]
+	):not([data-task=""])
 	> input[type="checkbox"],
-li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]):not([data-task=""])
-	> p > input[type="checkbox"],
+body[data-agile-checkbox-styles]
+	li[data-task]:not([data-task=" "]):not([data-task="x"]):not(
+		[data-task="X"]
+	):not([data-task=""])
+	> p
+	> input[type="checkbox"],
 /* Editor – same for the source checkbox */
-.markdown-source-view.mod-cm6
+body[data-agile-checkbox-styles]
+	.markdown-source-view.mod-cm6
 	.task-list-item-checkbox[data-task]:not([data-task=" "]):not(
 		[data-task="x"]
 	):not([data-task="X"]):not([data-task=""]) {
@@ -331,14 +407,27 @@ li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]):not
 }
 
 /* Ensure no box reappears on interactive states */
-li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]):not([data-task=""])
+body[data-agile-checkbox-styles]
+	li[data-task]:not([data-task=" "]):not([data-task="x"]):not(
+		[data-task="X"]
+	):not([data-task=""])
 	> input[type="checkbox"]:is(:hover, :focus, :active, :checked),
-li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]):not([data-task=""])
-	> p > input[type="checkbox"]:is(:hover, :focus, :active, :checked),
-.markdown-source-view.mod-cm6
+body[data-agile-checkbox-styles]
+	li[data-task]:not([data-task=" "]):not([data-task="x"]):not(
+		[data-task="X"]
+	):not([data-task=""])
+	> p
+	> input[type="checkbox"]:is(:hover, :focus, :active, :checked),
+body[data-agile-checkbox-styles]
+	.markdown-source-view.mod-cm6
 	.task-list-item-checkbox[data-task]:not([data-task=" "]):not(
 		[data-task="x"]
-	):not([data-task="X"]):not([data-task=""]):is(:hover, :focus, :active, :checked) {
+	):not([data-task="X"]):not([data-task=""]):is(
+			:hover,
+			:focus,
+			:active,
+			:checked
+		) {
 	border: none !important;
 	background: transparent !important;
 	box-shadow: none !important;
@@ -346,11 +435,19 @@ li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]):not
 }
 
 /* Center the emoji for custom tokens (rendered + editor) */
-li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]):not([data-task=""])
+body[data-agile-checkbox-styles]
+	li[data-task]:not([data-task=" "]):not([data-task="x"]):not(
+		[data-task="X"]
+	):not([data-task=""])
 	> input[type="checkbox"]::before,
-li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]):not([data-task=""])
-	> p > input[type="checkbox"]::before,
-.markdown-source-view.mod-cm6
+body[data-agile-checkbox-styles]
+	li[data-task]:not([data-task=" "]):not([data-task="x"]):not(
+		[data-task="X"]
+	):not([data-task=""])
+	> p
+	> input[type="checkbox"]::before,
+body[data-agile-checkbox-styles]
+	.markdown-source-view.mod-cm6
 	.task-list-item-checkbox[data-task]:not([data-task=" "]):not(
 		[data-task="x"]
 	):not([data-task="X"]):not([data-task=""])::before {
@@ -362,11 +459,19 @@ li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]):not
 }
 
 /* Hide the theme’s masked check layer ONLY for custom tokens */
-li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]):not([data-task=""])
+body[data-agile-checkbox-styles]
+	li[data-task]:not([data-task=" "]):not([data-task="x"]):not(
+		[data-task="X"]
+	):not([data-task=""])
 	> input[type="checkbox"]:checked::after,
-li[data-task]:not([data-task=" "]):not([data-task="x"]):not([data-task="X"]):not([data-task=""])
-	> p > input[type="checkbox"]:checked::after,
-.markdown-source-view.mod-cm6
+body[data-agile-checkbox-styles]
+	li[data-task]:not([data-task=" "]):not([data-task="x"]):not(
+		[data-task="X"]
+	):not([data-task=""])
+	> p
+	> input[type="checkbox"]:checked::after,
+body[data-agile-checkbox-styles]
+	.markdown-source-view.mod-cm6
 	.task-list-item-checkbox[data-task]:not([data-task=" "]):not(
 		[data-task="x"]
 	):not([data-task="X"]):not([data-task=""]):checked::after {
