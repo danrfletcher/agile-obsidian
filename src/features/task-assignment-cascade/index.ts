@@ -1,17 +1,6 @@
 // Public entry point for the task-assignment-cascade feature.
-// Expose only the safe API surface; block deep imports from app/ internals.
+// Currently we only expose the event wiring used by the Obsidian plugin.
+// If/when a typed dashboard API is added, it should live under ./api
+// and be re-exported from this module.
 
 export { wireTaskAssignmentCascade } from "./app/assignment-cascade";
-
-// Thin public API facade for dashboards and other modules
-export { createTaskAssignmentCascadeAPI } from "./api/task-assignment-cascade-api";
-export type {
-	CascadeAPI,
-	CascadeOptions,
-	CascadeResult,
-	CascadeError,
-	AssigneeId,
-	TaskId,
-	TaskNode,
-	TaskIndexPort,
-} from "./api/task-assignment-cascade-api";
