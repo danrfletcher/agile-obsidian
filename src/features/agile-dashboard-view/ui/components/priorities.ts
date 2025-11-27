@@ -176,7 +176,8 @@ export function processAndRenderPriorities(
 	});
 
 	// Heading
-	sectionRoot.createEl("h2", { text: "📂 priorities overview" });
+	// eslint-disable-next-line obsidianmd/ui/sentence-case
+	sectionRoot.createEl("h2", { text: "📂 Priorities" });
 
 	// Render pruned priority trees
 	renderTaskTree(
