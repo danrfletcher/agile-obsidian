@@ -1,21 +1,15 @@
 import type { App, Plugin } from "obsidian";
 import type { TeamsActions } from "@settings/ui/presenters/teams-presenter";
 import { hydrateTeamsFromVault } from "src/features/org-structure/domain/org-detection";
-import { createTeamResources } from "src/features/org-structure/domain/org-management";
 import {
+	createTeamResources,
 	createOrganizationFromTeam,
 	addTeamsToExistingOrganization,
 	createSubteams,
 } from "src/features/org-structure/domain/org-management";
 import type { AgileObsidianSettings } from "src/settings";
 import { slugifyName } from "@shared/identity";
-import { MemberInfo, TeamInfo } from "../domain/org-types";
-
-type MutableSettingsForHydration = {
-	teamsFolder: string;
-	teams?: TeamInfo[];
-	[k: string]: unknown;
-};
+import type { MemberInfo, TeamInfo } from "../domain/org-types";
 
 export function registerOrgStructureSettings(ports: {
 	app: App;
@@ -36,10 +30,7 @@ export function registerOrgStructureSettings(ports: {
 
 	return {
 		detectAndUpdateTeams: async () => {
-			await hydrateTeamsFromVault(
-				app.vault,
-				settings as unknown as MutableSettingsForHydration
-			);
+			await hydrateTeamsFromVault(app.vault, settings);
 			await saveSettings();
 		},
 		saveSettings: async () => {
@@ -81,7 +72,7 @@ export function registerOrgStructureSettings(ports: {
 			suffixes: string[]
 		) => {
 			const teamInfo: TeamInfo = {
-				...(team as TeamInfo),
+				...team,
 				members: team.members || [],
 			};
 			await createOrganizationFromTeam({
@@ -98,15 +89,10 @@ export function registerOrgStructureSettings(ports: {
 			suffixes: string[]
 		) => {
 			const orgInfo: TeamInfo = {
-				...(org as TeamInfo),
+				...org,
 				members: org.members || [],
 			};
-			await addTeamsToExistingOrganization(
-				app,
-				orgInfo,
-				orgName,
-				suffixes
-			);
+			await addTeamsToExistingOrganization(app, orgInfo, orgName, suffixes);
 		},
 		createSubteams: async (parentTeam: TeamInfo, suffixes: string[]) => {
 			await createSubteams(app, parentTeam, suffixes);
