@@ -9,7 +9,8 @@ import type { ParamField, ParamsSchema, TemplateParams } from "./types";
 function coerce(value: unknown, type: ParamField["type"]): unknown {
 	switch (type) {
 		case "number": {
-			const n = typeof value === "number" ? value : Number(value);
+			const n =
+				typeof value === "number" ? value : Number(value);
 			return Number.isFinite(n) ? n : undefined;
 		}
 		case "boolean": {
@@ -23,7 +24,38 @@ function coerce(value: unknown, type: ParamField["type"]): unknown {
 		}
 		case "string": {
 			if (value == null) return "";
-			return String(value);
+			if (typeof value === "string") return value;
+
+			if (
+				typeof value === "number" ||
+				typeof value === "boolean" ||
+				typeof value === "bigint"
+			) {
+				return String(value);
+			}
+
+			if (typeof value === "symbol") {
+				return value.toString();
+			}
+
+			if (value instanceof Date) {
+				return value.toISOString();
+			}
+
+			if (typeof value === "object") {
+				try {
+					return JSON.stringify(value);
+				} catch {
+					return "[object]";
+				}
+			}
+
+			if (typeof value === "function") {
+				return value.name || "[function]";
+			}
+
+			// Fallback for any remaining exotic cases
+			return "";
 		}
 		case "any":
 		default:

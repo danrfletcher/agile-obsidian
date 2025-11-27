@@ -1,6 +1,13 @@
 import { App, Modal, Notice } from "obsidian";
 import type { TemplateParams } from "../../domain/types";
 
+function setCssProps(
+	el: HTMLElement,
+	props: Partial<CSSStyleDeclaration>
+): void {
+	Object.assign(el.style, props);
+}
+
 export async function showJsonModal(
 	app: App,
 	templateId: string,
@@ -18,7 +25,7 @@ export async function showJsonModal(
 				const para = contentEl.createEl("p", {
 					text: 'Enter template params as JSON (optional). Example: {"title":"My Title"}',
 				});
-				para.style.marginBottom = "8px";
+				setCssProps(para, { marginBottom: "8px" });
 
 				this.textarea = contentEl.createEl("textarea", {
 					attr: { rows: "10", style: "width: 100%;" },

@@ -7,6 +7,13 @@ import type { TemplateParams } from "../../domain/types";
 import { resolveModalTitleFromSchema } from "../../app/params-editor-service";
 import { escapeHtml } from "@utils";
 
+function setCssProps(
+	el: HTMLElement,
+	props: Partial<CSSStyleDeclaration>
+): void {
+	Object.assign(el.style, props);
+}
+
 /**
  Helpers and types for blockSelect
 */
@@ -23,7 +30,7 @@ type BlockCandidate = {
 	kind: "block";
 	filePath: string;
 	line: number; // 0-based
-	text: string; // line text (trimmed for display/search)
+	text: string; // line text (trimmed for display)
 	blockId?: string; // if detected on the line
 	display: string; // "text — path"
 	matchText: string; // for searching (text + path)
@@ -170,19 +177,21 @@ async function ensureBlockIdOnLine(
  */
 function createSuggestionPortal(): HTMLUListElement {
 	const ul = document.createElement("ul");
-	ul.style.position = "fixed"; // attach to viewport; easy to align via rect
-	ul.style.zIndex = "999999"; // above modal
-	ul.style.maxHeight = "320px"; // reasonable cap
-	ul.style.overflowY = "auto";
-	ul.style.margin = "0";
-	ul.style.padding = "6px";
-	ul.style.listStyle = "none";
-	ul.style.background = "var(--background-primary)";
-	ul.style.border = "1px solid var(--background-modifier-border)";
-	ul.style.borderRadius = "6px";
-	ul.style.boxShadow = "var(--shadow-s)";
-	ul.style.display = "none";
-	ul.style.minWidth = "240px"; // keep usable width
+	setCssProps(ul, {
+		position: "fixed", // attach to viewport; easy to align via rect
+		zIndex: "999999", // above modal
+		maxHeight: "320px", // reasonable cap
+		overflowY: "auto",
+		margin: "0",
+		padding: "6px",
+		listStyle: "none",
+		background: "var(--background-primary)",
+		border: "1px solid var(--background-modifier-border)",
+		borderRadius: "6px",
+		boxShadow: "var(--shadow-s)",
+		display: "none",
+		minWidth: "240px", // keep usable width
+	});
 	document.body.appendChild(ul);
 	return ul;
 }
@@ -303,28 +312,43 @@ function renderBlockLinePreview(item: BlockCandidate): string {
 	return `🔗 ${leadingHTML}${contentHtml}<span style="color: var(--text-muted);"> — ${pathHtml}</span>`;
 }
 
+function setSuggestionItemContent(
+	li: HTMLLIElement,
+	html: string
+): void {
+	const doc = li.ownerDocument;
+	if (!doc) return;
+	const range = doc.createRange();
+	range.selectNodeContents(li);
+	range.deleteContents();
+	const fragment = range.createContextualFragment(html);
+	li.appendChild(fragment);
+}
+
 function renderSuggestionItem(
 	li: HTMLLIElement,
 	item: SuggestionItem,
 	highlight = false
 ) {
-	li.style.display = "block";
-	li.style.padding = "6px 8px";
-	li.style.cursor = "pointer";
-	li.style.borderRadius = "4px";
-	li.style.whiteSpace = "nowrap";
-	li.style.overflow = "hidden";
-	li.style.textOverflow = "ellipsis";
-	li.style.background = highlight
-		? "var(--background-modifier-hover)"
-		: "transparent";
-	(li as HTMLElement).setAttr("data-kind", item.kind);
+	setCssProps(li, {
+		display: "block",
+		padding: "6px 8px",
+		cursor: "pointer",
+		borderRadius: "4px",
+		whiteSpace: "nowrap",
+		overflow: "hidden",
+		textOverflow: "ellipsis",
+		background: highlight
+			? "var(--background-modifier-hover)"
+			: "transparent",
+	});
+	li.setAttr("data-kind", item.kind);
 
 	if (item.kind === "file") {
-		li.innerHTML = `📄 ${escapeHtml(item.display)}`;
+		setSuggestionItemContent(li, `📄 ${escapeHtml(item.display)}`);
 		li.title = item.filePath;
 	} else {
-		li.innerHTML = renderBlockLinePreview(item);
+		setSuggestionItemContent(li, renderBlockLinePreview(item));
 		li.title = `${item.filePath}:${item.line + 1}`;
 	}
 }
@@ -351,10 +375,12 @@ function positionPortalBelowInput(
 		top = Math.max(8, rect.top - maxHeight - 4);
 	}
 
-	portal.style.left = `${Math.round(rect.left)}px`;
-	portal.style.top = `${Math.round(top)}px`;
-	portal.style.width = `${Math.round(rect.width)}px`;
-	portal.style.maxHeight = `${Math.max(120, Math.floor(maxHeight))}px`;
+	setCssProps(portal, {
+		left: `${Math.round(rect.left)}px`,
+		top: `${Math.round(top)}px`,
+		width: `${Math.round(rect.width)}px`,
+		maxHeight: `${Math.max(120, Math.floor(maxHeight))}px`,
+	});
 }
 
 /**
@@ -376,10 +402,12 @@ function attachBlockSelectInput(
 	});
 
 	const statusEl = wrap.createEl("div");
-	statusEl.style.fontSize = "12px";
-	statusEl.style.color = "var(--text-muted)";
-	statusEl.style.marginTop = "4px";
-	statusEl.style.display = "none";
+	setCssProps(statusEl, {
+		fontSize: "12px",
+		color: "var(--text-muted)",
+		marginTop: "4px",
+		display: "none",
+	});
 
 	// Create body-attached portal for suggestions
 	const ul = createSuggestionPortal();
@@ -393,13 +421,13 @@ function attachBlockSelectInput(
 	const openPortal = () => {
 		if (!portalOpen) {
 			portalOpen = true;
-			ul.style.display = "block";
+			setCssProps(ul, { display: "block" });
 			positionPortalBelowInput(ul, inputEl);
 		}
 	};
 	const closePortal = () => {
 		if (portalOpen) {
-			ul.style.display = "none";
+			setCssProps(ul, { display: "none" });
 			highlightIndex = -1;
 			portalOpen = false;
 		}
@@ -413,16 +441,18 @@ function attachBlockSelectInput(
 			li.addEventListener("mouseenter", () => {
 				highlightIndex = i;
 				Array.from(ul.children).forEach((child, j) => {
-					(child as HTMLElement).style.background =
-						j === highlightIndex
-							? "var(--background-modifier-hover)"
-							: "transparent";
+					setCssProps(child as HTMLElement, {
+						background:
+							j === highlightIndex
+								? "var(--background-modifier-hover)"
+								: "transparent",
+					});
 				});
 			});
-			li.addEventListener("mousedown", async (e) => {
+			li.addEventListener("mousedown", (e) => {
 				e.preventDefault();
 				e.stopPropagation();
-				await handleSelect(s);
+				void handleSelect(s);
 			});
 			ul.appendChild(li);
 		});
@@ -453,7 +483,7 @@ function attachBlockSelectInput(
 	async function ensureIndexReady() {
 		if (idx || indexing) return;
 		indexing = true;
-		statusEl.style.display = "block";
+		setCssProps(statusEl, { display: "block" });
 		statusEl.textContent = "Indexing vault…";
 		try {
 			idx = await ensureIndex(app);
@@ -463,7 +493,7 @@ function attachBlockSelectInput(
 			);
 		} finally {
 			indexing = false;
-			statusEl.style.display = "none";
+			setCssProps(statusEl, { display: "none" });
 		}
 	}
 
@@ -484,16 +514,18 @@ function attachBlockSelectInput(
 	}
 
 	// Event handlers
-	inputEl.addEventListener("focus", async () => {
-		await ensureIndexReady();
-		updateSuggestions();
+	inputEl.addEventListener("focus", () => {
+		void (async () => {
+			await ensureIndexReady();
+			updateSuggestions();
+		})();
 	});
 
 	inputEl.addEventListener("input", () => {
 		updateSuggestions();
 	});
 
-	inputEl.addEventListener("keydown", async (evt) => {
+	inputEl.addEventListener("keydown", (evt) => {
 		if (!portalOpen) return;
 
 		if (evt.key === "ArrowDown") {
@@ -511,7 +543,7 @@ function attachBlockSelectInput(
 			if (highlightIndex >= 0 && highlightIndex < suggestions.length) {
 				evt.preventDefault();
 				const item = suggestions[highlightIndex];
-				await handleSelect(item);
+				void handleSelect(item);
 			}
 		} else if (evt.key === "Escape") {
 			evt.preventDefault();
@@ -596,13 +628,13 @@ export async function showSchemaModal(
 					const p = contentEl.createEl("p", {
 						text: schema.description,
 					});
-					p.style.marginBottom = "8px";
+					setCssProps(p, { marginBottom: "8px" });
 				}
 
 				let firstFocusableName: string | null = null;
 
 				for (const field of (schema.fields ??
-					[]) as ParamsSchemaField[]) {
+					[])) {
 					const wrap = contentEl.createEl("div", {
 						attr: { style: "margin-bottom: 10px;" },
 					});
@@ -612,9 +644,11 @@ export async function showSchemaModal(
 							(field.label ?? field.name) +
 							(field.required ? " *" : ""),
 					});
-					labelEl.style.display = "block";
-					labelEl.style.fontWeight = "600";
-					labelEl.style.marginBottom = "4px";
+					setCssProps(labelEl, {
+						display: "block",
+						fontWeight: "600",
+						marginBottom: "4px",
+					});
 
 					const placeholder = String(field.placeholder ?? "");
 					const type = field.type ?? "text";
@@ -712,30 +746,29 @@ export async function showSchemaModal(
 						const desc = wrap.createEl("div", {
 							text: String(field.description),
 						});
-						desc.style.fontSize = "12px";
-						desc.style.color = "var(--text-muted)";
-						desc.style.marginTop = "4px";
+						setCssProps(desc, {
+							fontSize: "12px",
+							color: "var(--text-muted)",
+							marginTop: "4px",
+						});
 					}
 				}
 
 				if (firstFocusableName && this.inputs[firstFocusableName]) {
-					const el = this.inputs[firstFocusableName] as
-						| HTMLInputElement
-						| HTMLTextAreaElement
-						| HTMLSelectElement;
+					const el = this.inputs[firstFocusableName];
 					setTimeout(() => {
 						try {
 							el.focus();
 							if (
-								(el as HTMLInputElement).setSelectionRange &&
-								(el as HTMLInputElement).type !== "checkbox" &&
-								el.tagName.toLowerCase() !== "select"
+								!(el instanceof HTMLSelectElement) &&
+								!(
+									el instanceof HTMLInputElement &&
+									el.type === "checkbox"
+								) &&
+								typeof el.setSelectionRange === "function"
 							) {
-								const v = (el as HTMLInputElement).value ?? "";
-								(el as HTMLInputElement).setSelectionRange(
-									v.length,
-									v.length
-								);
+								const v = (el).value ?? "";
+								el.setSelectionRange(v.length, v.length);
 							}
 						} catch {
 							// ignore
@@ -760,7 +793,7 @@ export async function showSchemaModal(
 					let valid = true;
 
 					for (const field of (schema.fields ??
-						[]) as ParamsSchemaField[]) {
+						[])) {
 						const el = this.inputs[field.name];
 						let raw = "";
 

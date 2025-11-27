@@ -85,8 +85,34 @@ export async function requestTemplateParams(
 	}
 
 	const prefillObj = prefill ?? {};
-	const asString = (v: unknown): string =>
-		v == null ? "" : typeof v === "string" ? v : String(v);
+	const asString = (v: unknown): string => {
+		if (v == null) return "";
+		if (typeof v === "string") return v;
+		if (
+			typeof v === "number" ||
+			typeof v === "boolean" ||
+			typeof v === "bigint"
+		) {
+			return String(v);
+		}
+		if (typeof v === "symbol") {
+			return v.toString();
+		}
+		if (v instanceof Date) {
+			return v.toISOString();
+		}
+		if (typeof v === "object") {
+			try {
+				return JSON.stringify(v);
+			} catch {
+				return "[object]";
+			}
+		}
+		if (typeof v === "function") {
+			return v.name || "[function]";
+		}
+		return "";
+	};
 
 	let params: TemplateParams | undefined;
 
