@@ -111,9 +111,7 @@ function collectAllTemplateDefs(): AnyTemplateDef[] {
 	const out: AnyTemplateDef[] = [];
 	if (!presetTemplates) return out;
 
-	for (const group of Object.values(presetTemplates) as Array<
-		Record<string, AnyTemplateDef>
-	>) {
+	for (const group of Object.values(presetTemplates)) {
 		for (const def of Object.values(group)) {
 			out.push(def);
 		}
@@ -167,8 +165,8 @@ function generateDynamicSequences(): Sequence[] {
 		for (let i = 0; i < ids.length; i++) {
 			for (let j = 0; j < ids.length; j++) {
 				if (i === j) continue;
-				const start = ids[i]!;
-				const target = ids[j]!;
+				const start = ids[i];
+				const target = ids[j];
 				dynamic.push({
 					id: `auto:${start}->${target}`,
 					startTemplate: start,

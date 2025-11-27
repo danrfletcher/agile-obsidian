@@ -79,7 +79,7 @@ export function attachCustomViewTemplatingSequencerHandler(
 		const li =
 			wrapper.closest("li[data-file-path]") ||
 			wrapper.closest("[data-file-path]");
-		const liEl = li as HTMLElement | null;
+		const liEl = li instanceof HTMLElement ? li : null;
 		const filePath = liEl?.getAttribute("data-file-path") || "";
 		if (!filePath) {
 			new Notice("Unable to determine source file for this template.");
@@ -194,9 +194,9 @@ export function attachCustomViewTemplatingSequencerHandler(
 			if (!target) return;
 
 			// We only handle clicks on template wrappers
-			const wrapper = target.closest(
+			const wrapper: HTMLElement | null = target.closest(
 				"span[data-template-wrapper][data-template-key]"
-			) as HTMLElement | null;
+			);
 			if (!wrapper) return;
 
 			// Suppress default behaviors to avoid exposing raw HTML / navigation
@@ -243,9 +243,10 @@ export function attachCustomViewTemplatingSequencerHandler(
 		"contextmenu",
 		(ev: MouseEvent) => {
 			const target = ev.target as HTMLElement | null;
-			const wrapper = target?.closest(
-				"span[data-template-wrapper][data-template-key]"
-			) as HTMLElement | null;
+			const wrapper: HTMLElement | null =
+				target?.closest(
+					"span[data-template-wrapper][data-template-key]"
+				) ?? null;
 			if (!wrapper) return;
 
 			// Prevent default context menu bubbling and open sequencer immediately

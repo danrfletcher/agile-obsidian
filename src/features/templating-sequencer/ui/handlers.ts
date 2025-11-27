@@ -1,3 +1,5 @@
+/* eslint-env browser */
+
 /**
  * Templating Sequencer - Editor Click Handler
  *
@@ -41,8 +43,11 @@ export function wireTemplatingSequencerDomHandlers(
 		editor?: { cm?: { contentDOM?: HTMLElement } };
 	};
 	const cmContent = cmHolder.editor?.cm?.contentDOM;
-	const contentRoot = (cmContent ??
-		view.containerEl.querySelector(".cm-content")) as HTMLElement | null;
+	const maybeContentRoot =
+		(cmContent ??
+			view.containerEl.querySelector(".cm-content")) ?? null;
+	const contentRoot =
+		maybeContentRoot instanceof HTMLElement ? maybeContentRoot : null;
 	const targetEl: HTMLElement = contentRoot ?? view.containerEl;
 
 	let clickTimer: number | null = null;
@@ -66,9 +71,9 @@ export function wireTemplatingSequencerDomHandlers(
 			if (!target) return;
 
 			// Only handle clicks on our eligible templates
-			const wrapper = target.closest(
+			const wrapper: HTMLElement | null = target.closest(
 				"span[data-template-wrapper][data-template-key]"
-			) as HTMLElement | null;
+			);
 			if (!wrapper) return;
 
 			const tpl = String(wrapper.getAttribute("data-template-key") || "");
