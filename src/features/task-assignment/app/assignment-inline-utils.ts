@@ -86,7 +86,7 @@ export function findAssignmentWrappersOnLine(
 			const assignTypeStr = getAttr(segment, "data-assign-type");
 			const assignType =
 				assignTypeStr === "assignee" || assignTypeStr === "delegate"
-					? (assignTypeStr as "assignee" | "delegate")
+					? (assignTypeStr)
 					: null;
 			out.push({ start: open, end, instanceId, assignType, segment });
 		}

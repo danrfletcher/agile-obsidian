@@ -144,24 +144,39 @@ function updateEditorLine(
 function getEventTargets(app: App, view: MarkdownView | null): EventTarget[] {
 	const targets: EventTarget[] = [];
 
-	// IMPORTANT: include window so the Agile Dashboard (listening on window) sees the event
-	const win: EventTarget | null =
-		typeof window !== "undefined" ? window : null;
-	if (win) targets.push(win);
+	const maybeWindow =
+		typeof globalThis !== "undefined" && "window" in globalThis
+			? (globalThis as typeof globalThis & {
+					window?: Window & typeof globalThis;
+			  }).window
+			: undefined;
+	if (maybeWindow) {
+		targets.push(maybeWindow);
+	}
 
-	const globalDoc =
-		typeof document !== "undefined" ? document : null;
-	if (globalDoc) targets.push(globalDoc);
+	const maybeDocument =
+		typeof globalThis !== "undefined" && "document" in globalThis
+			? (globalThis as typeof globalThis & {
+					document?: Document;
+			  }).document
+			: undefined;
+	if (maybeDocument) {
+		targets.push(maybeDocument);
+	}
 
 	const actualView = view ?? getActiveView(app);
-	const cmHolder = actualView as unknown as {
-		editor?: { cm?: { contentDOM?: HTMLElement } };
-	};
+	const cmHolder =
+		actualView as
+			| (MarkdownView & {
+					editor?: { cm?: { contentDOM?: HTMLElement } };
+			  })
+			| null;
 	const cmContent =
 		cmHolder?.editor?.cm?.contentDOM ??
 		actualView?.containerEl?.querySelector?.(".cm-content") ??
 		null;
-	if (cmContent) targets.unshift(cmContent as EventTarget);
+	if (cmContent) targets.unshift(cmContent);
+
 	return targets;
 }
 
@@ -320,7 +335,7 @@ export function openAssignmentMenuAt(params: OpenMenuParams) {
 			: null;
 
 	const effectiveMode: MenuMode =
-		mode === "auto" ? (editor ? "editor" : "headless") : (mode as MenuMode);
+		mode === "auto" ? (editor ? "editor" : "headless") : mode;
 
 	const { members, buckets, team } =
 		ports.orgStructure.getTeamMembersForFile(filePath);
@@ -706,12 +721,25 @@ export function openAssignmentMenuAt(params: OpenMenuParams) {
 			}
 
 			if (updated !== beforeLine) {
-				// Notify dashboard to suppress double-render
-				window.dispatchEvent(
-					new CustomEvent("agile:prepare-optimistic-file-change", {
-						detail: { filePath },
-					})
-				);
+				const maybeWindow =
+					typeof globalThis !== "undefined" &&
+					"window" in globalThis
+						? (globalThis as typeof globalThis & {
+								window?: Window & typeof globalThis;
+						  }).window
+						: undefined;
+
+				if (maybeWindow) {
+					maybeWindow.dispatchEvent(
+						new CustomEvent(
+							"agile:prepare-optimistic-file-change",
+							{
+								detail: { filePath },
+							}
+						)
+					);
+				}
+
 				lines[lineNo] = updated;
 				await writeFileLines(app, file, lines);
 			}
@@ -767,11 +795,25 @@ export function openAssignmentMenuAt(params: OpenMenuParams) {
 			updated = updated.replace(/ {2,}/g, " ").replace(/\s+$/, " ");
 
 			if (updated !== beforeLine) {
-				window.dispatchEvent(
-					new CustomEvent("agile:prepare-optimistic-file-change", {
-						detail: { filePath },
-					})
-				);
+				const maybeWindow =
+					typeof globalThis !== "undefined" &&
+					"window" in globalThis
+						? (globalThis as typeof globalThis & {
+								window?: Window & typeof globalThis;
+						  }).window
+						: undefined;
+
+				if (maybeWindow) {
+					maybeWindow.dispatchEvent(
+						new CustomEvent(
+							"agile:prepare-optimistic-file-change",
+							{
+								detail: { filePath },
+							}
+						)
+					);
+				}
+
 				lines[lineNo] = updated;
 				await writeFileLines(app, file, lines);
 			}
@@ -785,17 +827,18 @@ export function openAssignmentMenuAt(params: OpenMenuParams) {
 	// Footer: New Member items
 	const queueNewMemberItem = (nextState: "active" | "inactive") => {
 		menu.addItem((i) => {
-			const title = `New Member (${toTitleCase(nextState)})`;
+			const stateLabel = nextState === "active" ? "active" : "inactive";
+			const title = `New member (${stateLabel})`;
 			i.setTitle(title);
 			i.onClick(() => {
 				const teamName = team?.name ?? "Team";
-				const existingMembers = (members ?? []) as MemberInfo[];
+				const existingMembers = (members ?? []);
 				const allTeams: string[] = []; // no global list available here
 				const internalTeamCodes = new Map<string, string>();
 				const submitButtonText =
 					assignType === "assignee"
-						? "Assign to New Member"
-						: "Delegate to New Member";
+						? "Assign to new member"
+						: "Delegate to new member";
 				const allowedTypes =
 					assignType === "assignee"
 						? (["member"] as const)
@@ -834,8 +877,8 @@ export function openAssignmentMenuAt(params: OpenMenuParams) {
 						allowedTypes: [...allowedTypes],
 						titleText:
 							assignType === "assignee"
-								? "Assign to New Member"
-								: "Delegate to New Member",
+								? "Assign to new member"
+								: "Delegate to new member",
 					}
 				).open();
 			});
@@ -845,7 +888,9 @@ export function openAssignmentMenuAt(params: OpenMenuParams) {
 	// Footer: Remove item
 	const queueRemoveItem = () => {
 		menu.addItem((i) => {
-			i.setTitle(isAssignee ? "Remove Assignee" : "Remove Delegate");
+			i.setTitle(
+				isAssignee ? "Remove assignee" : "Remove delegate"
+			);
 			i.onClick(async () => {
 				if (effectiveMode === "editor") {
 					await ops.removeInEditor();
@@ -1063,18 +1108,29 @@ export function wireTaskAssignmentDomHandlers(
 	plugin: Plugin,
 	ports: { orgStructure: OrgStructurePort }
 ) {
-	const cmHolder = view as unknown as {
-		editor?: { cm?: { contentDOM?: HTMLElement } };
-	};
-	const cmContent = cmHolder.editor?.cm?.contentDOM;
-	const contentRoot = (cmContent ??
-		view.containerEl.querySelector(".cm-content")) as HTMLElement | null;
-	const targetEl: HTMLElement = contentRoot ?? view.containerEl;
+	const cmHolder =
+		view as MarkdownView & {
+			editor?: { cm?: { contentDOM?: HTMLElement } };
+		};
+
+	const cmContent =
+		cmHolder.editor?.cm?.contentDOM ??
+		view.containerEl.querySelector(".cm-content");
+
+	const contentRoot: HTMLElement =
+		cmContent instanceof HTMLElement ? cmContent : view.containerEl;
+
+	const targetEl: HTMLElement = contentRoot;
 
 	const onClick = (evt: MouseEvent) => {
-		const el = (evt.target as HTMLElement | null)?.closest(
+		const target = evt.target;
+		if (!(target instanceof HTMLElement)) {
+			return;
+		}
+
+		const el = target.closest(
 			'span[data-template-key="members.assignee"]'
-		) as HTMLElement | null;
+		);
 		if (!el) return;
 
 		evt.preventDefault();
@@ -1100,7 +1156,7 @@ export function wireTaskAssignmentDomHandlers(
 				).toLowerCase() === "inactive"
 					? "inactive"
 					: "active"
-			) as "active" | "inactive";
+			);
 
 			const currentSlug = (
 				el.getAttribute("data-member-slug") || ""
@@ -1124,11 +1180,9 @@ export function wireTaskAssignmentDomHandlers(
 				currentSlug,
 			});
 		} catch (err) {
-			new Notice(
-				`Assignment menu failed: ${String(
-					(err as Error)?.message ?? err
-				)}`
-			);
+			const message =
+				err instanceof Error ? err.message : String(err);
+			new Notice(`Assignment menu failed: ${message}`);
 		}
 	};
 
