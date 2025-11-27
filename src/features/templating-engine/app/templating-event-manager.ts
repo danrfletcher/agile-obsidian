@@ -1,4 +1,3 @@
-// templating-event-manager.ts
 import type { App, MarkdownView, Plugin } from "obsidian";
 import { TFile } from "obsidian";
 import type { TaskIndexPort } from "./templating-ports";
@@ -44,12 +43,13 @@ export function wireTemplatingDomHandlers(
 	_ports: { taskIndex: TaskIndexPort }
 ) {
 	// Resolve content root
-	const cmHolder = view as unknown as {
+	const cmHolder = view as {
 		editor?: { cm?: { contentDOM?: HTMLElement } };
 	};
 	const cmContent = cmHolder.editor?.cm?.contentDOM;
-	const contentRoot = (cmContent ??
-		view.containerEl.querySelector(".cm-content")) as HTMLElement | null;
+	const rawContentRoot = cmContent ?? view.containerEl.querySelector(".cm-content");
+	const contentRoot =
+		rawContentRoot instanceof HTMLElement ? rawContentRoot : null;
 	const targetEl: HTMLElement = contentRoot ?? view.containerEl;
 
 	// Cache to pass async workflow results into the sync renderer
@@ -73,30 +73,41 @@ export function wireTemplatingDomHandlers(
 		return `${p}.md`;
 	}
 
-	function tryResolveTaskSync(blockRef: string): TaskIndexResolvedTask | undefined {
+	function tryResolveTaskSync(blockRef: string): TaskIndexResolvedTask {
 		const taskIndex = _ports?.taskIndex;
 		if (!taskIndex?.getTaskByBlockRef) return undefined;
 
 		// 1) Try exact
-		let t = taskIndex.getTaskByBlockRef(blockRef ?? "") as TaskIndexResolvedTask;
-		if (t) return t;
+		let t = taskIndex.getTaskByBlockRef(blockRef ?? "");
 
 		// 2) Try "#^<id>" only (if we can parse a blockId)
 		const { filePart, blockId } = parseBlockRef(blockRef);
-		if (blockId) {
+		if (!t && blockId) {
 			const ref2 = `#^${blockId}`;
-			t = taskIndex.getTaskByBlockRef(ref2) as TaskIndexResolvedTask;
-			if (t) return t;
+			t = taskIndex.getTaskByBlockRef(ref2);
 		}
 
 		// 3) If filePart lacks ".md", try "<file>.md#^<id>"
-		if (filePart && blockId && !/\.[a-zA-Z0-9]+$/.test(filePart)) {
+		if (!t && filePart && blockId && !/\.[a-zA-Z0-9]+$/.test(filePart)) {
 			const augmented = `${ensureMdSuffix(filePart)}#^${blockId}`;
-			t = taskIndex.getTaskByBlockRef(augmented) as TaskIndexResolvedTask;
-			if (t) return t;
+			t = taskIndex.getTaskByBlockRef(augmented);
 		}
 
-		return undefined;
+		return t;
+	}
+
+	function normalizeBlockRefInput(source: unknown): string {
+		if (source === undefined || source === null) return "";
+		if (typeof source === "string") return source.trim();
+		if (typeof source === "number" || typeof source === "boolean") {
+			return String(source).trim();
+		}
+		try {
+			const json = JSON.stringify(source);
+			return typeof json === "string" ? json.trim() : "";
+		} catch {
+			return "";
+		}
 	}
 
 	const templating: TemplatingPorts = {
@@ -136,7 +147,7 @@ export function wireTemplatingDomHandlers(
 					try {
 						const nextParams = await runTemplateWorkflows(
 							def,
-							(baseParams ?? {}) as Record<string, unknown>,
+							(baseParams ?? {}),
 							{ taskIndex: _ports?.taskIndex }
 						);
 						workflowCache.set(templateId, nextParams);
@@ -168,7 +179,7 @@ export function wireTemplatingDomHandlers(
 				merged = {
 					...(params ?? {}),
 					...cached,
-				} as WorkflowAugmentedParams;
+				};
 			} else {
 				merged = (params ?? {}) as WorkflowAugmentedParams;
 			}
@@ -184,11 +195,7 @@ export function wireTemplatingDomHandlers(
 				const hasLinkedType = "linkedArtifactType" in merged;
 
 				const source = merged.blockRef;
-				const rawBlockRef =
-					source === undefined || source === null
-						? ""
-						: String(source);
-				const blockRef = rawBlockRef.trim();
+				const blockRef = normalizeBlockRefInput(source);
 
 				if (!hasLinkedType && blockRef) {
 					try {

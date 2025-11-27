@@ -178,7 +178,7 @@ export function insertTemplate<TParams = unknown>(
 	}
 
 	try {
-		const finalParams = tpl.defaults
+		const finalParams: TParams | undefined = tpl.defaults
 			? ({
 					...tpl.defaults,
 					...(params as Record<string, unknown> | undefined),
@@ -215,7 +215,7 @@ export function insertTemplateAtCursor<TParams = unknown>(
 		// editor intentionally omitted to keep this helper decoupled from Obsidian's Editor type
 	};
 
-	const tpl = findTemplateById(templateId) as TemplateDefinition | undefined;
+	const tpl = findTemplateById(templateId);
 	if (!tpl || typeof tpl !== "object" || typeof tpl.render !== "function") {
 		throw new TemplateInsertError(
 			`Unknown or invalid template: ${templateId}`,
@@ -311,7 +311,7 @@ export function renderTemplateOnly<TParams = unknown>(
 			{ code: "UNKNOWN_TEMPLATE" }
 		);
 	}
-	const finalParams = tpl.defaults
+	const finalParams: TParams | undefined = tpl.defaults
 		? ({
 				...tpl.defaults,
 				...(params as Record<string, unknown> | undefined),
@@ -328,7 +328,7 @@ export function prefillTemplateParams(
 	templateId: string,
 	wrapperEl: HTMLElement
 ): Record<string, unknown> | undefined {
-	const def = findTemplateById(templateId) as TemplateDefinition | undefined;
+	const def = findTemplateById(templateId);
 	if (!def) return undefined;
 
 	// Template-specific override (must be marker-only)

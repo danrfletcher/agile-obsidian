@@ -72,6 +72,20 @@ function ensureMdSuffix(path: string): string {
 	return `${p}.md`;
 }
 
+function normalizeBlockRefInput(source: unknown): string {
+	if (source === undefined || source === null) return "";
+	if (typeof source === "string") return source.trim();
+	if (typeof source === "number" || typeof source === "boolean") {
+		return String(source).trim();
+	}
+	try {
+		const json = JSON.stringify(source);
+		return typeof json === "string" ? json.trim() : "";
+	} catch {
+		return "";
+	}
+}
+
 // ------------------------
 // Reusable workflow steps
 // ------------------------
@@ -93,10 +107,7 @@ export const resolveTaskItemFromBlockRef: WorkflowStep = async ({
 }) => {
 	try {
 		const source = (params as BlockRefParams).blockRef;
-		const raw =
-			source === undefined || source === null
-				? ""
-				: String(source).trim();
+		const raw = normalizeBlockRefInput(source);
 
 		const ti = ports.taskIndex;
 		if (!raw || !ti?.getTaskByBlockRef) return {};

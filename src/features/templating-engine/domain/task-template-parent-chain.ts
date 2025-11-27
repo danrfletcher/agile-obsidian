@@ -67,7 +67,7 @@ export function getArtifactParentChainTemplateIds(ctx: {
 	const lines = Array.isArray(ctx.file)
 		? (ctx.file as string[])
 		: typeof ctx.file === "string"
-		? (ctx.file as string).split(/\r?\n/)
+		? ctx.file.split(/\r?\n/)
 		: [];
 
 	if (lines.length === 0) return [];

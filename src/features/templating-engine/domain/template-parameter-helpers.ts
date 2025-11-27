@@ -1,8 +1,29 @@
 import { escapeHtml } from "@utils";
 
+function toSafeParamString(value: unknown): string {
+	if (value == null) return "";
+	if (typeof value === "string") return value;
+	if (
+		typeof value === "number" ||
+		typeof value === "boolean" ||
+		typeof value === "bigint"
+	) {
+		return String(value);
+	}
+	if (value instanceof Date) {
+		return value.toISOString();
+	}
+	try {
+		const json = JSON.stringify(value);
+		return typeof json === "string" ? json : "";
+	} catch {
+		return "";
+	}
+}
+
 // Render helper: wraps a user-editable variable so it’s discoverable by the template modal (text content).
 export function wrapVar(name: string, value: unknown): string {
-	const val = value == null ? "" : String(value);
+	const val = toSafeParamString(value);
 	return `<span data-tpl-var="${escapeHtml(String(name))}">${escapeHtml(
 		val
 	)}</span>`;
@@ -26,7 +47,7 @@ export function attrVar(
 	value: unknown
 ): string {
 	const safeAttr = String(attrName).replace(/[^a-zA-Z0-9:_-]/g, "");
-	const val = value == null ? "" : String(value);
+	const val = toSafeParamString(value);
 	const escapedVal = escapeHtml(val);
 	const escapedVar = escapeHtml(String(varName));
 	return `${safeAttr}="${escapedVal}" data-tpl-attr-var-${safeAttr}="${escapedVar}"`;

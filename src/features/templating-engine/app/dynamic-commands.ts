@@ -166,18 +166,23 @@ export async function registerTemplatingDynamicCommands(
 			timer = null;
 		}
 
-		timer = window.setTimeout(async () => {
-			if (inFlight) {
-				pending = true;
-				return;
-			}
-			inFlight = true;
-			await recomputeAllowedIfNeeded(reason);
-			inFlight = false;
-			if (pending) {
-				pending = false;
-				await recomputeAllowedIfNeeded("pending");
-			}
+		timer = window.setTimeout(() => {
+			void (async () => {
+				if (inFlight) {
+					pending = true;
+					return;
+				}
+				inFlight = true;
+				try {
+					await recomputeAllowedIfNeeded(reason);
+					if (pending) {
+						pending = false;
+						await recomputeAllowedIfNeeded("pending");
+					}
+				} finally {
+					inFlight = false;
+				}
+			})();
 		}, delay);
 	}
 
@@ -244,9 +249,7 @@ export async function registerTemplatingDynamicCommands(
 						insertTemplateAtCursor(id, editor, filePath, params);
 					} catch (err) {
 						const message =
-							err instanceof Error
-								? err.message
-								: String(err);
+							err instanceof Error ? err.message : String(err);
 						new Notice(`Insert failed: ${message}`);
 					}
 				})();
