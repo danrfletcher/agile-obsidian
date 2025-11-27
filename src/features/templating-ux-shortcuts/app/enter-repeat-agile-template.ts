@@ -35,7 +35,7 @@ let enterSession: EnterSession | null = null;
 const DOUBLE_ENTER_WINDOW_MS = 300;
 
 type DoubleEnterState = {
-	tid: number;
+	tid: ReturnType<typeof setTimeout>;
 	startedAt: number;
 	filePath: string;
 	sourceLineNo: number;
@@ -43,13 +43,16 @@ type DoubleEnterState = {
 };
 const pendingState = new WeakMap<MarkdownView, DoubleEnterState>();
 
-function clearDoubleEnterState(view: MarkdownView, expectedTid?: number) {
+function clearDoubleEnterState(
+	view: MarkdownView,
+	expectedTid?: ReturnType<typeof setTimeout>
+) {
 	const st = pendingState.get(view);
 	if (!st) return;
 	if (expectedTid != null && st.tid !== expectedTid) return; // stale
 	try {
 		clearTimeout(st.tid);
-	} catch {}
+	} catch { /* ignore */ }
 	pendingState.delete(view);
 }
 
@@ -126,7 +129,9 @@ function collectWrappers(s: string): Array<{
 		if (!keyMatch) continue;
 
 		const orderMatch = block.match(/\bdata-order-tag\s*=\s*"([^"]+)"/i);
-		const idMatch = block.match(/\bdata-template-wrapper\s*=\s*"([^"]+)"/i);
+		const idMatch = block.match(
+			/\bdata-template-wrapper\s*=\s*"([^"]+)"/i
+		);
 
 		out.push({
 			templateKey: keyMatch[1],
@@ -296,7 +301,7 @@ export async function processEnter(
 				// Not a valid second press (moved, different position, or not empty task).
 				// Treat this as a new first press: reset previous window and start over.
 				clearDoubleEnterState(view);
-				const tid = window.setTimeout(() => {
+				const tid = setTimeout(() => {
 					clearDoubleEnterState(view, tid);
 				}, DOUBLE_ENTER_WINDOW_MS);
 				pendingState.set(view, {
@@ -312,7 +317,7 @@ export async function processEnter(
 		}
 
 		// No active or valid window -> initialize first-press window and let default behavior proceed.
-		const tid = window.setTimeout(() => {
+		const tid = setTimeout(() => {
 			clearDoubleEnterState(view, tid);
 		}, DOUBLE_ENTER_WINDOW_MS);
 		pendingState.set(view, {
@@ -324,7 +329,7 @@ export async function processEnter(
 		});
 		// No preventDefault on first press.
 	} catch (err) {
-		console.error(
+		globalThis.console?.error(
 			"[templating-ux-shortcuts] processEnter (double): error",
 			(err as Error)?.message ?? err
 		);
