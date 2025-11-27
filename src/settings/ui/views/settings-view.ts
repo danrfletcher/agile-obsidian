@@ -95,7 +95,20 @@ export class AgileSettingTab extends PluginSettingTab {
 		);
 		this.renderUxShortcutsSection(ux.contentEl);
 
-		// AGILE TASK FORMATTING SECTION (foldable) — 4th section
+		// STYLES SECTION (foldable)
+		const styles = this.createFoldableSection(
+			containerEl,
+			"Styles",
+			"Enable or disable Agile Obsidian's bundled checkbox styling.",
+			this.settings.uiFoldStyles ?? true,
+			async (folded) => {
+				this.settings.uiFoldStyles = folded;
+				await this.saveSettings();
+			}
+		);
+		this.renderStylesSection(styles.contentEl);
+
+		// AGILE TASK FORMATTING SECTION (foldable)
 		const fmt = this.createFoldableSection(
 			containerEl,
 			"Agile task formatting",
@@ -343,10 +356,36 @@ export class AgileSettingTab extends PluginSettingTab {
 	}
 
 	/**
+	 * Renders the Styles content into the provided container.
+	 * Provides a toggle for the bundled custom checkbox CSS.
+	 */
+	private renderStylesSection(containerEl: HTMLElement): void {
+		containerEl.empty();
+
+		new Setting(containerEl)
+			.setName("Task & checkbox styles")
+			.setDesc(
+				// eslint-disable-next-line obsidianmd/ui/sentence-case
+				"Enable Agile Obsidian's bundled styles for tasks. Turn this off if your theme or another plugin provides its own custom checkbox or task styling."
+			)	
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.settings.useBundledCheckboxes)
+					.onChange(async (value) => {
+						this.settings.useBundledCheckboxes = value;
+						await this.saveSettings();
+						await this.applyCheckboxStylesSetting();
+					})
+			);
+	}
+
+	/**
 	 * Renders the Agile Task Formatting content into the provided container.
 	 * - Adds visual "disabled" styling to subordinate toggles when the master is off.
 	 */
-	private renderAgileTaskFormattingSection(containerEl: HTMLElement): void {
+	private renderAgileTaskFormattingSection(
+		containerEl: HTMLElement
+	): void {
 		containerEl.empty();
 
 		// Section subheader inside the fold
