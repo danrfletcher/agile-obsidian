@@ -17,6 +17,9 @@ export type AgileArtifactType =
 	| "okr"
 	| "recurring-responsibility"
 	| "product"
+	| "feature"
+	| "kano-header"
+	| "moscow-header"
 	| "task";
 
 /**
