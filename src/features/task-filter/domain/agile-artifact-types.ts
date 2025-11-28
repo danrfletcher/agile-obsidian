@@ -28,6 +28,12 @@ function extractTemplateKeysFromText(
  *  - agile.personalLearningEpic -> "epic"
  * This allows the Initiatives section to include personal learning initiatives,
  * and to show personal learning epics as first-level children (treated like epics).
+ *
+ * Additional canonical types:
+ *  - agile.product -> "product"
+ *  - agile.feature -> "feature"
+ *  - prio.kano.*  -> "kano-header"
+ *  - prio.moscow.* -> "moscow-header"
  */
 function inferTypeFromKey(key: string): AgileArtifactType | undefined {
 	if (!key) return undefined;
@@ -53,6 +59,12 @@ function inferTypeFromKey(key: string): AgileArtifactType | undefined {
 	// Recognize agile.product style keys as a distinct non-task artifact
 	if (has("agile.product") || has("agileproduct")) {
 		return "product";
+	}
+
+	// Feature
+	// Recognize agile.feature as a distinct non-task artifact
+	if (has("agile.feature") || has("agilefeature")) {
+		return "feature";
 	}
 
 	// Personal Learning Initiative -> canonical "initiative"
@@ -113,6 +125,32 @@ function inferTypeFromKey(key: string): AgileArtifactType | undefined {
 		has("recurringresponsibility")
 	) {
 		return "recurring-responsibility";
+	}
+
+	// Kano headers (Prioritization templates)
+	// prio.kano.dissatisfier / indifferent / basic / performantHeader / delighter
+	if (
+		has("prio.kano") ||
+		has("kanodissatisfier") ||
+		has("kanoindifferent") ||
+		has("kanobasic") ||
+		has("kanoperformantheader") ||
+		has("kanoperformant") ||
+		has("kanodelighter")
+	) {
+		return "kano-header";
+	}
+
+	// MoSCoW headers (Prioritization templates)
+	// prio.moscow.could / must / should / wont
+	if (
+		has("prio.moscow") ||
+		has("moscowcould") ||
+		has("moscowmust") ||
+		has("moscowshould") ||
+		has("moscowwont")
+	) {
+		return "moscow-header";
 	}
 
 	return undefined;

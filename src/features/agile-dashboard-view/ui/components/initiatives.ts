@@ -51,7 +51,8 @@ export function processAndRenderInitiatives(
 	);
 
 	if (initiativesOnly.length > 0) {
-		container.createEl("h2", { text: "🎖️ initiatives overview" });
+		// eslint-disable-next-line obsidianmd/ui/sentence-case
+		container.createEl("h2", { text: "🎖️ Initiatives" });
 
 		// Render initiatives with no children
 		renderTaskTree(

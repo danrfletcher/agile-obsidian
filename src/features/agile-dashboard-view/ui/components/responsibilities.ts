@@ -128,7 +128,8 @@ export function processAndRenderResponsibilities(
 
 	if (responsibilityItemsFiltered.length > 0 && status) {
 		container.createEl("h2", {
-			text: "🧹 responsibilities overview",
+			// eslint-disable-next-line obsidianmd/ui/sentence-case
+			text: "🧹 Responsibilities",
 		});
 
 		// Render just the responsibility items themselves (no pre-rendered children)

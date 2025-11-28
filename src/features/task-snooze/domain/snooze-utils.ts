@@ -30,6 +30,18 @@ export async function cleanupExpiredSnoozes(
 	const userSlug = slugifyName(userName);
 	if (!userSlug) return changedPaths;
 
+	// Local helper: mirror canonical formatter's "safe trailing space for HTML" behavior.
+	const ensureSafeTrailingSpaceForHtml = (line: string): string => {
+		const endsWithClosingTag =
+			/>\s*$/.test(line) || /<\/mark>\s*$/i.test(line);
+
+		if (endsWithClosingTag) {
+			// Ensure exactly one space at the end
+			return line.replace(/\s*$/, " ");
+		}
+		return line;
+	};
+
 	// Group task line numbers by file path
 	const linesByFile = new Map<string, Set<number>>();
 	for (const t of tasks as (TaskItem & { _uniqueId?: string })[]) {
@@ -61,12 +73,19 @@ export async function cleanupExpiredSnoozes(
 			if (lineNo < 0 || lineNo >= lines.length) continue;
 			const original = lines[lineNo];
 
-			const updated = original.replace(pattern, (match, date: string) => {
-				return isDateExpired(date) ? "" : match;
-			});
+			const updated = original.replace(
+				pattern,
+				(match: string, date: string) => {
+					return isDateExpired(date) ? "" : match;
+				}
+			);
 
 			if (updated !== original) {
-				lines[lineNo] = updated.replace(/[ \t]+$/g, ""); // trim trailing whitespace
+				// Preserve trailing whitespace exactly as produced by the replacement,
+				// but re-apply the canonical invariant that lines ending in a closing
+				// HTML tag (e.g. "</p>" or "</mark>") must have a trailing space.
+				const finalLine = ensureSafeTrailingSpaceForHtml(updated);
+				lines[lineNo] = finalLine;
 				modified = true;
 			}
 		}

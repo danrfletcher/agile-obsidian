@@ -80,11 +80,13 @@ export function renderControlsBar(opts: ControlsBarOptions): ControlsBarRefs {
 	const viewSelect = controlsContainer.createEl("select");
 	viewSelect.createEl("option", {
 		value: "projects",
-		text: "🚀 projects view",
+		// eslint-disable-next-line obsidianmd/ui/sentence-case
+		text: "🚀 Projects",
 	});
 	viewSelect.createEl("option", {
 		value: "completed",
-		text: "✅ completed view",
+		// eslint-disable-next-line obsidianmd/ui/sentence-case
+		text: "✅ Completed",
 	});
 	viewSelect.value = initialView;
 	viewSelect.addEventListener("change", () => {

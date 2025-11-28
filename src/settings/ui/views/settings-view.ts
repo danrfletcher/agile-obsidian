@@ -129,7 +129,7 @@ export class AgileSettingTab extends PluginSettingTab {
 	/**
 	 * Renders the Org Structure content into the provided container.
 	 */
-	private renderOrgStructureSection(containerEl: HTMLElement): void {
+private renderOrgStructureSection(containerEl: HTMLElement): void {
 		containerEl.empty();
 
 		const teamsButtons = new Setting(containerEl)
@@ -152,19 +152,20 @@ export class AgileSettingTab extends PluginSettingTab {
 					new AddTeamModal(
 						this.app,
 						this.settings.teamsFolder || "Teams",
-						// onSubmit callback: pass seed flag to createTeam
+						// onSubmit callback: pass seed flag through to createTeam
 						async (
 							teamName,
 							parentPath,
 							teamSlug,
 							code,
-							_options
+							options
 						) => {
 							await this.actions.createTeam(
 								teamName,
 								parentPath,
 								teamSlug,
-								code
+								code,
+								options
 							);
 							await this.actions.detectAndUpdateTeams();
 							this.display();

@@ -126,7 +126,8 @@ export function processAndRenderObjectives(
 
 	// Render only if we're in "Active" mode and there is at least one selected OKR
 	if (entriesToRender.length > 0 && status) {
-		container.createEl("h2", { text: "🎯 objectives overview" });
+		// eslint-disable-next-line obsidianmd/ui/sentence-case
+		container.createEl("h2", { text: "🎯 Objectives" });
 
 		entriesToRender.forEach(({ okr, linkedTrees }) => {
 			// Render the OKR itself without its native children

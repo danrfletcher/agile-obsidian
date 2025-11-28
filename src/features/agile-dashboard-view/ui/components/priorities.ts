@@ -7,8 +7,8 @@ import {
 	isSnoozed,
 	getAgileArtifactType,
 } from "@features/task-filter";
+import type { AgileArtifactType } from "@features/task-filter";
 import { isRelevantToday } from "@features/task-date-manager";
-import { buildPrunedMergedTrees } from "@features/task-tree-builder";
 import { isShownByParams } from "../utils/filters";
 import { attachSectionFolding } from "@features/task-tree-fold";
 
@@ -22,21 +22,38 @@ type RegisterDomEvent = (
 /**
  * Process and render the Priorities section.
  *
- * New behavior:
- * - Still starts from "priority root" tasks (open, relevant today, non-snoozed, etc.).
- * - Defines the "priority area" as those roots plus all of their nested/deeply nested children.
- * - Within that area, selects only tasks:
- *   - Visible under current TaskParams (isShownByParams);
- *   - Directly assigned/active for the selected member (activeForMember).
- * - Uses buildPrunedMergedTrees to build pruned/merged trees from those tasks.
- * - Clips the merged result back at the original priority roots so we only show
- *   trees rooted at the priority roots (no ancestors above).
- * - Enables folding on those priority trees.
+ * Behavior:
+ * - Start from "priority root" tasks (status "O", relevant today, non-snoozed, etc.).
+ * - For each candidate root, walk its subtree to find descendant agile items whose
+ *   type is in WHITELISTED_NESTED_TYPES and that:
+ *     - are visible under the current TaskParams; and
+ *     - are directly assigned/active for the selected member.
+ *   Currently this whitelist includes:
+ *     - "product"
+ *     - "feature"
+ *     - "kano-header"  (all Kano prioritization headers)
+ *     - "moscow-header" (all MoSCoW prioritization headers)
+ *
+ * - Root visibility:
+ *     - A root is shown if:
+ *         - it is activeForMember for the selected user; OR
+ *         - it has at least one such assigned whitelisted descendant.
+ *
+ * - Nested items behavior:
+ *     - If the root IS assigned to the active user:
+ *         - Do NOT pre-render any nested whitelisted children.
+ *         - Only the root is shown initially, with a chevron; expansion is
+ *           handled by task-tree-fold using the full childrenMap.
+ *     - If the root is NOT assigned to the active user:
+ *         - If it has whitelisted, assigned descendants, show those as shallow
+ *           children under the root.
+ *
+ * - Recurring responsibilities are excluded entirely (neither roots nor descendants).
  */
 export function processAndRenderPriorities(
 	container: HTMLElement,
 	currentTasks: TaskItem[],
-	status: boolean,
+	statusActive: boolean,
 	selectedAlias: string | null,
 	app: App,
 	taskMap: Map<string, TaskItem>,
@@ -44,130 +61,204 @@ export function processAndRenderPriorities(
 	taskParams: TaskParams,
 	registerDomEvent?: RegisterDomEvent
 ): void {
-	const { inProgress, completed, sleeping, cancelled } = taskParams;
-	void inProgress;
-	void completed;
-	void sleeping;
-	void cancelled;
-
-	// 1) Identify "priority root" tasks (same top-level criteria as before)
-	const priorityRoots = currentTasks.filter(
-		(task: TaskItem) =>
-			task.status === "O" &&
-			!task.completed &&
-			isRelevantToday(task) &&
-			!isCancelled(task) &&
-			!task.text.includes("🎖️") &&
-			!task.text.includes("🏆") &&
-			!task.text.includes("📝") &&
-			!isSnoozed(task, taskMap, selectedAlias) &&
-			getAgileArtifactType(task) !== "recurring-responsibility"
-	);
-
-	if (priorityRoots.length === 0 || !status) {
-		// No priority roots, or inactive view: nothing to render.
+	// No priorities in "Inactive" view
+	if (!statusActive) {
 		return;
 	}
 
-	// 2) Build the "priority area" = all descendants of all priority roots
-	const priorityRootIds = new Set<string>();
-	for (const root of priorityRoots) {
-		if (root._uniqueId) priorityRootIds.add(root._uniqueId);
-	}
+	// Cache artifact types per task id to avoid repeated parsing
+	const artifactTypeCache = new Map<string, AgileArtifactType | null>();
 
-	const priorityAreaIds = new Set<string>();
-	for (const rootId of priorityRootIds) {
-		if (!rootId) continue;
-		const queue: string[] = [rootId];
-		while (queue.length > 0) {
-			const id = queue.shift()!;
-			if (!id || priorityAreaIds.has(id)) continue;
-			priorityAreaIds.add(id);
-
-			const children = childrenMap.get(id) || [];
-			for (const child of children) {
-				const cid = child._uniqueId;
-				if (cid && !priorityAreaIds.has(cid)) {
-					queue.push(cid);
-				}
-			}
+	const getArtifactTypeCached = (
+		task: TaskItem
+	): AgileArtifactType | null => {
+		const id = task._uniqueId;
+		if (!id) {
+			return getAgileArtifactType(task);
 		}
-	}
-
-	if (priorityAreaIds.size === 0) {
-		return;
-	}
-
-	// 3) Within the priority area, pick tasks that are visible under current TaskParams
-	//    (same visibility logic used by artifacts.ts via isShownByParams)
-	const visiblePriorityAreaTasks = currentTasks.filter((task) => {
-		const id = task._uniqueId ?? "";
-		if (!id) return false;
-		if (!priorityAreaIds.has(id)) return false;
-		return isShownByParams(task, taskMap, selectedAlias, taskParams);
-	});
-
-	// 4) From those, select tasks directly assigned/active for the selected member
-	//    (mirrors artifacts.ts behavior for Tasks/Stories/Epics)
-	const directPriorityAssigned = visiblePriorityAreaTasks.filter((task) =>
-		activeForMember(task, status, selectedAlias)
-	);
-
-	if (directPriorityAssigned.length === 0) {
-		// No directly assigned tasks under priority roots → nothing to show.
-		return;
-	}
-
-	// 5) Build pruned/merged trees from the directly-assigned tasks in the priority area.
-	//    We pass childrenMap so tree-builder has full child relationships.
-	const mergedTrees = buildPrunedMergedTrees(
-		directPriorityAssigned,
-		taskMap,
-		undefined,
-		childrenMap
-	);
-
-	if (!mergedTrees || mergedTrees.length === 0) {
-		return;
-	}
-
-	// 6) Clip/anchor the merged result at the original priority roots.
-	const rootsById = new Map<string, TaskItem>();
-
-	const collectPriorityRootSubtrees = (node: TaskItem) => {
-		const id = node._uniqueId ?? "";
-		const isPriorityRoot = id && priorityRootIds.has(id);
-		if (isPriorityRoot) {
-			if (!rootsById.has(id)) {
-				rootsById.set(id, {
-					...node,
-					children: node.children ? [...node.children] : [],
-				});
-			}
-			return;
+		if (artifactTypeCache.has(id)) {
+			return artifactTypeCache.get(id) ?? null;
 		}
-		for (const child of node.children || []) {
-			collectPriorityRootSubtrees(child);
-		}
+		const t = getAgileArtifactType(task);
+		artifactTypeCache.set(id, t);
+		return t;
 	};
 
-	for (const tree of mergedTrees) {
-		collectPriorityRootSubtrees(tree);
-	}
+	const isRecurringResponsibility = (task: TaskItem): boolean =>
+		getArtifactTypeCached(task) === "recurring-responsibility";
 
-	const orderedPriorityTrees: TaskItem[] = [];
-	for (const root of priorityRoots) {
-		const id = root._uniqueId ?? "";
-		if (!id) continue;
-		const tree = rootsById.get(id);
-		if (tree) orderedPriorityTrees.push(tree);
-	}
+	// Whitelist of agile artifact types that can be auto-shown as nested
+	// items under priority roots. Currently includes:
+	// - "product"
+	// - "feature"
+	// - "kano-header"
+	// - "moscow-header"
+	const WHITELISTED_NESTED_TYPES: AgileArtifactType[] = [
+		"product",
+		"feature",
+		"kano-header",
+		"moscow-header",
+	];
 
-	if (orderedPriorityTrees.length === 0) {
+	const isWhitelistedNestedArtifact = (task: TaskItem): boolean => {
+		const artifactType = getArtifactTypeCached(task);
+		if (!artifactType) return false;
+		return WHITELISTED_NESTED_TYPES.includes(artifactType);
+	};
+
+	// Helper: should a descendant appear in Priorities as a nested item?
+	// This is future-proofed via WHITELISTED_NESTED_TYPES so more types can be
+	// added without changing this logic.
+	const isVisibleWhitelistedForPriorities = (
+		task: TaskItem
+	): boolean => {
+		if (!task._uniqueId) return false;
+		if (!isWhitelistedNestedArtifact(task)) return false;
+		if (
+			!isShownByParams(task, taskMap, selectedAlias, taskParams)
+		) {
+			return false;
+		}
+		// Only items that are assigned/active for the member
+		if (!activeForMember(task, statusActive, selectedAlias)) {
+			return false;
+		}
+		return true;
+	};
+
+	// 1) Identify "candidate priority root" tasks based on content/state
+	const candidateRoots = currentTasks.filter((task: TaskItem) => {
+		if (task.status !== "O") return false;
+		if (task.completed) return false;
+		if (!isRelevantToday(task)) return false;
+		if (isCancelled(task)) return false;
+		// Exclude items that are visually initiatives/epics/stories/notes headings
+		if (task.text?.includes("🎖️")) return false;
+		if (task.text?.includes("🏆")) return false;
+		if (task.text?.includes("📝")) return false;
+		if (isSnoozed(task, taskMap, selectedAlias)) return false;
+		// Do not allow recurring responsibilities to be priority roots
+		if (isRecurringResponsibility(task)) return false;
+		return true;
+	});
+
+	if (candidateRoots.length === 0) {
 		return;
 	}
 
-	// 7) Render section with its own root wrapper (similar to artifacts.ts) and enable folding
+	// 2) For each candidate root, traverse descendants to collect assigned
+	//    whitelisted items (product, feature, Kano/MoSCoW headers). We will
+	//    later filter roots based on activeForMember and/or presence of such
+	//    descendants.
+	const rootsToShow: TaskItem[] = [];
+	const nestedByRootId = new Map<string, TaskItem[]>();
+
+	for (const root of candidateRoots) {
+		const rootId = root._uniqueId;
+		if (!rootId) continue;
+
+		const queue: string[] = [rootId];
+		const seen = new Set<string>();
+		const nestedForRoot: TaskItem[] = [];
+
+		while (queue.length > 0) {
+			const currentId = queue.shift()!;
+			if (!currentId || seen.has(currentId)) continue;
+			seen.add(currentId);
+
+			const children = childrenMap.get(currentId) || [];
+			for (const child of children) {
+				const childId = child._uniqueId;
+				if (!childId) continue;
+
+				// Collect eligible whitelisted descendants
+				if (isVisibleWhitelistedForPriorities(child)) {
+					nestedForRoot.push(child);
+				}
+
+				// Always traverse deeper to find whitelisted items further down the tree
+				queue.push(childId);
+			}
+		}
+
+		const rootIsActive = activeForMember(
+			root,
+			statusActive,
+			selectedAlias
+		);
+		const hasAssignedWhitelisted = nestedForRoot.length > 0;
+
+		// Root visibility rule:
+		// - Show this root if it is active; OR
+		// - Show this root if it has at least one assigned whitelisted descendant.
+		if (!rootIsActive && !hasAssignedWhitelisted) {
+			continue;
+		}
+
+		rootsToShow.push(root);
+
+		// Nested visibility rule:
+		// - Only attach whitelisted nested children for roots that are
+		//   NOT assigned to the active user.
+		// - For active roots, nested items will only be reachable via folding
+		//   (chevron) using the full childrenMap.
+		if (!rootIsActive && hasAssignedWhitelisted && rootId) {
+			nestedByRootId.set(rootId, nestedForRoot);
+		}
+	}
+
+	if (rootsToShow.length === 0) {
+		// No roots that are active or that have assigned whitelisted descendants
+		return;
+	}
+
+	// 3) Build the display trees:
+	//    - each root in rootsToShow is shown;
+	//    - for roots NOT assigned to the active user, their children are the
+	//      collected whitelisted descendants (shallow),
+	//      so they themselves have no children initially.
+	//    - for roots assigned to the active user, we do not pre-attach any
+	//      nested children; only the root is rendered initially.
+	const orderedPriorityTrees: TaskItem[] = [];
+
+	for (const root of rootsToShow) {
+		const rootId = root._uniqueId;
+		const rootNested = (rootId
+			? nestedByRootId.get(rootId)
+			: undefined) ?? [];
+
+		const rootCopy: TaskItem = {
+			...root,
+			children: rootNested.map((child) => ({
+				...child,
+				// Do not pre-render any children; folding can reveal
+				// their real children on demand.
+				children: [],
+			})),
+		};
+
+		orderedPriorityTrees.push(rootCopy);
+	}
+
+	// 4) Prepare task/children maps for folding that exclude recurring
+	//    responsibilities entirely, so they can never appear in this section,
+	//    even after expanding nodes.
+	const prioritiesTaskMap = new Map<string, TaskItem>();
+	const prioritiesChildrenMap = new Map<string, TaskItem[]>();
+
+	for (const [id, task] of taskMap.entries()) {
+		if (isRecurringResponsibility(task)) continue;
+		prioritiesTaskMap.set(id, task);
+	}
+
+	for (const [id, children] of childrenMap.entries()) {
+		const filteredChildren = children.filter(
+			(child) => !isRecurringResponsibility(child)
+		);
+		prioritiesChildrenMap.set(id, filteredChildren);
+	}
+
+	// 5) Render section with its own root wrapper and enable folding.
 	const sectionRoot = container.createEl("div", {
 		cls: "agile-artifact-section",
 		attr: {
@@ -175,10 +266,10 @@ export function processAndRenderPriorities(
 		},
 	});
 
-	// Heading
-	sectionRoot.createEl("h2", { text: "📂 priorities overview" });
+	// eslint-disable-next-line obsidianmd/ui/sentence-case
+	sectionRoot.createEl("h2", { text: "📂 Priorities" });
 
-	// Render pruned priority trees
+	// Render priority trees (roots + shallow children)
 	renderTaskTree(
 		orderedPriorityTrees,
 		sectionRoot,
@@ -189,12 +280,13 @@ export function processAndRenderPriorities(
 		selectedAlias
 	);
 
-	// Enable folding scoped to this section
+	// Enable folding scoped to this section, using the filtered maps
+	// that exclude recurring responsibilities.
 	try {
 		attachSectionFolding(sectionRoot, {
 			app,
-			taskMap,
-			childrenMap,
+			taskMap: prioritiesTaskMap,
+			childrenMap: prioritiesChildrenMap,
 			selectedAlias,
 			renderTaskTree,
 			registerDomEvent,
@@ -204,7 +296,7 @@ export function processAndRenderPriorities(
 		/* ignore */
 	}
 
-	// Optional: ensure correct data-section stamping within this section, like artifacts.ts
+	// Final pass: enforce correct data-section stamping inside this section.
 	try {
 		const restamp = (rootEl: HTMLElement, value: string) => {
 			const uls = Array.from(
