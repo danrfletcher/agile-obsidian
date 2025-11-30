@@ -294,3 +294,45 @@ export const isBlankTask = (task: TaskItem): boolean => {
 	if (typeof txt !== "string") return true;
 	return txt.trim().length === 0;
 };
+
+/**
+ * Whitelist of list-header template keys whose children should be "bumped"
+ * onto the parent task/list item (currently the NALAp priority headers).
+ *
+ * These correspond to presets that render via:
+ *   wrapTemplate("prio.nalap.*", inner, { orderTag: this.orderTag })
+ */
+export const WhitelistedListHeaderTemplateKeys = new Set<string>([
+	"prio.nalap.now",
+	"prio.nalap.always",
+	"prio.nalap.later",
+	"prio.nalap.done",
+	"prio.nalap.dropped",
+	"prio.nalap.adhoc",
+]);
+
+/**
+ * Returns true when a task line contains a list-header template that is
+ * part of the global whitelist (e.g. NALAp Now/Always/Later/Done/Dropped/Adhoc).
+ *
+ * Detection works on the rendered HTML `data-template-key` attributes so it
+ * remains robust even if the emoji or label text change.
+ */
+export const isWhitelistedListHeader = (task: TaskItem): boolean => {
+	const txt = task?.text;
+	if (typeof txt !== "string" || txt.length === 0) return false;
+	if (!txt.includes("data-template-key")) return false;
+
+	const re =
+		/data-template-key\s*=\s*["']([^"']+)["']/gi;
+
+	let m: RegExpExecArray | null;
+	while ((m = re.exec(txt)) !== null) {
+		const key = (m[1] || "").trim();
+		if (WhitelistedListHeaderTemplateKeys.has(key)) {
+			return true;
+		}
+	}
+
+	return false;
+};

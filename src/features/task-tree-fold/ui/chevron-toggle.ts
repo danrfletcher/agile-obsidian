@@ -4,7 +4,7 @@ import { defaultTaskComparator } from "../domain/utils";
 import { animateClose, animateOpen } from "./animations";
 import { getAncestorWraps } from "./dom-utils";
 import { getAgileArtifactType, isInProgress } from "@features/task-filter";
-import { stripListItems } from "@features/task-tree-builder";
+import { bumpWhitelistedListItems } from "@features/task-tree-builder";
 
 type CssProps = Record<string, string | null | undefined>;
 
@@ -214,7 +214,9 @@ But resets when Obsidian is closed and reopened (sessionStorage semantics).
 Update: When restoring from persisted state, expand without animation to avoid replaying the unfold animation on re-render.
 
 Change: Only display in-progress children (via isInProgress). If no in-progress children, do not render a chevron.
-Also strip list items before rendering unfolded children (via stripListItems).
+Also bump whitelisted list-header items (e.g. NALAp priority headers) before
+rendering unfolded children, so those headers remain "virtual" while other
+list items are shown normally (via bumpWhitelistedListItems).
 */
 export function attachChevronSet(
 	ul: HTMLElement,
@@ -464,11 +466,13 @@ export function attachChevronSet(
 			const children = computeChildren();
 			if (children.length === 0) return;
 
-			// Strip list items from the tree items to be rendered
-			const strippedChildren = stripListItems(children);
+			// Bump whitelisted list-header items (e.g. NALAp priority headers)
+			// so their children appear directly under the parent. Ordinary list
+			// items remain visible.
+			const bumpedChildren = bumpWhitelistedListItems(children);
 
-			// Render direct children SHALLOWLY after stripping list items
-			const shallowChildren = strippedChildren.map((c: TaskItem) => ({
+			// Render direct children SHALLOWLY after bumping list headers
+			const shallowChildren = bumpedChildren.map((c: TaskItem) => ({
 				...c,
 				children: [],
 			}));
