@@ -1,6 +1,6 @@
 import { TaskItem } from "@features/task-index";
 import { attachFilteredChildren } from "./top-down-builder";
-import { stripListItems } from "./task-tree-utils";
+import { bumpWhitelistedListItems } from "./task-tree-utils";
 
 const cloneTaskNode = (obj: TaskItem): TaskItem => ({
 	...obj,
@@ -161,6 +161,10 @@ export const mergeTaskTreesPure = (
 /**
  * Builds pruned and merged task trees from a list of linked tasks.
  * For each linked task: finds the top ancestor (or matching via optional predicate), builds the path, creates a pruned hierarchy, optionally attaches filtered children, and merges overlaps by root.
+ * At the end, whitelisted list header items (e.g. NALAp priority headers) are
+ * "bumped" so that their children appear directly under the parent instead of
+ * showing the header node itself.
+ *
  * Mutation: uses in-place merge and in-place child attachment inside the function; returns new cleaned trees array.
  * @param {TaskItem[]} tasks - The array of tasks to build pruned trees from.
  * @param {Map<string, TaskItem>} taskMap - Map of unique task IDs to TaskItems for parent lookups.
@@ -221,7 +225,7 @@ export const buildPrunedMergedTrees = (
 	}
 
 	const cleanedTrees = Array.from(treesByRoot.values()).map((tree) => {
-		const cleaned = stripListItems([tree]);
+		const cleaned = bumpWhitelistedListItems([tree]);
 		return cleaned[0] || tree;
 	});
 	return cleanedTrees;

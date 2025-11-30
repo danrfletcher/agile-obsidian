@@ -8,4 +8,9 @@ export {
 	attachFilteredChildren,
 	buildFullSubtree,
 } from "./domain/top-down-builder";
-export { stripListItems } from "./domain/task-tree-utils";
+
+// New name for list-header bumping. stripListItems is exported as an alias
+// from task-tree-utils for backwards compatibility.
+export {
+	bumpWhitelistedListItems,
+} from "./domain/task-tree-utils";
