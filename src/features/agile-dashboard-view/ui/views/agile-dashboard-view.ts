@@ -1,4 +1,3 @@
-// ./src/features/agile-dashboard-view/ui/views/agile-dashboard-view.ts
 import { ItemView, WorkspaceLeaf } from "obsidian";
 import manifest from "manifest.json";
 
