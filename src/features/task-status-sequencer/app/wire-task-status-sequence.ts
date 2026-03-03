@@ -44,6 +44,8 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 		filePath: string;
 		timerId: number | null;
 		longApplied: boolean;
+		startX?: number;
+		startY?: number;
 	};
 	const pressState = new WeakMap<MarkdownView, PressState>();
 
@@ -299,10 +301,9 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 				return;
 			}
 
-			// Stop default checkbox behavior early to avoid flicker/indent jump
-			evt.preventDefault();
-			evt.stopPropagation();
-			(evt as EventWithStopImmediatePropagation).stopImmediatePropagation?.();
+			// DO NOT prevent default here, so that selection can start.
+			// Instead, we rely on onPointerMove to cancel if drag occurs,
+			// and on click capture to prevent the native toggle if it was a tap.
 
 			const filePath = view.file?.path || "";
 			const state = pressState.get(view);
@@ -314,6 +315,8 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 				filePath,
 				timerId: null,
 				longApplied: false,
+				startX: evt.clientX,
+				startY: evt.clientY,
 			};
 			const timerId = window.setTimeout(() => {
 				// Apply cancel immediately on long-press timeout
@@ -455,7 +458,36 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 		finishShortPressIfAny(evt);
 	};
 
+	// Drag detection to cancel press handling if user is selecting text
+	const onPointerMove = (evt: PointerEvent) => {
+		try {
+			const view = app.workspace.getActiveViewOfType(MarkdownView);
+			if (!view) return;
+
+			const state = pressState.get(view);
+			if (
+				!state ||
+				state.startX === undefined ||
+				state.startY === undefined
+			)
+				return;
+
+			const dx = evt.clientX - state.startX;
+			const dy = evt.clientY - state.startY;
+			// If moved more than ~5px, assume selection/drag -> cancel our press logic
+			if (dx * dx + dy * dy > 25) {
+				if (state.timerId != null) {
+					window.clearTimeout(state.timerId);
+				}
+				pressState.delete(view);
+			}
+		} catch {
+			/* ignore */
+		}
+	};
+
 	plugin.registerDomEvent(document, "pointerdown", onPointerDown);
+	plugin.registerDomEvent(document, "pointermove", onPointerMove);
 	plugin.registerDomEvent(document, "pointerup", onPointerUpOrCancel);
 	plugin.registerDomEvent(document, "pointercancel", onPointerUpOrCancel);
 

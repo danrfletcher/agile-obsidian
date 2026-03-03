@@ -76,6 +76,12 @@ export function findPosFromEvent(
 		/* ignore */
 	}
 
+	// If we had coordinates but failed to resolve a position, do NOT fall back to cursor.
+	// This prevents interpreting clicks on empty space (or unmapped elements) as actions on the current cursor position.
+	if (x !== null && y !== null) {
+		return null;
+	}
+
 	try {
 		const cur = editor.getCursor();
 		const line =
@@ -117,7 +123,8 @@ export function computeCheckboxTokenRange(
 ): { fromCh: number; toCh: number } | null {
 	// Find the list marker ("- ", "* ", "+ ", "1. ", "1) ") with optional indentation
 	const m = lineText.match(/^\s*(?:[-*+]|\d+[.)])\s*/);
-	const markerEnd = m ? m[0].length : 0;
+	if (!m) return null;
+	const markerEnd = m[0].length;
 
 	const openIdx = lineText.indexOf("[", markerEnd);
 	if (openIdx < 0) return null;
