@@ -9,12 +9,16 @@
  * Note: Uppercase 'X' is not part of the accepted input type; callers should pass "x".
  */
 export function setCheckboxStatusChar(
-    line: string,
-    newChar: "x" | "-" | "/" | " "
+	line: string,
+	newChar: "x" | "-" | "/" | " "
 ): string {
-    // Match list marker and checkbox, replace inner char with provided newChar
-    return line.replace(
-        /^(\s*(?:[-*+]|\d+[.)])\s*\[)\s*[^\]]?\s*(\])/,
-        (_m, p1: string, p2: string) => `${p1}${newChar}${p2}`
-    );
+	// Match: prefix (indent + list marker + space + "["), any inner content with spaces, closing "]", then the rest.
+	const m = line.match(
+		/^(\s*(?:[-*+]|\d+[.)])\s*\[)\s*[^\]]?\s*(\])(.*)$/
+	);
+	if (!m) return line;
+	const prefix = m[1] ?? "";
+	const suffixBracket = m[2] ?? "]";
+	const tail = m[3] ?? "";
+	return `${prefix}${newChar}${suffixBracket}${tail}`;
 }

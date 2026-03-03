@@ -290,6 +290,11 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 			// If clicking the chevron/bullet, allow fold and do not intercept.
 			if (isChevronEvent(evt)) return;
 
+			// If we are not clicking a checkbox/label element, let the editor handle it (e.g. cursor placement).
+			// This prevents clicks on the markdown source "[ ]" from being interpreted as a toggle.
+			const { hitsLabel, hitsCheckbox } = pathHitsLabelOrCheckbox(evt);
+			if (!hitsLabel && !hitsCheckbox) return;
+
 			const pos = findPosFromEvent(editor, evt);
 			if (!pos) return;
 

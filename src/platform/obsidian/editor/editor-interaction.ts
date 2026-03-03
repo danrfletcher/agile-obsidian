@@ -128,21 +128,30 @@ export function computeCheckboxTokenRange(
 
 	const openIdx = lineText.indexOf("[", markerEnd);
 	if (openIdx < 0) return null;
+
+	// Check that there is only whitespace between the list marker and the opening bracket
+	const inBetween = lineText.substring(markerEnd, openIdx);
+	if (/[^\s]/.test(inBetween)) return null;
+
 	const closeIdx = lineText.indexOf("]", openIdx);
 	if (closeIdx < 0) return null;
 
-	// Return half-open style bounds but with toCh being one-past the closing bracket
-	// This allows treating positions exactly at close+1 as still "on the checkbox".
+	// Check that there is only a single character (or space) inside the brackets
+	const inside = lineText.substring(openIdx + 1, closeIdx);
+	if (inside.length > 1) return null;
+
+	// Return half-open style bounds [fromCh, toCh)
+	// We no longer include closeIdx + 1 to avoid hijacking clicks immediately after the bracket.
 	return { fromCh: openIdx, toCh: closeIdx + 1 };
 }
 
 /**
  * True if ch falls on the checkbox token (including immediately after the closing bracket).
- * This mirrors the previously working behavior, enabling reliable pointerdown suppression.
  */
 export function isPosOnCheckboxToken(lineText: string, ch: number): boolean {
 	const r = computeCheckboxTokenRange(lineText);
 	if (!r) return false;
 	// Include the right boundary so clicks landing at the char immediately after ']' are considered on the checkbox.
+	// This is necessary for reliability when clicking rendered widgets.
 	return ch >= r.fromCh && ch <= r.toCh;
 }
