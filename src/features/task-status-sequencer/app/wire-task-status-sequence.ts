@@ -99,7 +99,10 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 				c?.contains("collapse-indicator") ||
 				c?.contains("collapse-icon") ||
 				c?.contains("cm-foldPlaceholder") ||
-				c?.contains("HyperMD-list-bullet")
+				c?.contains("HyperMD-list-bullet") ||
+				c?.contains("list-bullet") ||
+				c?.contains("bullet") ||
+				el.tagName === "LI" // Clicking directly on the LI bullet/padding area
 			);
 		});
 	};
@@ -531,6 +534,9 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 			const onToken = isPosOnCheckboxToken(lineText, pos.ch);
 
 			const { hitsLabel, hitsCheckbox } = pathHitsLabelOrCheckbox(evt);
+
+			// If clicking a fold chevron or list bullet, explicitly ALLOW it to pass through
+			if (isChevronEvent(evt)) return;
 
 			// Case 2: prevent native toggles when we are targeting the checkbox (token or widget)
 			if (
