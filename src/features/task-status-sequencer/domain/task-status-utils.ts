@@ -12,13 +12,9 @@ export function setCheckboxStatusChar(
 	line: string,
 	newChar: "x" | "-" | "/" | " "
 ): string {
-	// Match: prefix (indent + list marker + space + "["), any inner content with spaces, closing "]", then the rest.
-	const m = line.match(
-		/^(\s*(?:[-*+]|\d+[.)])\s*\[)\s*[^\]]?\s*(\])(.*)$/
-	);
+	// Match: prefix (up to "["), any internal status chars, then suffix (starting with "]")
+	// This preserves all indentation, list markers, and everything after the checkbox.
+	const m = line.match(/^(\s*(?:[-*+]|\d+[.)])\s*\[)[^\]]*(\].*)$/);
 	if (!m) return line;
-	const prefix = m[1] ?? "";
-	const suffixBracket = m[2] ?? "]";
-	const tail = m[3] ?? "";
-	return `${prefix}${newChar}${suffixBracket}${tail}`;
+	return `${m[1]}${newChar}${m[2]}`;
 }

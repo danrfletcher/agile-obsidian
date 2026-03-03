@@ -126,9 +126,9 @@ export function findTargetLineFromClick(
  */
 export function isTaskLine(line: string): boolean {
 	const expanded = line.replace(/\t/g, "    ");
-	// optional indent, list marker (- * + or 1.), space, then [<any single char>], then at least one space or end
+	// optional indent, list marker (- * + or 1. or 1)), space, then [<any single char>], then at least one space or end
 	// This generalizes the previous whitelist ( |x|X|-|\/) to any single non-] char, keeping end/space rule
-	return /^\s*(?:[-*+]|\d+\.)\s+\[[^\]]\](?:\s+|$)/.test(expanded);
+	return /^\s*(?:[-*+]|\d+[.)])\s+\[[^\]]\](?:\s+|$)/.test(expanded);
 }
 
 /**
@@ -136,7 +136,7 @@ export function isTaskLine(line: string): boolean {
  */
 export function isListLine(line: string): boolean {
 	const expanded = line.replace(/\t/g, "    ");
-	return /^\s*(?:[-*+]|\d+\.)\s+/.test(expanded);
+	return /^\s*(?:[-*+]|\d+[.)])\s+/.test(expanded);
 }
 
 /**
@@ -199,13 +199,9 @@ export function setCheckboxStatusChar(
 	line: string,
 	statusChar: "x" | "-"
 ): string {
-	// Match: prefix (indent + list marker + space + "["), any inner content with spaces, closing "]", then the rest.
-	const m = line.match(
-		/^(\s*(?:[-*+]|\d+[.)])\s*\[)\s*([^\]]?)\s*(\])(.*)$/
-	);
+	// Match: prefix (up to "["), any internal status chars, then suffix (starting with "]")
+	// This preserves all indentation, list markers, and everything after the checkbox.
+	const m = line.match(/^(\s*(?:[-*+]|\d+[.)])\s*\[)[^\]]*(\].*)$/);
 	if (!m) return line;
-	const prefix = m[1] ?? "";
-	const suffixBracket = m[3] ?? "]";
-	const tail = m[4] ?? "";
-	return `${prefix}${statusChar}${suffixBracket}${tail}`;
+	return `${m[1]}${statusChar}${m[2]}`;
 }

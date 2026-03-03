@@ -146,12 +146,12 @@ export function computeCheckboxTokenRange(
 }
 
 /**
- * True if ch falls on the checkbox token (including immediately after the closing bracket).
+ * True if ch falls on the checkbox token (including the brackets themselves).
+ * Does NOT include the position immediately after the closing bracket.
  */
 export function isPosOnCheckboxToken(lineText: string, ch: number): boolean {
 	const r = computeCheckboxTokenRange(lineText);
 	if (!r) return false;
-	// Include the right boundary so clicks landing at the char immediately after ']' are considered on the checkbox.
-	// This is necessary for reliability when clicking rendered widgets.
-	return ch >= r.fromCh && ch <= r.toCh;
+	// Use exclusive upper bound so that clicking the char immediately after ']' is NOT on the checkbox.
+	return ch >= r.fromCh && ch < r.toCh;
 }

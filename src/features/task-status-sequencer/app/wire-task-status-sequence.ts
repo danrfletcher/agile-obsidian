@@ -301,8 +301,8 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 			const line0 = pos.line;
 			const lineText = editor.getLine(line0) ?? "";
 			const onToken = isPosOnCheckboxToken(lineText, pos.ch);
-			if (!onToken) {
-				// Not on the checkbox token; let editor handle (including fold, caret, etc.)
+			if (!onToken && !hitsCheckbox) {
+				// Not on the checkbox token and not on the widget; let editor handle
 				return;
 			}
 
@@ -532,14 +532,20 @@ export function wireTaskStatusSequence(app: App, plugin: Plugin) {
 
 			const { hitsLabel, hitsCheckbox } = pathHitsLabelOrCheckbox(evt);
 
-			// Case 2: prevent label-synthesized toggles when not clicking the "[ ]" token
+			// Case 2: prevent native toggles when we are targeting the checkbox (token or widget)
 			if (
 				getCheckboxStatusChar(lineText) != null &&
-				!onToken &&
-				(hitsLabel || hitsCheckbox)
+				(onToken || hitsCheckbox || hitsLabel)
 			) {
 				evt.preventDefault();
-				// Do NOT stop propagation; allow fold handlers to run.
+				// Do NOT stop propagation here if we're only on the label (allow folds)
+				// unless it was actually on the token/widget
+				if (onToken || hitsCheckbox) {
+					(
+						evt as EventWithStopImmediatePropagation
+					).stopImmediatePropagation?.();
+					evt.stopPropagation();
+				}
 				return;
 			}
 		} catch {
