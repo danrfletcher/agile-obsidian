@@ -9,31 +9,28 @@
  * - runTemplateWorkflows(def, params, ports) merges outputs from each step into params.
  *
  * Conventions:
- * - Steps are pure and rely on ports for side-effects/data fetch.
+ * - Steps rely on ports for side-effects/data fetch (e.g. the link-artifact step reads the
+ *   linked note on demand through `ports.app`; there is no vault-wide index).
  * - Steps may stash temporary values on params using keys prefixed with "__wf_" (removed at the end).
  */
 
 import type { TemplateDefinition } from "./types";
-import type { TaskIndexPort } from "../app/templating-ports";
-import type { TaskItem } from "@features/task-index";
-import { getAgileArtifactType } from "./artifact-type";
+import type { ArtifactTaskLike } from "./templates-in-tasks";
+import {
+	artifactTypeOfTarget,
+	resolveBlockRefTarget,
+	type LinkArtifactApp,
+} from "./link-artifact-resolver";
 
-// Optional typing hint only; not required at runtime
-export type AgileArtifactType =
-	| "initiative"
-	| "learning-initiative"
-	| "epic"
-	| "learning-epic"
-	| "story"
-	| "okr"
-	| "recurring-responsibility"
-	| "task";
+export type { AgileArtifactType } from "./artifact-type";
 
+/**
+ * What steps may use to reach the vault. `sourcePath` is the note the chip lives in
+ * (used to resolve link-text style blockRefs the way a wiki link would).
+ */
 export type WorkflowPorts = {
-	taskIndex?: TaskIndexPort & {
-		// Some implementations may support this optional method
-		getTaskByBlockId?: (blockId: string) => TaskItem | undefined;
-	};
+	app?: LinkArtifactApp;
+	sourcePath?: string;
 };
 
 export type WorkflowStep = (args: {
@@ -44,47 +41,8 @@ export type WorkflowStep = (args: {
 	| (Record<string, unknown> | void);
 
 type BlockRefParams = { blockRef?: unknown };
-type TaskItemScratchParams = { __wf_taskItem?: TaskItem | null };
+type TaskLikeScratchParams = { __wf_taskItem?: ArtifactTaskLike | null };
 type WorkflowParams = Record<string, unknown>;
-
-// ------------------------
-// Helpers (no Vault; normalization only)
-// ------------------------
-
-function parseBlockRef(raw: string): { filePart: string; blockId: string } {
-	const s = String(raw || "").trim();
-	const marker = "#^";
-	const idx = s.indexOf(marker);
-	if (idx === -1) return { filePart: s, blockId: "" };
-	const filePart = s.slice(0, idx);
-	const blockId = s.slice(idx + marker.length).trim();
-	return { filePart, blockId };
-}
-
-function hasExtension(path: string): boolean {
-	return /\.[a-zA-Z0-9]+$/.test(path);
-}
-
-function ensureMdSuffix(path: string): string {
-	const p = String(path || "").trim();
-	if (!p) return p;
-	if (hasExtension(p)) return p;
-	return `${p}.md`;
-}
-
-function normalizeBlockRefInput(source: unknown): string {
-	if (source === undefined || source === null) return "";
-	if (typeof source === "string") return source.trim();
-	if (typeof source === "number" || typeof source === "boolean") {
-		return String(source).trim();
-	}
-	try {
-		const json = JSON.stringify(source);
-		return typeof json === "string" ? json.trim() : "";
-	} catch {
-		return "";
-	}
-}
 
 // ------------------------
 // Reusable workflow steps
@@ -93,81 +51,36 @@ function normalizeBlockRefInput(source: unknown): string {
 /**
  * Step: resolveTaskItemFromBlockRef
  * Input: params.blockRef: string
- * Output: { __wf_taskItem?: TaskItem | null } // stashed for later steps
+ * Output: { __wf_taskItem?: { text, status? } | null } // stashed for later steps
  *
- * Strategy: normalize the provided blockRef and try multiple TaskIndex keys:
- *  1) exact input
- *  2) "#^<blockId>" (global by id)
- *  3) "<file>.md#^<blockId>" (if file part lacks extension)
- *  4) getTaskByBlockId(blockId) if the port provides it
+ * Reads the file named by the blockRef on demand and returns the line carrying the
+ * block id. Null when the target can't be found or read.
  */
 export const resolveTaskItemFromBlockRef: WorkflowStep = async ({
 	params,
 	ports,
 }) => {
-	try {
-		const source = (params as BlockRefParams).blockRef;
-		const raw = normalizeBlockRefInput(source);
-
-		const ti = ports.taskIndex;
-		if (!raw || !ti?.getTaskByBlockRef) return {};
-
-		const attempts: string[] = [];
-		// 1) exact
-		attempts.push(raw);
-
-		// 2) "#^<blockId>" if we can parse it
-		const { filePart, blockId } = parseBlockRef(raw);
-		if (blockId) {
-			attempts.push(`#^${blockId}`);
-		}
-
-		// 3) add .md if filePart present, lacks extension, and we have a blockId
-		if (filePart && blockId && !hasExtension(filePart)) {
-			attempts.push(`${ensureMdSuffix(filePart)}#^${blockId}`);
-		}
-
-		let task: TaskItem | null | undefined;
-
-		for (const key of attempts) {
-			try {
-				task = ti.getTaskByBlockRef(key) ?? undefined;
-				if (task) break;
-			} catch {
-				// ignore attempt errors
-			}
-		}
-
-		// 4) Optional: if still not found and we have a blockId + helper
-		if (!task && blockId && typeof ti.getTaskByBlockId === "function") {
-			try {
-				task = ti.getTaskByBlockId(blockId) ?? undefined;
-			} catch {
-				// ignore optional helper error
-			}
-		}
-
-		return { __wf_taskItem: task ?? null };
-	} catch {
-		return {};
-	}
+	if (!ports.app) return {};
+	const item = await resolveBlockRefTarget(
+		ports.app,
+		(params as BlockRefParams).blockRef,
+		ports.sourcePath ?? ""
+	);
+	return { __wf_taskItem: item };
 };
 
 /**
  * Step: resolveArtifactFromTask
  * Input: __wf_taskItem from previous step
  * Output: { linkedArtifactType?: AgileArtifactType }
+ *
+ * Always sets linkedArtifactType (undefined when the target has no artefact type), so
+ * a type carried in from an earlier render never survives a re-resolution.
  */
-export const resolveArtifactFromTask: WorkflowStep = async ({ params }) => {
-	try {
-		const scratch = params as TaskItemScratchParams;
-		const task = scratch.__wf_taskItem;
-		if (!task) return {};
-		const inferred = getAgileArtifactType(task);
-		return inferred ? { linkedArtifactType: inferred } : {};
-	} catch {
-		return {};
-	}
+export const resolveArtifactFromTask: WorkflowStep = ({ params }) => {
+	const task = (params as TaskLikeScratchParams).__wf_taskItem;
+	const inferred = task ? artifactTypeOfTarget(task) : undefined;
+	return { linkedArtifactType: inferred };
 };
 
 // ------------------------
@@ -176,21 +89,22 @@ export const resolveArtifactFromTask: WorkflowStep = async ({ params }) => {
 
 /**
  * A composed workflow is just an ordered array of steps.
+ * Maps (not object literals) so names like "constructor" are never mistaken for steps.
  */
-const WORKFLOWS: Record<string, WorkflowStep[]> = {
-	resolveArtifactTypeFromBlockRef: [
-		resolveTaskItemFromBlockRef,
-		resolveArtifactFromTask,
+const WORKFLOWS = new Map<string, WorkflowStep[]>([
+	[
+		"resolveArtifactTypeFromBlockRef",
+		[resolveTaskItemFromBlockRef, resolveArtifactFromTask],
 	],
-};
+]);
 
 /**
  * Individual steps can also be referenced by name for flexibility.
  */
-const STEPS: Record<string, WorkflowStep> = {
-	resolveTaskItemFromBlockRef,
-	resolveArtifactFromTask,
-};
+const STEPS = new Map<string, WorkflowStep>([
+	["resolveTaskItemFromBlockRef", resolveTaskItemFromBlockRef],
+	["resolveArtifactFromTask", resolveArtifactFromTask],
+]);
 
 // ------------------------
 // Runner
@@ -198,7 +112,9 @@ const STEPS: Record<string, WorkflowStep> = {
 
 /**
  * Execute declared insertWorkflows for a template (if any) and merge outputs into params.
- * Unknown workflow names are safely ignored.
+ * Steps are awaited in order, so callers can render with the resolved params.
+ * Unknown workflow names are safely ignored, and a step that rejects is skipped:
+ * workflows enrich params on a best-effort basis and never block insertion/edit.
  */
 export async function runTemplateWorkflows(
 	def: TemplateDefinition,
@@ -209,21 +125,16 @@ export async function runTemplateWorkflows(
 	let params: WorkflowParams = { ...initialParams };
 
 	for (const name of names) {
-		const steps = WORKFLOWS[name];
-		if (Array.isArray(steps) && steps.length) {
-			for (const step of steps) {
+		const steps = WORKFLOWS.get(name) ?? [STEPS.get(name)];
+		for (const step of steps) {
+			if (typeof step !== "function") continue;
+			try {
 				const out = await step({ params, ports });
 				if (out && typeof out === "object") {
 					params = { ...params, ...out };
 				}
-			}
-			continue;
-		}
-		const step = STEPS[name];
-		if (typeof step === "function") {
-			const out = await step({ params, ports });
-			if (out && typeof out === "object") {
-				params = { ...params, ...out };
+			} catch {
+				// Best-effort enrichment: skip a failing step.
 			}
 		}
 	}

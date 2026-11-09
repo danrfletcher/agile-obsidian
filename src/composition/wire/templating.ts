@@ -2,7 +2,6 @@ import type { App, MarkdownView, Plugin } from "obsidian";
 import { wireTemplatingDomHandlers } from "@features/templating-engine";
 import { wireTemplatingUxShortcutsDomHandlers } from "@features/templating-ux-shortcuts";
 import { wireTemplatingSequencerDomHandlers } from "@features/templating-sequencer";
-import type { TaskIndexPort } from "@features/templating-engine";
 
 /**
  * Resolve the DOM element the templating handlers attach to for a view
@@ -30,8 +29,7 @@ function resolveEditorRoot(view: MarkdownView): HTMLElement {
  */
 export function createTemplatingWirer(
 	app: App,
-	plugin: Plugin,
-	ports: { taskIndex: TaskIndexPort }
+	plugin: Plugin
 ): (view: MarkdownView) => void {
 	const wiredRoots = new WeakMap<MarkdownView, HTMLElement>();
 
@@ -41,9 +39,7 @@ export function createTemplatingWirer(
 		wiredRoots.set(view, root);
 
 		try {
-			wireTemplatingDomHandlers(app, view, plugin, {
-				taskIndex: ports.taskIndex,
-			});
+			wireTemplatingDomHandlers(app, view, plugin);
 		} catch {
 			// Swallow: templating DOM handlers are optional and should not break startup.
 		}

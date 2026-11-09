@@ -182,7 +182,13 @@ export async function editTemplateParamsOnDashboard(
 	const cleanParams = validation.value!;
 
 	// Render and preserve instance id
-	let newHtml = templating.renderTemplateOnly(templateKey, cleanParams);
+	// Awaited: the render may resolve data on demand from the params the user just
+	// saved (e.g. the new blockRef's artefact type), never from the prefilled ones.
+	let newHtml = await templating.renderTemplateOnly(
+		templateKey,
+		cleanParams,
+		{ sourcePath: filePath }
+	);
 	newHtml = preserveInstanceIdInHtml(newHtml, instanceId);
 
 	// Optimistic UI update (avoid outerHTML to satisfy no-inner-html rule)

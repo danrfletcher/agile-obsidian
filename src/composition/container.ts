@@ -2,7 +2,6 @@ import type { Plugin, App } from "obsidian";
 import type { AgileObsidianSettings } from "@settings";
 import type { SettingsService } from "@settings";
 import { createSettingsService } from "@settings";
-import type { TaskIndexService } from "@features/task-index";
 
 /**
  * The composition container provides access to the Obsidian plugin runtime,
@@ -22,9 +21,6 @@ export interface Container {
 
 	settingsService: SettingsService;
 	manifestId: string;
-
-	// Wiring ports (optional) to keep features decoupled from composition
-	taskIndexService?: TaskIndexService;
 }
 
 /**

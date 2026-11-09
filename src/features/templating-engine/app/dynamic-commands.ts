@@ -29,7 +29,6 @@ import {
 
 // New: insertion workflows
 import { runTemplateWorkflows } from "../domain/template-workflows";
-import type { TaskIndexPort } from "./templating-ports";
 
 function collectTemplates(): Array<{ id: string; def: TemplateDefinition }> {
 	const out: Array<{ id: string; def: TemplateDefinition }> = [];
@@ -53,22 +52,16 @@ function makeCommandId(manifestId: string, templateId: string): string {
 	return `${manifestId}:tpl:${slug}`;
 }
 
-export type TemplatingDynamicCommandPorts = {
-	taskIndex?: TaskIndexPort;
-};
-
 /**
  * Register templating dynamic commands.
  * @param app Obsidian app
  * @param plugin Plugin instance
  * @param manifestId Plugin manifest id
- * @param ports Optional ports (e.g., taskIndex) for insertion workflows
  */
 export async function registerTemplatingDynamicCommands(
 	app: App,
 	plugin: Plugin,
-	manifestId: string,
-	ports?: TemplatingDynamicCommandPorts
+	manifestId: string
 ): Promise<void> {
 	const templates = collectTemplates();
 
@@ -235,17 +228,20 @@ export async function registerTemplatingDynamicCommands(
 							if (!params) return;
 						}
 
-						// Run optional insertion workflows (before insertion)
+						const ctx = await getCursorContext(app, view, editor);
+						const filePath = ctx.filePath || "";
+
+						// Run optional insertion workflows before insertion. Awaited, so e.g.
+						// Link to Artifact has read its target and resolved the type before
+						// the chip is rendered; an unreadable target just yields no type.
 						if (def.insertWorkflows && def.insertWorkflows.length) {
 							params = await runTemplateWorkflows(
 								def,
 								params ?? {},
-								{ taskIndex: ports?.taskIndex }
+								{ app, sourcePath: filePath }
 							);
 						}
 
-						const ctx = await getCursorContext(app, view, editor);
-						const filePath = ctx.filePath || "";
 						insertTemplateAtCursor(id, editor, filePath, params);
 					} catch (err) {
 						const message =

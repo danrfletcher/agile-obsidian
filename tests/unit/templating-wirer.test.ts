@@ -24,11 +24,7 @@ const makeView = (root: object) =>
 	}) as unknown as ViewArg;
 
 const make = () =>
-	createTemplatingWirer(
-		{} as never,
-		{} as never,
-		{ taskIndex: {} as never }
-	);
+	createTemplatingWirer({} as never, {} as never);
 
 describe("createTemplatingWirer (E11: no duplicate listeners)", () => {
 	beforeEach(() => {

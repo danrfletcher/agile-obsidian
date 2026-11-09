@@ -1,6 +1,5 @@
 import type { Container } from "./container";
 import { MarkdownView, Notice as ObsidianNotice } from "obsidian";
-import { wireTaskIndex } from "./wire/task-index";
 import { wireCanonicalFormatterForView } from "./wire/canonical-formatter";
 import { createTemplatingWirer } from "./wire/templating";
 import { normalizeTaskLine } from "@features/task-canonical-formatter";
@@ -12,15 +11,8 @@ import { normalizeTaskLine } from "@features/task-canonical-formatter";
 export async function registerEvents(container: Container) {
 	const { app, plugin } = container;
 
-	// 1) TaskIndex wiring and ports
-	const { taskIndexPorts } = await wireTaskIndex(container);
-
-	// 2) Per-view wiring (templating + canonical formatting)
-	const wireTemplatingForView = createTemplatingWirer(
-		app,
-		plugin,
-		taskIndexPorts
-	);
+	// 1) Per-view wiring (templating + canonical formatting)
+	const wireTemplatingForView = createTemplatingWirer(app, plugin);
 	let currentView: MarkdownView | null = null;
 	let currentCanonicalDisposer: (() => void) | null = null;
 
@@ -68,7 +60,7 @@ export async function registerEvents(container: Container) {
 		app.workspace.on("file-open", (_file) => wireForActiveView())
 	);
 
-	// 3) Vault-wide "Format All Files" wiring (triggered from Settings UI)
+	// 2) Vault-wide "Format All Files" wiring (triggered from Settings UI)
 	plugin.registerEvent(
 		// @ts-ignore - custom workspace events supported
 		app.workspace.on("agile-canonical-format-all", () => {

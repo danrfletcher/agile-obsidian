@@ -10,7 +10,7 @@ import { TFile, type App, type CachedMetadata, type TAbstractFile } from "obsidi
  * - File reads (cachedRead)
  *
  * Consumers:
- * - Feature services (e.g., task-index) and composition wiring (register-events)
+ * - Composition wiring, when a feature needs vault-wide file access.
  */
 export interface AppAdapter {
 	/** Return all Markdown files in the vault (or at least those from which tasks are indexed). */

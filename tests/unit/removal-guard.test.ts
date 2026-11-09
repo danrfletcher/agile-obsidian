@@ -19,6 +19,8 @@ const REMOVED_FOLDERS = [
 	"task-close-manager",
 	"task-close-cascade",
 	"task-filter",
+	"task-date-manager",
+	"task-index",
 ];
 
 function walk(dir: string, out: string[] = []): string[] {

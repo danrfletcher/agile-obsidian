@@ -19,7 +19,7 @@ export default class AgileObsidian extends Plugin {
 		// Register settings via composition
 		await registerSettings(container);
 
-		// Register task/vault events (build task index + subscribe to changes)
+		// Register editor/view events (no vault scan or index at load)
 		await registerEvents(container);
 
 		// Register commands and views for features

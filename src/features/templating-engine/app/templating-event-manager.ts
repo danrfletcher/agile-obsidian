@@ -1,6 +1,5 @@
 import type { App, MarkdownView, Plugin } from "obsidian";
 import { TFile } from "obsidian";
-import type { TaskIndexPort } from "./templating-ports";
 
 import {
 	attachEditorTemplatingHandler,
@@ -9,7 +8,6 @@ import {
 
 import {
 	prefillTemplateParams as realPrefillTemplateParams,
-	renderTemplateOnly as realRenderTemplateOnly,
 	findTemplateById as realFindTemplateById,
 } from "./templating-service";
 import {
@@ -17,30 +15,22 @@ import {
 	showJsonModal as realShowJsonModal,
 } from "@features/templating-params-editor";
 
-// Workflows and type inference
-import { runTemplateWorkflows } from "../domain/template-workflows";
+// Render with workflows (e.g. on-demand artefact-type lookup for Link to Artifact)
+import { renderTemplateWithWorkflows } from "./render-with-workflows";
 import type { ParamsSchema } from "../domain/types";
-import { getAgileArtifactType } from "../domain/artifact-type";
-import type { AgileArtifactType } from "../domain/artifact-type";
-
-type WorkflowAugmentedParams = Record<string, unknown> & {
-	blockRef?: unknown;
-	linkedArtifactType?: AgileArtifactType;
-};
-
-type TaskIndexResolvedTask = ReturnType<TaskIndexPort["getTaskByBlockRef"]>;
 
 /**
  * Wire editor DOM handlers for templating, including slash-command insertion modal.
- * Ports must remain synchronous. We run workflows in background during prefill and cache the result.
- * Additionally, we perform a synchronous, local inference in renderTemplateOnly to avoid races
- * and to normalize blockRef formats for TaskIndex lookups.
+ *
+ * Rendering is async: for templates that declare insertWorkflows (Link to Artifact),
+ * renderTemplateOnly awaits the workflows against the params it is given, so the chip
+ * is written with the type of the *current* blockRef. State is per call; nothing is
+ * cached between renders.
  */
 export function wireTemplatingDomHandlers(
 	app: App,
 	view: MarkdownView,
-	plugin: Plugin,
-	_ports: { taskIndex: TaskIndexPort }
+	plugin: Plugin
 ) {
 	// Resolve content root
 	const cmHolder = view as {
@@ -51,64 +41,6 @@ export function wireTemplatingDomHandlers(
 	const contentRoot =
 		rawContentRoot instanceof HTMLElement ? rawContentRoot : null;
 	const targetEl: HTMLElement = contentRoot ?? view.containerEl;
-
-	// Cache to pass async workflow results into the sync renderer
-	const workflowCache = new Map<string, Record<string, unknown>>();
-
-	// Small helpers to normalize and resolve a blockRef against TaskIndex synchronously
-	function parseBlockRef(raw: string): { filePart: string; blockId: string } {
-		const s = String(raw || "").trim();
-		const marker = "#^";
-		const idx = s.indexOf(marker);
-		if (idx === -1) return { filePart: s, blockId: "" };
-		const filePart = s.slice(0, idx);
-		const blockId = s.slice(idx + marker.length).trim();
-		return { filePart, blockId };
-	}
-
-	function ensureMdSuffix(path: string): string {
-		const p = String(path || "").trim();
-		if (!p) return p;
-		if (/\.[a-zA-Z0-9]+$/.test(p)) return p;
-		return `${p}.md`;
-	}
-
-	function tryResolveTaskSync(blockRef: string): TaskIndexResolvedTask {
-		const taskIndex = _ports?.taskIndex;
-		if (!taskIndex?.getTaskByBlockRef) return undefined;
-
-		// 1) Try exact
-		let t = taskIndex.getTaskByBlockRef(blockRef ?? "");
-
-		// 2) Try "#^<id>" only (if we can parse a blockId)
-		const { filePart, blockId } = parseBlockRef(blockRef);
-		if (!t && blockId) {
-			const ref2 = `#^${blockId}`;
-			t = taskIndex.getTaskByBlockRef(ref2);
-		}
-
-		// 3) If filePart lacks ".md", try "<file>.md#^<id>"
-		if (!t && filePart && blockId && !/\.[a-zA-Z0-9]+$/.test(filePart)) {
-			const augmented = `${ensureMdSuffix(filePart)}#^${blockId}`;
-			t = taskIndex.getTaskByBlockRef(augmented);
-		}
-
-		return t;
-	}
-
-	function normalizeBlockRefInput(source: unknown): string {
-		if (source === undefined || source === null) return "";
-		if (typeof source === "string") return source.trim();
-		if (typeof source === "number" || typeof source === "boolean") {
-			return String(source).trim();
-		}
-		try {
-			const json = JSON.stringify(source);
-			return typeof json === "string" ? json.trim() : "";
-		} catch {
-			return "";
-		}
-	}
 
 	const templating: TemplatingPorts = {
 		findTemplateById: (id) => {
@@ -133,93 +65,23 @@ export function wireTemplatingDomHandlers(
 				: undefined;
 		},
 
-		// Must be synchronous per ports typing
-		prefillTemplateParams: (templateId, wrapperEl) => {
-			// Get base params from the existing service (sync)
-			const baseParams =
-				realPrefillTemplateParams(templateId, wrapperEl);
+		prefillTemplateParams: (templateId, wrapperEl) =>
+			realPrefillTemplateParams(templateId, wrapperEl),
 
-			// If the template declares insertWorkflows, run them in background and cache
-			const def = realFindTemplateById(templateId);
-
-			if (def?.insertWorkflows && def.insertWorkflows.length) {
-				void (async () => {
-					try {
-						const nextParams = await runTemplateWorkflows(
-							def,
-							(baseParams ?? {}),
-							{ taskIndex: _ports?.taskIndex }
-						);
-						workflowCache.set(templateId, nextParams);
-					} catch {
-						// swallow: rendering will just use base params
-					}
-				})();
-			}
-
-			return baseParams;
-		},
-
-		// Must remain synchronous per ports typing.
-		// Merge cached workflow-derived params and, if needed, perform a synchronous, local inference
-		// so we never miss linkedArtifactType due to timing or loosely formatted blockRef.
+		// Awaits the template's insertWorkflows (if any) against exactly the params being
+		// rendered, so the type comes from the blockRef the user just saved. Lookup
+		// failures resolve to "no type"; they never reject or show a notice.
 		renderTemplateOnly: (
 			templateId: string,
-			params?: Record<string, unknown>
-		) => {
-			const def = realFindTemplateById(templateId);
-
-			const cached = workflowCache.get(templateId);
-			if (cached) {
-				workflowCache.delete(templateId);
-			}
-
-			let merged: WorkflowAugmentedParams;
-			if (cached) {
-				merged = {
-					...(params ?? {}),
-					...cached,
-				};
-			} else {
-				merged = (params ?? {}) as WorkflowAugmentedParams;
-			}
-
-			if (
-				def?.insertWorkflows?.includes(
-					"resolveArtifactTypeFromBlockRef"
-				)
-			) {
-				// NOTE: 'in' is used instead of Object.prototype.hasOwnProperty.call(...)
-				// to avoid the Function.prototype.call -> any return type, which trips
-				// @typescript-eslint/no-unsafe-assignment.
-				const hasLinkedType = "linkedArtifactType" in merged;
-
-				const source = merged.blockRef;
-				const blockRef = normalizeBlockRefInput(source);
-
-				if (!hasLinkedType && blockRef) {
-					try {
-						const task = tryResolveTaskSync(blockRef);
-						if (task) {
-							const inferred =
-								getAgileArtifactType(task) as
-									| AgileArtifactType
-									| undefined;
-							if (inferred) {
-								merged = {
-									...merged,
-									linkedArtifactType: inferred,
-								} as WorkflowAugmentedParams;
-							}
-						}
-					} catch {
-						// ignore sync inference errors
-					}
-				}
-			}
-
-			return realRenderTemplateOnly(templateId, merged);
-		},
+			params: Record<string, unknown>,
+			ctx?: { sourcePath?: string }
+		) =>
+			renderTemplateWithWorkflows(
+				app,
+				templateId,
+				params,
+				ctx?.sourcePath ?? filePath()
+			),
 
 		showSchemaModal: (
 			templateId: string,

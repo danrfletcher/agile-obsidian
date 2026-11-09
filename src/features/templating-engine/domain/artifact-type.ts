@@ -1,5 +1,7 @@
-import type { TaskItem } from "@features/task-index";
-import { getTemplateKeysFromTask } from "./templates-in-tasks";
+import {
+	getTemplateKeysFromTask,
+	type ArtifactTaskLike,
+} from "./templates-in-tasks";
 
 /**
  * Canonical agile artifact categories inferred from a task's template chips.
@@ -213,15 +215,9 @@ function heuristicRecurringResponsibility(
  * Helper: determine whether a task should fall back to "task" based on its status.
  * Uses the known TaskStatusCode enum to avoid `any` and to keep semantics explicit.
  */
-function shouldFallbackToTask(task: TaskItem): boolean {
-	// TaskItem in @features/task-index does not expose `status` in its type,
-	// but it is present at runtime. We assert a refined view here using our
-	// domain-level TaskStatusCode to avoid `any`.
-	type TaskWithStatus = TaskItem & {
-		status?: TaskStatusCode | null;
-	};
-
-	const { status } = task as TaskWithStatus;
+function shouldFallbackToTask(task: ArtifactTaskLike): boolean {
+	// `status` is the checkbox character of the task line (when it has one).
+	const { status } = task;
 
 	return (
 		status !== TaskStatusCode.Open &&
@@ -237,7 +233,7 @@ function shouldFallbackToTask(task: TaskItem): boolean {
  * - returns null for open/done/archived items (preserve prior behavior)
  */
 export const getAgileArtifactType = (
-	task: TaskItem
+	task: ArtifactTaskLike
 ): AgileArtifactType | null => {
 	const txt = typeof task?.text === "string" ? task.text : "";
 
