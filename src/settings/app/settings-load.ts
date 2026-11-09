@@ -35,7 +35,20 @@ export function loadSettings(stored: unknown): LoadedSettings {
 	for (const key of Object.keys(defaults)) {
 		if (!Object.prototype.hasOwnProperty.call(stored, key)) continue;
 		const value = stored[key];
+		if (Array.isArray(defaults[key])) {
+			// A list setting (e.g. customTemplates: one raw JSON text per card): keep the
+			// string entries in order, drop anything that is not a string.
+			if (Array.isArray(value)) {
+				out[key] = value.filter((v): v is string => typeof v === "string");
+			}
+			continue;
+		}
 		if (typeof value === typeof defaults[key]) out[key] = value;
+	}
+
+	// Never share the default's array with a loaded settings object.
+	for (const key of Object.keys(defaults)) {
+		if (Array.isArray(out[key])) out[key] = [...(out[key] as unknown[])];
 	}
 
 	const needsSave = Object.keys(stored).some(

@@ -201,8 +201,20 @@ async function openTemplateModalFromContext(
 	}
 
 	const def = findTemplateById(found.templateKey);
-	if (!def || !def.hasParams) return;
+	if (!def) return;
 	if (def.hiddenFromDynamicCommands) return;
+
+	// A template with no fields (e.g. a custom one with no `fields`) has nothing to
+	// ask: insert it straight away, with no dialog, as the insert command does.
+	if (!def.hasParams) {
+		enterSession = { key: causeKey, active: true };
+		try {
+			insertTemplateAtCursor(found.templateKey, editor, filePath, undefined);
+		} finally {
+			enterSession = null;
+		}
+		return;
+	}
 
 	const schema = def.paramsSchema
 		? {

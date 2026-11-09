@@ -19,3 +19,26 @@ export {
 	findActiveTemplate,
 	onTemplateRegistryChange,
 } from "./app/template-registry";
+
+
+// Custom templates (JSON definitions from settings)
+export {
+	reloadCustomTemplates,
+	setCustomTemplateSource,
+	disposeCustomTemplates,
+	getOtherTemplateIdsForCard,
+	loadCustomTemplates,
+} from "./app/custom-templates";
+export type {
+	CustomTemplatesLoad,
+	CustomTemplateCardResult,
+} from "./app/custom-templates";
+export {
+	validateCustomTemplateText,
+	formatCustomTemplateError,
+} from "./domain/custom-template-schema";
+export type {
+	CustomTemplateValidation,
+	CustomTemplateError,
+	CustomTemplateSpec,
+} from "./domain/custom-template-schema";

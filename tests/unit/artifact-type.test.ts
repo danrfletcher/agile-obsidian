@@ -4,7 +4,7 @@ import fixture from "../fixtures/artifact-type.json";
 
 type Input = { text: string; status?: string };
 
-describe("getAgileArtifactType (copied from task-filter) matches 5a90994", () => {
+describe("getAgileArtifactType (copied from task-filter) matches 5a90994, except custom ids (E13/I5)", () => {
 	it.each(Object.entries(fixture))("%s", (_name, entry) => {
 		const e = entry as { input: Input; result: string | null };
 		expect(

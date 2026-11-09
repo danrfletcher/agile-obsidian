@@ -4,6 +4,7 @@ import { initSettings, registerSettings } from "@composition/register-settings";
 import { registerAllCommands } from "@composition/register-commands";
 import { registerEvents } from "@composition/register-events";
 import { AgileObsidianSettings } from "@settings";
+import { disposeCustomTemplates } from "@features/templating-engine";
 
 export default class AgileObsidian extends Plugin {
 	settings: AgileObsidianSettings;
@@ -26,7 +27,11 @@ export default class AgileObsidian extends Plugin {
 		if (container) await registerAllCommands(container);
 	}
 
-	onunload() {}
+	onunload() {
+		// Remove the custom templates from the live registry: their insert commands go with
+		// them, and a re-enable starts clean.
+		disposeCustomTemplates();
+	}
 
 	async saveSettings() {
 		await this.saveData(this.settings);

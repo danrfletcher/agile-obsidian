@@ -4,6 +4,7 @@ import { DEFAULT_SETTINGS } from "../../src/settings/infra/settings-store";
 import { initSettings } from "../../src/composition/register-settings";
 
 const KEPT_KEYS = [
+	"customTemplates",
 	"enableCanonicalOnLeafChange",
 	"enableCanonicalOnLineCommit",
 	"enableDefaultTemplates",
@@ -31,6 +32,7 @@ describe("settings load (E9)", () => {
 			enableCanonicalOnLeafChange: false,
 			uiFoldUxShortcuts: false,
 			uiFoldAgileTaskFormatting: false,
+			customTemplates: ['{"id":"custom.a"}'],
 		});
 		expect(r.settings).toEqual({
 			enableDefaultTemplates: false,
@@ -40,6 +42,7 @@ describe("settings load (E9)", () => {
 			enableCanonicalOnLeafChange: false,
 			uiFoldUxShortcuts: false,
 			uiFoldAgileTaskFormatting: false,
+			customTemplates: ['{"id":"custom.a"}'],
 		});
 		expect(r.needsSave).toBe(false);
 	});
@@ -105,6 +108,36 @@ describe("settings load (E9)", () => {
 		expect(r.settings).not.toBe(DEFAULT_SETTINGS);
 		r.settings.uiFoldUxShortcuts = false;
 		expect(DEFAULT_SETTINGS.uiFoldUxShortcuts).toBe(true);
+	});
+});
+
+describe("customTemplates setting (raw JSON text per card, in card order)", () => {
+	it("defaults to an empty list, and each load gets its own array", () => {
+		expect(DEFAULT_SETTINGS.customTemplates).toEqual([]);
+		const a = loadSettings({}).settings;
+		a.customTemplates.push("{}");
+		expect(DEFAULT_SETTINGS.customTemplates).toEqual([]);
+		expect(loadSettings({}).settings.customTemplates).toEqual([]);
+	});
+
+	it("keeps the stored texts as written and in order, valid or not", () => {
+		const cards = ['{"id":"custom.a"', "", '{"id":"custom.b"}'];
+		const r = loadSettings({ customTemplates: cards });
+		expect(r.settings.customTemplates).toEqual(cards);
+		expect(r.settings.customTemplates).not.toBe(cards);
+		expect(r.needsSave).toBe(false);
+	});
+
+	it("drops non-string entries and falls back to [] for a wrong type", () => {
+		expect(
+			loadSettings({ customTemplates: ["a", 1, null, {}, "b"] }).settings
+				.customTemplates
+		).toEqual(["a", "b"]);
+		for (const bad of ["x", 5, {}, null, true]) {
+			expect(
+				loadSettings({ customTemplates: bad }).settings.customTemplates
+			).toEqual([]);
+		}
 	});
 });
 

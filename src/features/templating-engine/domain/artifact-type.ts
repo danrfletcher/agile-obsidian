@@ -2,6 +2,7 @@ import {
 	getTemplateKeysFromTask,
 	type ArtifactTaskLike,
 } from "./templates-in-tasks";
+import { isBuiltInTemplateId } from "./built-in-ids";
 
 /**
  * Canonical agile artifact categories inferred from a task's template chips.
@@ -46,8 +47,9 @@ function extractTemplateKeysFromText(
 }
 
 /**
- * Normalize a template key to a canonical AgileArtifactType by pattern matching.
+ * Normalize a built-in template key to a canonical AgileArtifactType by pattern matching.
  * This is resilient to different naming styles (kebab/camel/dotted, v2 suffixes, etc.).
+ * Keys that are not exact built-in template ids (custom, deleted, unknown) return undefined.
  *
  * NOTE: We intentionally normalize personal learning items to the canonical types:
  *  - agile.personalLearningInitiative -> "initiative"
@@ -63,6 +65,10 @@ function extractTemplateKeysFromText(
  */
 function inferTypeFromKey(key: string): AgileArtifactType | undefined {
 	if (!key) return undefined;
+	// I5: a type is inferred from the key only for built-in template ids. A custom id
+	// such as "custom.epic-lite" or "custom.story" contains artefact words but is never
+	// an Epic or a Story. Chips of unknown (deleted or invalid) templates get no type.
+	if (!isBuiltInTemplateId(key)) return undefined;
 
 	// Lowercase and variants for robust matching
 	const k = key.toLowerCase();

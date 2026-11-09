@@ -53,19 +53,42 @@ export function attrVar(
 	return `${safeAttr}="${escapedVal}" data-tpl-attr-var-${safeAttr}="${escapedVar}"`;
 }
 
+/**
+ * Read the value out of one `[data-tpl-var]` element.
+ * - A dropdown chip shows an option's label and keeps the real value in `data-tpl-value`
+ *   (P3): that attribute wins over the shown text.
+ * - A custom template's textarea value is rendered with `<br>` for each newline: for a
+ *   custom chip, read it back as "\n". Built-in chips never get this treatment, so their
+ *   extraction is exactly what it was.
+ * - Otherwise the trimmed text content.
+ */
+function readTextVarValue(el: HTMLElement, isCustomChip: boolean): string {
+	if (el.hasAttribute("data-tpl-value")) {
+		return (el.getAttribute("data-tpl-value") ?? "").trim();
+	}
+	if (!isCustomChip || !el.querySelector("br")) {
+		return el.textContent?.trim() ?? "";
+	}
+	const copy = el.cloneNode(true) as HTMLElement;
+	copy.querySelectorAll("br").forEach((br) => br.replaceWith("\n"));
+	return copy.textContent?.trim() ?? "";
+}
+
 // Generic extractor: read params from explicit [data-tpl-var] markers and attribute var markers.
 export function extractParamsFromWrapperEl(
 	wrapperEl: HTMLElement
 ): Record<string, string> {
 	const out: Record<string, string> = {};
+	const isCustomChip = (
+		wrapperEl.getAttribute("data-template-key") ?? ""
+	).startsWith("custom.");
 
 	// 1) Text variables wrapped via <span data-tpl-var="name">value</span>
 	const nodes = wrapperEl.querySelectorAll<HTMLElement>("[data-tpl-var]");
 	nodes.forEach((el) => {
 		const name = el.dataset.tplVar;
 		if (!name) return;
-		const text = el.textContent?.trim() ?? "";
-		out[name] = text;
+		out[name] = readTextVarValue(el, isCustomChip);
 	});
 
 	// 2) Attribute variables marked via data-tpl-attr-var-<attrName>="varName"

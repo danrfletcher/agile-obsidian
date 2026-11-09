@@ -9,6 +9,14 @@ export interface AgileObsidianSettings {
 	enableDefaultTemplates: boolean;
 
 	/**
+	 * Custom templates: one raw JSON text per card, in card order. The text is saved as
+	 * typed (valid or not); invalid cards are kept but not loaded. Nothing in it is ever
+	 * executed.
+	 * Default: [] (no custom templates)
+	 */
+	customTemplates: string[];
+
+	/**
 	 * UI fold state for UX Shortcuts section (persisted).
 	 * Default: true (minimized)
 	 */

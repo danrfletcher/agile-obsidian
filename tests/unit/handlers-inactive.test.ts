@@ -11,7 +11,11 @@ const { openMenu, showSchema, showJson, cursorCtx } = vi.hoisted(() => ({
 vi.mock("@features/templating-sequencer/ui/menu", () => ({
 	openSequencerMenuAt: openMenu,
 }));
-vi.mock("@platform/obsidian", () => ({ getCursorContext: cursorCtx }));
+// Keep the real line helpers (getLineKind etc.) that the insert path uses.
+vi.mock("@platform/obsidian", async (orig) => ({
+	...(await orig<Record<string, unknown>>()),
+	getCursorContext: cursorCtx,
+}));
 // Keep the real params-editor, but never open a real modal: the user "cancels".
 vi.mock("@features/templating-params-editor", async (orig) => ({
 	...(await orig<Record<string, unknown>>()),
@@ -30,6 +34,7 @@ import {
 	setCustomDefinitions,
 	setDefaultTemplatesEnabled,
 } from "@features/templating-engine/app/template-registry";
+import { loadCustomTemplates } from "@features/templating-engine/app/custom-templates";
 
 // Hand-written chips, as the plugin writes them into a note.
 const EPIC_CHIP =
@@ -262,8 +267,8 @@ describe("sequencer click handler", () => {
 describe("double-Enter repeat", () => {
 	const SRC = `- [ ] Login flow ${EPIC_CHIP}`;
 
-	function setupLines() {
-		const lines = [SRC, "- [ ] "];
+	function setupLines(src: string = SRC) {
+		const lines = [src, "- [ ] "];
 		const editor = {
 			getLine: (n: number) => lines[n] ?? "",
 			getCursor: () => ({ line: 1, ch: lines[1].length }),
@@ -312,6 +317,85 @@ describe("double-Enter repeat", () => {
 		expect(second.defaultPrevented).toBe(false);
 		expect(showSchema).not.toHaveBeenCalled();
 		expect(showJson).not.toHaveBeenCalled();
+		expect(editor.replaceRange).not.toHaveBeenCalled();
+	});
+
+	/** Load one real custom template (JSON text -> validator -> registry) and write its chip. */
+	function customChipLine(json: Record<string, unknown>, params: Record<string, unknown>) {
+		const load = loadCustomTemplates([JSON.stringify(json)], []);
+		expect(load.cards[0].errors).toEqual([]);
+		setCustomDefinitions(load.definitions);
+		const def = findTemplateById(json.id as string);
+		if (!def?.render) throw new Error("custom template did not load");
+		const chip = def.render(params);
+		return `- [ ] Login flow ${chip}`;
+	}
+
+	it("a custom artifact-item-type template with fields repeats: dialog opens, then inserts", async () => {
+		const src = customChipLine(
+			{
+				id: "custom.story",
+				label: "Story",
+				emoji: "📖",
+				orderTag: "artifact-item-type",
+				text: "Story {{title}}",
+				fields: [{ name: "title", required: true }],
+			},
+			{ title: "Login flow" }
+		);
+		const { view, ctxAt, editor } = setupLines(src);
+		showSchema.mockResolvedValueOnce({ title: "Next" } as never);
+		const { first, second } = await doubleEnter(view, ctxAt);
+		expect(first.defaultPrevented).toBe(false);
+		expect(second.defaultPrevented).toBe(true);
+		expect(showSchema).toHaveBeenCalledTimes(1);
+		expect((showSchema.mock.calls[0] as unknown[])[1]).toBe("custom.story");
+		expect(editor.replaceRange).toHaveBeenCalledTimes(1);
+		const written = (editor.replaceRange.mock.calls[0] as unknown[])[0] as string;
+		expect(written).toContain('data-template-key="custom.story"');
+		expect(written).toContain("Next");
+	});
+
+	it("a custom artifact-item-type template with no fields repeats and inserts straight away, no dialog", async () => {
+		const src = customChipLine(
+			{
+				id: "custom.bug",
+				label: "Bug",
+				emoji: "🐞",
+				orderTag: "artifact-item-type",
+				text: "Bug",
+			},
+			{}
+		);
+		const { view, ctxAt, editor } = setupLines(src);
+		const { first, second } = await doubleEnter(view, ctxAt);
+		expect(first.defaultPrevented).toBe(false);
+		expect(second.defaultPrevented).toBe(true);
+		expect(showSchema).not.toHaveBeenCalled();
+		expect(showJson).not.toHaveBeenCalled();
+		expect(editor.replaceRange).toHaveBeenCalledTimes(1);
+		const written = (editor.replaceRange.mock.calls[0] as unknown[])[0] as string;
+		expect(written).toContain('data-template-key="custom.bug"');
+		expect(written).toContain('data-order-tag="artifact-item-type"');
+		expect(written).toContain("🐞 Bug");
+	});
+
+	it("a no-field custom template deleted before the second Enter: normal Enter, nothing inserted", async () => {
+		const src = customChipLine(
+			{
+				id: "custom.bug",
+				label: "Bug",
+				emoji: "🐞",
+				orderTag: "artifact-item-type",
+				text: "Bug",
+			},
+			{}
+		);
+		setCustomDefinitions([]);
+		const { view, ctxAt, editor } = setupLines(src);
+		const { first, second } = await doubleEnter(view, ctxAt);
+		expect(first.defaultPrevented).toBe(false);
+		expect(second.defaultPrevented).toBe(false);
 		expect(editor.replaceRange).not.toHaveBeenCalled();
 	});
 

@@ -150,6 +150,6 @@
 			"text": "<span data-template-key=\"custom.epic-lite\">x</span>",
 			"status": "O"
 		},
-		"result": "epic"
+		"result": null
 	}
 }

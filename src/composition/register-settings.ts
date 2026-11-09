@@ -1,7 +1,11 @@
 import { createSettingsTab, loadStoredSettings } from "@settings";
 import type { AgileObsidianSettings } from "@settings";
 import type { Plugin, PluginSettingTab } from "obsidian";
-import { setDefaultTemplatesEnabled } from "@features/templating-engine";
+import {
+	reloadCustomTemplates,
+	setCustomTemplateSource,
+	setDefaultTemplatesEnabled,
+} from "@features/templating-engine";
 import type { Container } from "./container";
 
 /**
@@ -22,6 +26,11 @@ export async function initSettings(
 	// Seed the live template registry before any command is registered, so a fresh
 	// enable (or restart) starts in the saved state with no add-then-remove churn.
 	setDefaultTemplatesEnabled(settings.enableDefaultTemplates);
+	// Same for custom templates: load the saved cards into the registry now. The source
+	// reads the live settings object, so `reloadCustomTemplates()` (called by the settings
+	// cards on blur) always sees the current texts.
+	setCustomTemplateSource(() => plugin.settings?.customTemplates ?? []);
+	reloadCustomTemplates();
 	if (needsSave) {
 		await plugin.saveData?.(settings);
 	}
@@ -49,6 +58,8 @@ export async function registerSettings(container: Container): Promise<void> {
 		// sequence menus and repeat follow it immediately, no reload. A no-op when the
 		// flag did not change.
 		setDefaultTemplatesEnabled(container.settings.enableDefaultTemplates);
+		// Rebuild the custom templates from the saved cards (a no-op when nothing changed).
+		reloadCustomTemplates();
 
 		try {
 			interface WorkspaceWithTrigger {

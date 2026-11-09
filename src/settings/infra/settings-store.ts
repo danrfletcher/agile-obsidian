@@ -8,6 +8,9 @@ export const DEFAULT_SETTINGS: AgileObsidianSettings = {
 	// Built-in template set available
 	enableDefaultTemplates: true,
 
+	// Custom template cards (raw JSON text each, in card order)
+	customTemplates: [],
+
 	// Settings sections minimized by default
 	uiFoldUxShortcuts: true,
 
