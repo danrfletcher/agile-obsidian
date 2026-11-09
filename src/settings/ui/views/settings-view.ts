@@ -180,7 +180,7 @@ export class AgileSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Run on all files in vault")
 			.setDesc(
-				"Run the canonical formatter across every Markdown file in your vault now."
+				"Reorder chips on task lines across every Markdown file in your vault. Counts the notes that would change and asks for confirmation first."
 			)
 			.addButton((btn) =>
 				btn
@@ -192,7 +192,8 @@ export class AgileSettingTab extends PluginSettingTab {
 							this.app.workspace.trigger(
 								"agile-canonical-format-all"
 							);
-							new Notice("Started formatting all files…");
+							// The handler dry-runs, asks "Reorder chips in N notes?" and
+							// only then writes; any progress notice comes from it.
 						} catch {
 							new Notice(
 								"Could not start formatting. Please try again."

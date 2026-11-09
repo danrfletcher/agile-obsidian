@@ -18,3 +18,17 @@ export {
 } from "./app/canonical-formatter-orchestration";
 
 export type { CanonicalFormatterPort } from "./app/canonical-formatter-ports";
+
+export {
+	formatNoteTaskLines,
+	type NoteEditorLike,
+} from "./app/format-note";
+
+export {
+	planVaultReorder,
+	createVaultReorderRunner,
+	type VaultFileContent,
+	type PlannedReorder,
+	type VaultReorderHost,
+	type VaultReorderResult,
+} from "./app/vault-reorder";

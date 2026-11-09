@@ -3,10 +3,6 @@
  */
 
 export type NormalizeOptions = {
-	/** Override assignee wrapper HTML instance (or null to remove). */
-	newAssigneeInstanceHtml?: string | null;
-	/** Override delegate wrapper HTML instance (or null to remove). */
-	newDelegateInstanceHtml?: string | null;
 	/**
 	 * Abort a long-running whole-file normalization. The service will periodically check
 	 * and stop early if signal.aborted is true. Safe to pass for line-level ops.
@@ -39,20 +35,18 @@ export type TagInstance = {
 };
 
 export type Extracted = {
-	/** orderTag==="parent-link" */
-	parentLink?: TagInstance;
-	/** orderTag==="artifact-item-type" */
-	artifactItemType?: TagInstance;
+	/** orderTag==="parent-link", every chip, in original order */
+	parentLinks: TagInstance[];
+	/** orderTag==="artifact-item-type", every chip, in original order */
+	artifactItemTypes: TagInstance[];
 	/** orderTag==="state" (multiple possible) */
 	states: TagInstance[];
-	/** Members.assignee with assignType discriminator */
-	assignments: {
-		assignee?: TagInstance;
-		delegate?: TagInstance;
-	};
 	/** orderTag==="metadata" */
 	metadata: TagInstance[];
-	/** anything else (obsidian/workflows metadata already in metadata) */
+	/**
+	 * Anything else, in original order: unknown/missing order tags, `crm-*`, `priority`
+	 * and the old `assignment` (members.assignee) chips. Nothing is dropped.
+	 */
 	otherTags: TagInstance[];
 	/** extracted plain-text tokens like "📅 2025-01-01" */
 	dateTokens: string[];
@@ -64,14 +58,14 @@ export type Extracted = {
 
 export type CanonicalPieces = {
 	prefix: string;
-	parentLink?: string;
-	artifactItemType?: string;
+	/** every parent-link chip, original order */
+	parentLinks: string[];
+	/** every artifact-item-type chip, original order */
+	artifactItemTypes: string[];
 	taskText: string;
 	state?: string;
-	/** sorted alphabetically by order-tag */
+	/** sorted alphabetically by order-tag (stable), an assignee directly followed by a delegate joined with "→" */
 	otherTags: string[];
-	assignee?: string;
-	delegate?: string;
 	metadata: string[];
 	dateTokens: string[];
 	blockId?: string;

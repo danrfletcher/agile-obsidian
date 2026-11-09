@@ -1,8 +1,10 @@
 import type { Container } from "./container";
 import { MarkdownView, Notice as ObsidianNotice } from "obsidian";
+import type { TFile } from "obsidian";
 import { wireCanonicalFormatterForView } from "./wire/canonical-formatter";
 import { createTemplatingWirer } from "./wire/templating";
-import { normalizeTaskLine } from "@features/task-canonical-formatter";
+import { createVaultReorderRunner } from "@features/task-canonical-formatter";
+import { confirmDialog } from "./ui/confirm-modal";
 
 /**
  * Registers runtime event wiring and feature bootstrap.
@@ -60,68 +62,40 @@ export async function registerEvents(container: Container) {
 		app.workspace.on("file-open", (_file) => wireForActiveView())
 	);
 
-	// 2) Vault-wide "Format All Files" wiring (triggered from Settings UI)
+	// 2) Vault-wide "Format All Files" wiring (triggered from Settings UI).
+	// Dry-runs first, asks "Reorder chips in N notes?", and only then rewrites the N
+	// notes that would change. Reads files only when the button is pressed.
+	const runVaultReorder = createVaultReorderRunner<TFile>({
+		listFiles: () => app.vault.getMarkdownFiles(),
+		pathOf: (f) => f.path,
+		read: (f) => app.vault.read(f),
+		process: async (f, fn) => {
+			await app.vault.process(f, fn);
+		},
+		confirm: (n) =>
+			confirmDialog(app, {
+				title: `Reorder chips in ${n} ${n === 1 ? "note" : "notes"}?`,
+				message:
+					"Only the order of chips on task lines changes. Nothing is removed.",
+				confirmText: "Reorder",
+			}),
+		notify: (message) => {
+			new ObsidianNotice(message);
+		},
+		yieldToUi: () => new Promise<void>((r) => setTimeout(r, 0)),
+	});
+
 	plugin.registerEvent(
 		// @ts-ignore - custom workspace events supported
 		app.workspace.on("agile-canonical-format-all", () => {
 			// Fire-and-forget async handler to satisfy no-misused-promises
-			void (async () => {
-				try {
-					const mdFiles = app.vault.getMarkdownFiles();
-					let changedFiles = 0;
-					let changedLines = 0;
-
-					for (const f of mdFiles) {
-						const content = await app.vault.read(f);
-
-						// Preserve EOL style and terminal newline
-						const useCRLF = content.includes("\r\n");
-						const eol = useCRLF ? "\r\n" : "\n";
-						const hasTerminalEOL = content.endsWith(eol);
-
-						const lines = content.split(/\r?\n/);
-						let fileChanged = false;
-						const out: string[] = new Array(lines.length) as string[];
-
-						for (let i = 0; i < lines.length; i++) {
-							const oldLine = lines[i] ?? "";
-							const indentMatch = oldLine.match(/^\s*/);
-							const indent = indentMatch ? indentMatch[0] : "";
-							const sansIndent = oldLine.slice(indent.length);
-							const normalizedSansIndent =
-								normalizeTaskLine(sansIndent);
-							const newLine = indent + normalizedSansIndent;
-							out[i] = newLine;
-							if (newLine !== oldLine) {
-								fileChanged = true;
-								changedLines++;
-							}
-						}
-
-						if (fileChanged) {
-							let next = out.join(eol);
-							if (hasTerminalEOL && !next.endsWith(eol)) {
-								next += eol;
-							} else if (!hasTerminalEOL && next.endsWith(eol)) {
-								next = next.slice(0, -eol.length);
-							}
-							await app.vault.modify(f, next);
-							changedFiles++;
-						}
-					}
-
-					new ObsidianNotice(
-						`Canonical formatting complete: ${changedFiles} file(s), ${changedLines} line(s) updated.`
-					);
-				} catch (e) {
-					new ObsidianNotice(
-						`Canonical formatting failed: ${
-							e instanceof Error ? e.message : String(e)
-						}`
-					);
-				}
-			})();
+			void runVaultReorder().catch((e) => {
+				new ObsidianNotice(
+					`Canonical formatting failed: ${
+						e instanceof Error ? e.message : String(e)
+					}`
+				);
+			});
 		})
 	);
-
 }

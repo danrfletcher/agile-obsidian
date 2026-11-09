@@ -10,6 +10,10 @@ import {
 } from "../domain/canonical-normalize";
 import type { CanonicalFormatterPort } from "./canonical-formatter-ports";
 import { computeNewCaretAfterNormalize } from "../domain/caret-mapping";
+import {
+	markFencedLines,
+	normalizeLineKeepingIndent,
+} from "../domain/canonical-note";
 
 export type CanonicalFormatterService = {
 	/** Normalize the current line, preserving caret if possible. */
@@ -155,6 +159,7 @@ export function createCanonicalFormatterService(
 
 			let changed = false;
 			const out: string[] = new Array<string>(total);
+			const fenced = markFencedLines(lines);
 
 			for (let i = 0; i < total; i++) {
 				if (checkCancelled()) {
@@ -164,15 +169,11 @@ export function createCanonicalFormatterService(
 
 				const oldLine = lines[i] ?? "";
 
-				// Preserve indentation for each line
-				const indentMatch = oldLine.match(/^\s*/);
-				const indent = indentMatch ? indentMatch[0] : "";
-				const lineSansIndent = oldLine.slice(indent.length);
-				const normalizedSansIndent = normalizeTaskLine(
-					lineSansIndent,
-					opts ?? {}
-				);
-				const newLine = indent + normalizedSansIndent;
+				// Lines inside fenced code are not tasks: leave them untouched.
+				// Otherwise preserve indentation for each line.
+				const newLine = fenced[i]
+					? oldLine
+					: normalizeLineKeepingIndent(oldLine);
 
 				out[i] = newLine;
 				if (newLine !== oldLine) changed = true;
