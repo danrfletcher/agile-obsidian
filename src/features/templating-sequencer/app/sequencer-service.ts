@@ -12,7 +12,11 @@
 
 import { TFile, type App, type MarkdownView } from "obsidian";
 import type { Sequence, SequenceIndex } from "../domain/types";
-import { presetSequences } from "../domain/preset-sequences";
+import { buildSequences } from "../domain/preset-sequences";
+import {
+	getRegistryVersion,
+	listActiveTemplates,
+} from "@features/templating-engine/app/template-registry";
 
 // Import templating engine ports
 import {
@@ -78,7 +82,54 @@ export function buildSequenceIndex(sequences: Sequence[]): SequenceIndex {
 	return { byStart, reversibleByTarget };
 }
 
-export const sequenceIndex = buildSequenceIndex(presetSequences);
+/**
+ * Live sequences, index and eligible set. All three are derived from the template
+ * registry's active list and rebuilt lazily the first time they are asked for after the
+ * registry changed (the cache is keyed on the registry version). Never captured at load.
+ */
+let cache: {
+	version: number;
+	sequences: Sequence[];
+	index: SequenceIndex;
+	eligible: Set<string>;
+} | null = null;
+
+function live() {
+	const version = getRegistryVersion();
+	if (cache && cache.version === version) return cache;
+
+	const sequences = buildSequences(listActiveTemplates());
+	const eligible = new Set<string>();
+	for (const seq of sequences) {
+		eligible.add(seq.startTemplate);
+		if (seq.direction === "both") eligible.add(seq.targetTemplate);
+	}
+	cache = {
+		version,
+		sequences,
+		index: buildSequenceIndex(sequences),
+		eligible,
+	};
+	return cache;
+}
+
+/** Sequences for the templates that are active right now. */
+export function getSequences(): Sequence[] {
+	return live().sequences;
+}
+
+/** Sequence index for the templates that are active right now. */
+export function getSequenceIndex(): SequenceIndex {
+	return live().index;
+}
+
+/**
+ * True when a click on a chip with this template key may open the sequencer menu:
+ * the key starts a sequence, or is the target of a reversible one, among active templates.
+ */
+export function isSequenceEligibleTemplate(templateKey: string): boolean {
+	return live().eligible.has(templateKey);
+}
 
 /**
  * Read "current" params off the wrapper using the templating-engine's explicit markers.
@@ -333,6 +384,12 @@ export async function executeSequenceMove(args: {
 			false
 		);
 		if (collected) finalParams = { ...finalParams, ...collected };
+	}
+
+	// The registry may have changed while the dialog was open (e.g. "Default templates"
+	// switched off): finish by cancelling quietly. The chip is left exactly as it is.
+	if (!findTemplateById(startTemplate) || !findTemplateById(targetTemplate)) {
+		return;
 	}
 
 	// 4) Render only the inner content (wrapper is unchanged)
@@ -603,6 +660,11 @@ export async function executeSequenceMoveOnFile(args: {
 		if (collected) finalParams = { ...finalParams, ...collected };
 	}
 
+	// The registry may have changed while the dialog was open: cancel quietly.
+	if (!findTemplateById(startTemplate) || !findTemplateById(targetTemplate)) {
+		return;
+	}
+
 	// 6) Render inner HTML only (may be full wrapper depending on engine; we replace entire wrapper region below)
 	const newInnerHtml = renderTemplateOnly(targetTemplate, finalParams);
 
@@ -627,6 +689,7 @@ export function computeAvailableMoves(
 	forward: Sequence[];
 	backward: Sequence[]; // reversible items where clicked is the target
 } {
+	const sequenceIndex = getSequenceIndex();
 	const forward = sequenceIndex.byStart.get(templateKey) ?? [];
 	const backward = sequenceIndex.reversibleByTarget.get(templateKey) ?? [];
 

@@ -1,8 +1,10 @@
 export type { Sequence, SequenceDirection } from "./domain/types";
-export { presetSequences } from "./domain/preset-sequences";
+export { buildSequences } from "./domain/preset-sequences";
 
 export {
 	buildSequenceIndex,
+	getSequences,
+	getSequenceIndex,
 	computeAvailableMoves,
 	executeSequenceMove,
 	executeSequenceMoveOnFile,

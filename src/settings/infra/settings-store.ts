@@ -5,6 +5,9 @@
 import type { AgileObsidianSettings } from "../domain/settings-types";
 
 export const DEFAULT_SETTINGS: AgileObsidianSettings = {
+	// Built-in template set available
+	enableDefaultTemplates: true,
+
 	// Settings sections minimized by default
 	uiFoldUxShortcuts: true,
 

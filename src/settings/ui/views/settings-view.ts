@@ -95,6 +95,22 @@ export class AgileSettingTab extends PluginSettingTab {
 				"Applies to tasks containing initiatives, epics, user stories, and other agile templates."
 			);
 
+		// Toggle: Default templates (the 44 built-ins)
+		new Setting(containerEl)
+			.setName("Default templates")
+			.setDesc(
+				"Turn the built-in template set on or off. When off, the built-in insert commands are removed and built-ins drop out of sequence menus and repeat. Chips already in your notes are never changed, and you can still remove them from the right-click menu."
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.settings.enableDefaultTemplates)
+					.onChange(async (value) => {
+						this.settings.enableDefaultTemplates = value;
+						// Persist; the save hook then updates the template registry live (no reload).
+						await this.saveSettings();
+					})
+			);
+
 		// Toggle: Double-Enter repeats template
 		new Setting(containerEl)
 			// eslint-disable-next-line obsidianmd/ui/sentence-case

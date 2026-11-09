@@ -6,6 +6,7 @@ import { initSettings } from "../../src/composition/register-settings";
 const KEPT_KEYS = [
 	"enableCanonicalOnLeafChange",
 	"enableCanonicalOnLineCommit",
+	"enableDefaultTemplates",
 	"enableTaskCanonicalFormatter",
 	"enableUxRepeatAgileTemplates",
 	"uiFoldAgileTaskFormatting",
@@ -23,6 +24,7 @@ describe("settings load (E9)", () => {
 
 	it("keeps known keys with valid values", () => {
 		const r = loadSettings({
+			enableDefaultTemplates: false,
 			enableUxRepeatAgileTemplates: false,
 			enableTaskCanonicalFormatter: false,
 			enableCanonicalOnLineCommit: false,
@@ -31,6 +33,7 @@ describe("settings load (E9)", () => {
 			uiFoldAgileTaskFormatting: false,
 		});
 		expect(r.settings).toEqual({
+			enableDefaultTemplates: false,
 			enableUxRepeatAgileTemplates: false,
 			enableTaskCanonicalFormatter: false,
 			enableCanonicalOnLineCommit: false,

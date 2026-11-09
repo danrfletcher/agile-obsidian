@@ -2,7 +2,11 @@
  * Dynamic template commands registrar.
  *
  * Responsibilities:
- * - Register one Obsidian command per preset template (excluding hiddenFromDynamicCommands).
+ * - Register one Obsidian command per ACTIVE template in the template registry (excluding
+ *   hiddenFromDynamicCommands). On every registry change the set of registered commands is
+ *   diffed against the active list: `removeCommand` for ids no longer active, `addCommand`
+ *   for new ones. A live id is never added twice. Command ids stay the same across
+ *   off -> on, so hotkeys bound to them keep working once the command is back.
  * - Dynamically enable/disable each command using a checkCallback based on the current cursor context.
  * - Keep an "allowed templates" set up-to-date using a debounced, guarded evaluation triggered by cursor and content changes.
  *
@@ -14,11 +18,11 @@
 import type { App, Editor, Plugin } from "obsidian";
 import { MarkdownView, Notice } from "obsidian";
 import { getCursorContext } from "@platform/obsidian";
-import { presetTemplates } from "../domain/presets";
 import type { TemplateDefinition, TemplateContext } from "../domain/types";
 import { isAllowedInContext } from "../domain/rules";
 import { getArtifactParentChainTemplateIds } from "../domain/task-template-parent-chain";
 import { insertTemplateAtCursor, findTemplateById } from "./templating-service";
+import { findActiveTemplate, listActiveTemplates, onTemplateRegistryChange } from "./template-registry";
 import { showSchemaModal, showJsonModal } from "@features/templating-params-editor";
 
 // New: unify param collection via templating-params-editor
@@ -30,21 +34,18 @@ import {
 // New: insertion workflows
 import { runTemplateWorkflows } from "../domain/template-workflows";
 
+/** Templates that get an insert command right now: the registry's active list. */
 function collectTemplates(): Array<{ id: string; def: TemplateDefinition }> {
 	const out: Array<{ id: string; def: TemplateDefinition }> = [];
-	const groups = presetTemplates as unknown as Record<
-		string,
-		Record<string, TemplateDefinition>
-	>;
-	for (const [group, defs] of Object.entries(groups)) {
-		for (const key of Object.keys(defs)) {
-			const def = defs[key];
-			const id = `${group}.${key}`;
-			if (def.hiddenFromDynamicCommands) continue;
-			out.push({ id, def });
-		}
+	for (const def of listActiveTemplates()) {
+		if (def.hiddenFromDynamicCommands) continue;
+		out.push({ id: def.id, def });
 	}
 	return out;
+}
+
+function commandName(id: string, label: string | undefined): string {
+	return label ? `Insert template: ${label}` : `Insert template: ${id}`;
 }
 
 function makeCommandId(manifestId: string, templateId: string): string {
@@ -63,8 +64,6 @@ export async function registerTemplatingDynamicCommands(
 	plugin: Plugin,
 	manifestId: string
 ): Promise<void> {
-	const templates = collectTemplates();
-
 	// Dynamic allow-list state
 	const allowed = new Set<string>();
 	let lastCtxKey = "";
@@ -117,7 +116,7 @@ export async function registerTemplatingDynamicCommands(
 			};
 
 			const nextAllowed = new Set<string>();
-			for (const { id, def } of templates) {
+			for (const { id, def } of collectTemplates()) {
 				const ok = isAllowedInContext(
 					tctx,
 					def.rules,
@@ -135,7 +134,9 @@ export async function registerTemplatingDynamicCommands(
 		}
 	}
 
-	function scheduleRecompute(reason: "cursor" | "edit" | "leaf" | "file") {
+	function scheduleRecompute(
+		reason: "cursor" | "edit" | "leaf" | "file" | "registry"
+	) {
 		const view = getActiveView();
 		if (!view) return;
 		const editor: Editor = view.editor;
@@ -179,16 +180,22 @@ export async function registerTemplatingDynamicCommands(
 		}, delay);
 	}
 
-	for (const { id, def } of templates) {
-		const cmdId = makeCommandId(manifestId, id);
-		const name = def.label
-			? `Insert template: ${def.label}`
-			: `Insert template: ${id}`;
+	function addTemplateCommand(
+		id: string,
+		cmdId: string,
+		label: string | undefined
+	): void {
+		const name = commandName(id, label);
 
 		plugin.addCommand({
 			id: cmdId,
 			name,
 			checkCallback: (checking: boolean) => {
+				// Read the registry at invocation time, never a captured definition.
+				// An inactive template has no command: nothing to show, nothing to run.
+				const def = findActiveTemplate(id);
+				if (!def) return false;
+
 				const isAllowed = allowed.has(id);
 				if (checking) return isAllowed;
 
@@ -242,6 +249,10 @@ export async function registerTemplatingDynamicCommands(
 							);
 						}
 
+						// The template may have become inactive while the dialog was open
+						// (e.g. "Default templates" switched off): cancel quietly.
+						if (!findActiveTemplate(id)) return;
+
 						insertTemplateAtCursor(id, editor, filePath, params);
 					} catch (err) {
 						const message =
@@ -254,6 +265,53 @@ export async function registerTemplatingDynamicCommands(
 			},
 		});
 	}
+
+	// Registered command ids (the exact string handed to addCommand, and so to
+	// removeCommand). Obsidian prefixes plugin.addCommand/removeCommand ids with the
+	// manifest id itself; makeCommandId already includes the manifest id, and we pass the
+	// same unprefixed string to both calls so a remove can never silently miss.
+	// Value: the command name it was registered with, so a changed label re-registers it.
+	const registered = new Map<string, string>();
+
+	function syncCommands(): void {
+		const desired = new Map<string, { id: string; label?: string }>();
+		for (const { id, def } of collectTemplates()) {
+			desired.set(makeCommandId(manifestId, id), { id, label: def.label });
+		}
+
+		for (const [cmdId, name] of Array.from(registered)) {
+			const want = desired.get(cmdId);
+			if (want && commandName(want.id, want.label) === name) continue;
+			plugin.removeCommand(cmdId);
+			registered.delete(cmdId);
+		}
+		for (const [cmdId, { id, label }] of desired) {
+			if (registered.has(cmdId)) continue;
+			addTemplateCommand(id, cmdId, label);
+			registered.set(cmdId, commandName(id, label));
+		}
+
+		// Forget allow-list entries for templates that are no longer active.
+		const activeIds = new Set(Array.from(desired.values(), (d) => d.id));
+		for (const id of Array.from(allowed)) {
+			if (!activeIds.has(id)) allowed.delete(id);
+		}
+	}
+
+	syncCommands();
+
+	// Keep the palette in step with the registry: no reload, no duplicates.
+	const offRegistry = onTemplateRegistryChange(() => {
+		syncCommands();
+		scheduleRecompute("registry");
+	});
+	plugin.register(offRegistry);
+	plugin.register(() => {
+		if (timer != null) {
+			window.clearTimeout(timer);
+			timer = null;
+		}
+	});
 
 	scheduleRecompute("cursor");
 

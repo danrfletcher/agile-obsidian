@@ -15,20 +15,7 @@
 
 import type { App, MarkdownView, Plugin } from "obsidian";
 import { openSequencerMenuAt } from "./menu";
-import { presetSequences } from "../domain/preset-sequences";
-
-function makeEligibleTemplateSet(): Set<string> {
-	const s = new Set<string>();
-	for (const seq of presetSequences) {
-		s.add(seq.startTemplate);
-		if (seq.direction === "both") {
-			s.add(seq.targetTemplate);
-		}
-	}
-	return s;
-}
-
-const ELIGIBLE_TEMPLATES = makeEligibleTemplateSet();
+import { isSequenceEligibleTemplate } from "../app/sequencer-service";
 
 // Milliseconds to discriminate single vs double-click
 const CLICK_DEFER_MS = 280;
@@ -77,7 +64,9 @@ export function wireTemplatingSequencerDomHandlers(
 			if (!wrapper) return;
 
 			const tpl = String(wrapper.getAttribute("data-template-key") || "");
-			if (!ELIGIBLE_TEMPLATES.has(tpl)) return;
+			// Read the live eligible set at event time. With the "Default templates" set
+			// off, built-in chips are not eligible: leave the click completely alone.
+			if (!isSequenceEligibleTemplate(tpl)) return;
 
 			// Suppress default click (prevent raw HTML reveal) and other handlers
 			evt.preventDefault();
@@ -110,6 +99,13 @@ export function wireTemplatingSequencerDomHandlers(
 
 				// Wrapper might have been removed; bail safely
 				if (!document.contains(p.wrapperEl)) return;
+
+				// The registry may have changed during the defer window (e.g. the
+				// "Default templates" set was switched off): open nothing.
+				const key = String(
+					p.wrapperEl.getAttribute("data-template-key") || ""
+				);
+				if (!isSequenceEligibleTemplate(key)) return;
 
 				openSequencerMenuAt({
 					app,

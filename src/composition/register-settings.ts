@@ -1,6 +1,7 @@
 import { createSettingsTab, loadStoredSettings } from "@settings";
 import type { AgileObsidianSettings } from "@settings";
 import type { Plugin, PluginSettingTab } from "obsidian";
+import { setDefaultTemplatesEnabled } from "@features/templating-engine";
 import type { Container } from "./container";
 
 /**
@@ -18,6 +19,9 @@ export async function initSettings(
 	const stored: unknown = await plugin.loadData?.();
 	const { settings, needsSave } = loadStoredSettings(stored);
 	plugin.settings = settings;
+	// Seed the live template registry before any command is registered, so a fresh
+	// enable (or restart) starts in the saved state with no add-then-remove churn.
+	setDefaultTemplatesEnabled(settings.enableDefaultTemplates);
 	if (needsSave) {
 		await plugin.saveData?.(settings);
 	}
@@ -40,6 +44,11 @@ export async function registerSettings(container: Container): Promise<void> {
 		} else if (typeof p.saveData === "function") {
 			await p.saveData(settings);
 		}
+
+		// Update the live template registry from the saved flag: the insert commands,
+		// sequence menus and repeat follow it immediately, no reload. A no-op when the
+		// flag did not change.
+		setDefaultTemplatesEnabled(container.settings.enableDefaultTemplates);
 
 		try {
 			interface WorkspaceWithTrigger {
