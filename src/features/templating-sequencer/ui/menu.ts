@@ -1,7 +1,7 @@
 /**
  * Templating Sequencer - Floating Menu
  *
- * Builds a click-triggered floating menu (like task-assignment) that:
+ * Builds a click-triggered floating menu that:
  * - Suppresses default behavior that would expose raw HTML
  * - Shows "Forward" options (start->target) and "Back" options (reverse from "both")
  * - Calls executeSequenceMove(...) on selection

@@ -106,7 +106,7 @@ type AnyTemplateDef = {
 	hiddenFromDynamicCommands?: boolean;
 };
 
-// Flatten groups (agile, crm, members, prioritization, workflows, obsidian)
+// Flatten groups (agile, crm, prioritization, workflows, obsidian)
 function collectAllTemplateDefs(): AnyTemplateDef[] {
 	const out: AnyTemplateDef[] = [];
 	if (!presetTemplates) return out;

@@ -6,7 +6,6 @@
 import type { App, Plugin } from "obsidian";
 import type { AgileObsidianSettings } from "../domain/settings-types";
 import { createSettingsTab } from "./factories";
-import type { SettingsOrgActions } from "./contracts";
 
 /**
  * Dependencies required to register the Settings feature with Obsidian.
@@ -16,8 +15,6 @@ export type RegisterSettingsDeps = {
 	app: App;
 	plugin: Plugin;
 	settings: AgileObsidianSettings;
-	orgActions: SettingsOrgActions;
-	applyCheckboxStyles: () => Promise<void>;
 	saveSettings: () => Promise<void>;
 };
 
@@ -26,21 +23,7 @@ export type RegisterSettingsDeps = {
  * Side-effect: calls plugin.addSettingTab(tab).
  */
 export function registerSettingsFeature(deps: RegisterSettingsDeps) {
-	const {
-		app,
-		plugin,
-		settings,
-		orgActions,
-		applyCheckboxStyles,
-		saveSettings,
-	} = deps;
-	const tab = createSettingsTab({
-		app,
-		plugin,
-		settings,
-		orgActions,
-		applyCheckboxStyles,
-		saveSettings,
-	});
+	const { app, plugin, settings, saveSettings } = deps;
+	const tab = createSettingsTab({ app, plugin, settings, saveSettings });
 	plugin.addSettingTab(tab);
 }

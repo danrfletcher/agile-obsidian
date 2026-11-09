@@ -7,7 +7,7 @@ import {
 	attrVar,
 } from "./template-parameter-helpers";
 import { currencyDropdownOptions } from "../app/constants";
-import type { AgileArtifactType } from "@features/task-filter";
+import type { AgileArtifactType } from "./artifact-type";
 
 type HasOrderTag = {
 	orderTag?: string;
@@ -918,91 +918,6 @@ export const CRM: Record<string, TemplateDefinition> = {
 };
 
 /**
- * Members — tasks only
- */
-export const Members: Record<string, TemplateDefinition> = {
-	assignee: {
-		orderTag: "assignment",
-		id: "members.assignee",
-		label: "Members - Assignee",
-		hiddenFromDynamicCommands: true,
-		hasParams: true,
-		rules: { allowedOn: ["task"] },
-		render(
-			this: HasOrderTag,
-			params: {
-				memberName: string;
-				memberSlug: string;
-				assignmentState: "active" | "inactive";
-				memberType:
-					| "teamMember"
-					| "delegateTeam"
-					| "delegateTeamMember"
-					| "delegateExternal"
-					| "special";
-			}
-		) {
-			const memberName = params.memberName.trim();
-			const memberType = params.memberType.trim();
-			const memberSlug = params.memberSlug.trim();
-			const { assignmentState } = params;
-
-			// Emoji per memberType (unchanged)
-			let emoji = "";
-			switch (memberType) {
-				case "teamMember":
-					emoji = emojis.teamMember;
-					break;
-				case "delegateTeam":
-					emoji = emojis.delegateTeam;
-					break;
-				case "delegateTeamMember":
-					emoji = emojis.delegateTeamMember;
-					break;
-				case "delegateExternal":
-					emoji = emojis.delegateExternal;
-					break;
-				case "special":
-					emoji = emojis.everyone;
-					break;
-				default:
-			}
-
-			// Assign type: assignee for team members and "special" (Everyone), delegate for the rest
-			const assignType =
-				memberType === "teamMember" || memberType === "special"
-					? "assignee"
-					: "delegate";
-
-			// Background color depends on active/inactive
-			const isInactive = assignmentState === "inactive";
-			let bg = colors.obsidianTagGrey; // default for inactive
-			if (!isInactive) {
-				if (assignType === "assignee") {
-					bg = colors.assignee;
-				} else {
-					bg = colors.delegate;
-				}
-			}
-
-			const inner = chip({
-				id: "assignee",
-				text: `<strong>${emoji} ${memberName}</strong>`,
-				bg,
-				color: "#000000",
-			});
-			return wrapTemplate("members.assignee", inner, {
-				orderTag: this.orderTag,
-				assignmentState,
-				memberSlug,
-				memberType,
-				assignType,
-			});
-		},
-	},
-};
-
-/**
  * Prioritization
  */
 export const Prioritization: Record<string, TemplateDefinition> = {
@@ -1757,7 +1672,6 @@ export const ObsidianExtensions: Record<string, TemplateDefinition> = {
 export const presetTemplates = {
 	agile: Agile,
 	crm: CRM,
-	members: Members,
 	prioritization: Prioritization,
 	workflows: Workflows,
 	obsidian: ObsidianExtensions,

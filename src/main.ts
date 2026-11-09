@@ -1,6 +1,5 @@
 import { Plugin } from "obsidian";
 import { createContainer, type Container } from "@composition/container";
-import { registerStyles } from "@composition/register-styles";
 import { initSettings, registerSettings } from "@composition/register-settings";
 import { registerAllCommands } from "@composition/register-commands";
 import { registerEvents } from "@composition/register-events";
@@ -16,8 +15,6 @@ export default class AgileObsidian extends Plugin {
 
 		const container = createContainer(this);
 		this.container = container;
-
-		registerStyles(container);
 
 		// Register settings via composition
 		await registerSettings(container);

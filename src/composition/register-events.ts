@@ -1,11 +1,8 @@
 import type { Container } from "./container";
-import { MarkdownView, Notice as ObsidianNotice, App, Plugin } from "obsidian";
-import type { OrgStructurePort } from "@features/org-structure";
+import { MarkdownView, Notice as ObsidianNotice } from "obsidian";
 import { wireTaskIndex } from "./wire/task-index";
 import { wireCanonicalFormatterForView } from "./wire/canonical-formatter";
-import { wireTemplatingForView } from "./wire/templating";
-import { wireOrgStructure } from "./wire/org-structure";
-import { wireTaskFlows } from "./wire/task-flows";
+import { createTemplatingWirer } from "./wire/templating";
 import { normalizeTaskLine } from "@features/task-canonical-formatter";
 
 /**
@@ -18,7 +15,12 @@ export async function registerEvents(container: Container) {
 	// 1) TaskIndex wiring and ports
 	const { taskIndexPorts } = await wireTaskIndex(container);
 
-	// 2) Per-view wiring (templating + canonical formatting + assignment DOM handlers)
+	// 2) Per-view wiring (templating + canonical formatting)
+	const wireTemplatingForView = createTemplatingWirer(
+		app,
+		plugin,
+		taskIndexPorts
+	);
 	let currentView: MarkdownView | null = null;
 	let currentCanonicalDisposer: (() => void) | null = null;
 
@@ -42,17 +44,19 @@ export async function registerEvents(container: Container) {
 		if (!currentView) return;
 
 		// Templating DOM handlers + UX shortcuts
-		wireTemplatingForView(app, currentView, plugin, taskIndexPorts);
+		wireTemplatingForView(currentView);
 
 		// Canonical formatter
 		currentCanonicalDisposer = wireCanonicalFormatterForView(
 			currentView,
 			container
 		);
-
-		// Task assignment DOM handlers are wired by feature module internally if available (org-structure), via wireOrgStructure
-		// to avoid duplication here.
 	};
+
+	// Tear down the per-view canonical formatter listeners when the plugin unloads.
+	// (Templating DOM listeners are registered via plugin.registerDomEvent and are
+	// removed by Obsidian on unload.)
+	plugin.register(() => unwireCurrentView());
 
 	// Initial wire and listeners to rewire on leaf/file changes
 	wireForActiveView();
@@ -128,54 +132,4 @@ export async function registerEvents(container: Container) {
 		})
 	);
 
-	// 4) Org Structure wiring (debounced vault watchers + assignment commands + ports)
-	const { orgStructurePort } = await wireOrgStructure(container);
-
-	// 5) Task flows (cascades, status sequence, close manager, metadata cleanup)
-	wireTaskFlows(container);
-
-	// 6) When org-structure is present, wire task assignment DOM handlers for the active view
-	//    via rewire (so it tracks view changes). The feature module owns its own cleanup.
-	const wireAssignmentHandlersForActive = () => {
-		const orgPorts = { orgStructure: orgStructurePort };
-		const view = app.workspace.getActiveViewOfType(MarkdownView);
-		if (!view) return;
-
-		// Dynamic import to satisfy no-require-imports
-		void import("@features/task-assignment")
-			.then(
-				(mod: {
-					wireTaskAssignmentDomHandlers?: (
-						app: App,
-						view: MarkdownView,
-						plugin: Plugin,
-						orgPorts: { orgStructure: OrgStructurePort }
-					) => void;
-				}) => {
-					if (typeof mod.wireTaskAssignmentDomHandlers === "function") {
-						mod.wireTaskAssignmentDomHandlers(
-							app,
-							view,
-							plugin,
-							orgPorts
-						);
-					}
-				}
-			)
-			.catch(() => {
-				// Feature may not expose DOM wiring in this runtime; ignore.
-			});
-	};
-
-	wireAssignmentHandlersForActive();
-	plugin.registerEvent(
-		app.workspace.on("active-leaf-change", (_leaf) =>
-			wireAssignmentHandlersForActive()
-		)
-	);
-	plugin.registerEvent(
-		app.workspace.on("file-open", (_file) =>
-			wireAssignmentHandlersForActive()
-		)
-	);
 }

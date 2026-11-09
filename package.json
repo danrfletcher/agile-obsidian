@@ -1,14 +1,15 @@
 {
-	"name": "obsidian-sample-plugin",
+	"name": "agile-templates",
 	"version": "1.0.0",
-	"description": "This is a sample plugin for Obsidian (https://obsidian.md)",
+	"description": "Agile Templates: structured template chips for Obsidian task lines",
 	"main": "src/main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"version": "node version-bump.mjs && git add manifest.json versions.json",
 		"lint": "eslint .",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsc --noEmit --skipLibCheck",
+		"test": "vitest run"
 	},
 	"keywords": [],
 	"author": "",
@@ -25,6 +26,7 @@
 		"eslint-plugin-obsidianmd": "^0.1.9",
 		"obsidian": "latest",
 		"tslib": "2.4.0",
-		"typescript": "^4.9.5"
+		"typescript": "^4.9.5",
+		"vitest": "^3.2.7"
 	}
 }

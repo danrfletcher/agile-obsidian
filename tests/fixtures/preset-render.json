@@ -1,0 +1,726 @@
+{
+	"capturedFrom": "agile-obsidian 5a90994",
+	"note": "data-template-wrapper=\"tpl-<random>\" normalised to tpl-ID",
+	"cases": [
+		{
+			"id": "agile.initiative",
+			"case": "full",
+			"params": {
+				"title": "Sample title",
+				"details": "Sample details"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.initiative\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: #CACFD9A6;\"><strong>🎖️ <span data-tpl-var=\"title\">Sample title</span></strong>:</mark> <span data-tpl-var=\"details\">Sample details</span></span>"
+		},
+		{
+			"id": "agile.initiative",
+			"case": "required-only",
+			"params": {
+				"title": "Sample title"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.initiative\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: #CACFD9A6;\"><strong>🎖️ <span data-tpl-var=\"title\">Sample title</span></strong></mark></span>"
+		},
+		{
+			"id": "agile.initiative",
+			"case": "hostile",
+			"params": {
+				"title": "<b>\"A\" & 'B'</b>",
+				"details": "x < y && z > \"w\" {{not-a-var}}"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.initiative\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: #CACFD9A6;\"><strong>🎖️ <span data-tpl-var=\"title\">&lt;b&gt;&quot;A&quot; &amp; &#39;B&#39;&lt;/b&gt;</span></strong>:</mark> <span data-tpl-var=\"details\">x &lt; y &amp;&amp; z &gt; &quot;w&quot; {{not-a-var}}</span></span>"
+		},
+		{
+			"id": "agile.epic",
+			"case": "full",
+			"params": {
+				"title": "Sample title",
+				"details": "Sample details"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.epic\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: #CACFD9A6;\"><strong>🏆 <span data-tpl-var=\"title\">Sample title</span>:</strong></mark> <span data-tpl-var=\"details\">Sample details</span></span>"
+		},
+		{
+			"id": "agile.epic",
+			"case": "required-only",
+			"params": {
+				"title": "Sample title"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.epic\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: #CACFD9A6;\"><strong>🏆 <span data-tpl-var=\"title\">Sample title</span></strong></mark></span>"
+		},
+		{
+			"id": "agile.epic",
+			"case": "hostile",
+			"params": {
+				"title": "<b>\"A\" & 'B'</b>",
+				"details": "x < y && z > \"w\" {{not-a-var}}"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.epic\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: #CACFD9A6;\"><strong>🏆 <span data-tpl-var=\"title\">&lt;b&gt;&quot;A&quot; &amp; &#39;B&#39;&lt;/b&gt;</span>:</strong></mark> <span data-tpl-var=\"details\">x &lt; y &amp;&amp; z &gt; &quot;w&quot; {{not-a-var}}</span></span>"
+		},
+		{
+			"id": "agile.feature",
+			"case": "full",
+			"params": {
+				"title": "Sample title",
+				"details": "Sample details"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.feature\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: #CACFD9A6;\"><strong>⭐ <span data-tpl-var=\"title\">Sample title</span></strong>:</mark> <span data-tpl-var=\"details\">Sample details</span></span>"
+		},
+		{
+			"id": "agile.feature",
+			"case": "required-only",
+			"params": {
+				"title": "Sample title"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.feature\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: #CACFD9A6;\"><strong>⭐ <span data-tpl-var=\"title\">Sample title</span></strong></mark></span>"
+		},
+		{
+			"id": "agile.feature",
+			"case": "hostile",
+			"params": {
+				"title": "<b>\"A\" & 'B'</b>",
+				"details": "x < y && z > \"w\" {{not-a-var}}"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.feature\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: #CACFD9A6;\"><strong>⭐ <span data-tpl-var=\"title\">&lt;b&gt;&quot;A&quot; &amp; &#39;B&#39;&lt;/b&gt;</span></strong>:</mark> <span data-tpl-var=\"details\">x &lt; y &amp;&amp; z &gt; &quot;w&quot; {{not-a-var}}</span></span>"
+		},
+		{
+			"id": "agile.product",
+			"case": "full",
+			"params": {
+				"title": "Sample title",
+				"details": "Sample details"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.product\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: #CACFD9A6;\"><strong>📦 <span data-tpl-var=\"title\">Sample title</span>:</strong> <span data-tpl-var=\"details\">Sample details</span></mark></span>"
+		},
+		{
+			"id": "agile.product",
+			"case": "required-only",
+			"params": {
+				"title": "Sample title"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.product\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: #CACFD9A6;\"><strong>📦 <span data-tpl-var=\"title\">Sample title</span></strong></mark></span>"
+		},
+		{
+			"id": "agile.product",
+			"case": "hostile",
+			"params": {
+				"title": "<b>\"A\" & 'B'</b>",
+				"details": "x < y && z > \"w\" {{not-a-var}}"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.product\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: #CACFD9A6;\"><strong>📦 <span data-tpl-var=\"title\">&lt;b&gt;&quot;A&quot; &amp; &#39;B&#39;&lt;/b&gt;</span>:</strong> <span data-tpl-var=\"details\">x &lt; y &amp;&amp; z &gt; &quot;w&quot; {{not-a-var}}</span></mark></span>"
+		},
+		{
+			"id": "agile.userStory",
+			"case": "full",
+			"params": {
+				"title": "Sample title",
+				"persona": "Registered user",
+				"desire": "log in to the site",
+				"outcome": "access my dashboard"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.userStory\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: linear-gradient(to right, #00B7FF, #A890FE);\"><strong>📝 <span data-tpl-var=\"title\">Sample title</span>:</strong></mark>  <strong>As a</strong> <span data-tpl-var=\"persona\">Registered user</span>, <strong>I want to</strong> <span data-tpl-var=\"desire\">log in to the site</span>, <strong>so that</strong> <span data-tpl-var=\"outcome\">access my dashboard</span></span>"
+		},
+		{
+			"id": "agile.userStory",
+			"case": "required-only",
+			"params": {
+				"title": "Sample title"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.userStory\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: linear-gradient(to right, #00B7FF, #A890FE);\"><strong>📝 <span data-tpl-var=\"title\">Sample title</span></strong></mark></span>"
+		},
+		{
+			"id": "agile.userStory",
+			"case": "hostile",
+			"params": {
+				"title": "<b>\"A\" & 'B'</b>"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.userStory\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: linear-gradient(to right, #00B7FF, #A890FE);\"><strong>📝 <span data-tpl-var=\"title\">&lt;b&gt;&quot;A&quot; &amp; &#39;B&#39;&lt;/b&gt;</span></strong></mark></span>"
+		},
+		{
+			"id": "agile.acceptanceCriteria",
+			"case": "full",
+			"params": {
+				"title": "Sample title",
+				"details": "Sample details"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.acceptanceCriteria\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: #CACFD9A6;\"><strong>✅ <span data-tpl-var=\"title\">Sample title</span></strong>:</mark> <span data-tpl-var=\"details\">Sample details</span></span>"
+		},
+		{
+			"id": "agile.acceptanceCriteria",
+			"case": "required-only",
+			"params": {
+				"title": "Sample title"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.acceptanceCriteria\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: #CACFD9A6;\"><strong>✅ <span data-tpl-var=\"title\">Sample title</span></strong></mark></span>"
+		},
+		{
+			"id": "agile.acceptanceCriteria",
+			"case": "hostile",
+			"params": {
+				"title": "<b>\"A\" & 'B'</b>",
+				"details": "x < y && z > \"w\" {{not-a-var}}"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.acceptanceCriteria\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: #CACFD9A6;\"><strong>✅ <span data-tpl-var=\"title\">&lt;b&gt;&quot;A&quot; &amp; &#39;B&#39;&lt;/b&gt;</span></strong>:</mark> <span data-tpl-var=\"details\">x &lt; y &amp;&amp; z &gt; &quot;w&quot; {{not-a-var}}</span></span>"
+		},
+		{
+			"id": "agile.recurringRes",
+			"case": "full",
+			"params": {
+				"title": "Sample title",
+				"details": "Sample details"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.recurringRes\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: #CACFD9A6;\"><strong>🔁 <span data-tpl-var=\"title\">Sample title</span></strong>:</mark> <span data-tpl-var=\"details\">Sample details</span></span>"
+		},
+		{
+			"id": "agile.recurringRes",
+			"case": "required-only",
+			"params": {
+				"title": "Sample title"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.recurringRes\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: #CACFD9A6;\"><strong>🔁 <span data-tpl-var=\"title\">Sample title</span></strong></mark></span>"
+		},
+		{
+			"id": "agile.recurringRes",
+			"case": "hostile",
+			"params": {
+				"title": "<b>\"A\" & 'B'</b>",
+				"details": "x < y && z > \"w\" {{not-a-var}}"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.recurringRes\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: #CACFD9A6;\"><strong>🔁 <span data-tpl-var=\"title\">&lt;b&gt;&quot;A&quot; &amp; &#39;B&#39;&lt;/b&gt;</span></strong>:</mark> <span data-tpl-var=\"details\">x &lt; y &amp;&amp; z &gt; &quot;w&quot; {{not-a-var}}</span></span>"
+		},
+		{
+			"id": "agile.okr",
+			"case": "full",
+			"params": {
+				"title": "Sample title",
+				"details": "Sample details"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.okr\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: linear-gradient(to left, #38ADAE, #CD395A);\"><strong>🎯 <span data-tpl-var=\"title\">Sample title</span></strong>:</mark> <span data-tpl-var=\"details\">Sample details</span></span>"
+		},
+		{
+			"id": "agile.okr",
+			"case": "required-only",
+			"params": {
+				"title": "Sample title"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.okr\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: linear-gradient(to left, #38ADAE, #CD395A);\"><strong>🎯 <span data-tpl-var=\"title\">Sample title</span></strong></mark></span>"
+		},
+		{
+			"id": "agile.okr",
+			"case": "hostile",
+			"params": {
+				"title": "<b>\"A\" & 'B'</b>",
+				"details": "x < y && z > \"w\" {{not-a-var}}"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.okr\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: linear-gradient(to left, #38ADAE, #CD395A);\"><strong>🎯 <span data-tpl-var=\"title\">&lt;b&gt;&quot;A&quot; &amp; &#39;B&#39;&lt;/b&gt;</span></strong>:</mark> <span data-tpl-var=\"details\">x &lt; y &amp;&amp; z &gt; &quot;w&quot; {{not-a-var}}</span></span>"
+		},
+		{
+			"id": "agile.parentLink",
+			"case": "full",
+			"params": {
+				"blockRef": "Projects/Plan.md#^abc123"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.parentLink\" data-order-tag=\"parent-link\"><a class=\"internal-link\" href=\"Projects/Plan.md#^abc123\" data-tpl-attr-var-href=\"blockRef\">⬆️</a></span>"
+		},
+		{
+			"id": "agile.parentLink",
+			"case": "required-only",
+			"params": {
+				"blockRef": "Projects/Plan.md#^abc123"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.parentLink\" data-order-tag=\"parent-link\"><a class=\"internal-link\" href=\"Projects/Plan.md#^abc123\" data-tpl-attr-var-href=\"blockRef\">⬆️</a></span>"
+		},
+		{
+			"id": "agile.personalLearningInitiative",
+			"case": "full",
+			"params": {
+				"title": "Sample title",
+				"details": "Sample details"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.personalLearningInitiative\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: linear-gradient(to right, #2c3e50, #3498db); color: #FFFFFF;\"><strong>🎓 Sample title:</strong> Sample details</mark></span>"
+		},
+		{
+			"id": "agile.personalLearningInitiative",
+			"case": "title-only",
+			"params": {
+				"title": "Sample title"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.personalLearningInitiative\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: linear-gradient(to right, #2c3e50, #3498db); color: #FFFFFF;\"><strong>🎓 Sample title</strong></mark></span>"
+		},
+		{
+			"id": "agile.personalLearningInitiative",
+			"case": "no-params",
+			"params": null,
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.personalLearningInitiative\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: linear-gradient(to right, #2c3e50, #3498db); color: #FFFFFF;\"><strong>🎓 </strong></mark></span>"
+		},
+		{
+			"id": "agile.personalLearningEpic",
+			"case": "full",
+			"params": {
+				"title": "Sample title",
+				"details": "Sample details"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.personalLearningEpic\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: linear-gradient(to right, #f0c27b, #4b1248); color: #FFFFFF;\"><strong>📚 Sample title:</strong> Sample details</mark></span>"
+		},
+		{
+			"id": "agile.personalLearningEpic",
+			"case": "title-only",
+			"params": {
+				"title": "Sample title"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.personalLearningEpic\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: linear-gradient(to right, #f0c27b, #4b1248); color: #FFFFFF;\"><strong>📚 Sample title</strong></mark></span>"
+		},
+		{
+			"id": "agile.personalLearningEpic",
+			"case": "no-params",
+			"params": null,
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"agile.personalLearningEpic\" data-order-tag=\"artifact-item-type\"><mark  style=\"background: linear-gradient(to right, #f0c27b, #4b1248); color: #FFFFFF;\"><strong>📚 </strong></mark></span>"
+		},
+		{
+			"id": "crm.abandoned",
+			"case": "no-params",
+			"params": null,
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"crm.abandoned\" data-order-tag=\"crm-payment\"><mark  style=\"background: #FF5582A6;\"><strong>Abandoned</strong></mark></span>"
+		},
+		{
+			"id": "crm.awaitingDeposit",
+			"case": "no-params",
+			"params": null,
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"crm.awaitingDeposit\" data-order-tag=\"crm-payment\"><mark  style=\"background: #FFB86CA6;\"><strong>Awaiting Deposit</strong></mark></span>"
+		},
+		{
+			"id": "crm.commission",
+			"case": "full",
+			"params": {
+				"currency": "€",
+				"paidAmount": "1,250.00",
+				"totalAmount": "5,000.00"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"crm.commission\" data-order-tag=\"crm-commission\"><mark  style=\"background: #53BDA5;\"><strong>Commission Paid <span data-tpl-var=\"currency\">€</span><span data-tpl-var=\"paidAmount\">1,250.00</span> / <span data-tpl-var=\"currency\">€</span><span data-tpl-var=\"totalAmount\">5,000.00</span></strong></mark></span>"
+		},
+		{
+			"id": "crm.commission",
+			"case": "required-only",
+			"params": {
+				"currency": "€",
+				"paidAmount": "1,250.00",
+				"totalAmount": "5,000.00"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"crm.commission\" data-order-tag=\"crm-commission\"><mark  style=\"background: #53BDA5;\"><strong>Commission Paid <span data-tpl-var=\"currency\">€</span><span data-tpl-var=\"paidAmount\">1,250.00</span> / <span data-tpl-var=\"currency\">€</span><span data-tpl-var=\"totalAmount\">5,000.00</span></strong></mark></span>"
+		},
+		{
+			"id": "crm.depositPaid",
+			"case": "full",
+			"params": {
+				"currency": "€",
+				"paidAmount": "1,250.00",
+				"totalAmount": "5,000.00"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"crm.depositPaid\" data-order-tag=\"crm-payment\"><mark  style=\"background: #FEE12B;\"><strong>Deposit Paid <span data-tpl-var=\"currency\">€</span><span data-tpl-var=\"paidAmount\">1,250.00</span> / <span data-tpl-var=\"currency\">€</span><span data-tpl-var=\"totalAmount\">5,000.00</span></strong></mark></span>"
+		},
+		{
+			"id": "crm.depositPaid",
+			"case": "required-only",
+			"params": {
+				"currency": "€",
+				"paidAmount": "1,250.00",
+				"totalAmount": "5,000.00"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"crm.depositPaid\" data-order-tag=\"crm-payment\"><mark  style=\"background: #FEE12B;\"><strong>Deposit Paid <span data-tpl-var=\"currency\">€</span><span data-tpl-var=\"paidAmount\">1,250.00</span> / <span data-tpl-var=\"currency\">€</span><span data-tpl-var=\"totalAmount\">5,000.00</span></strong></mark></span>"
+		},
+		{
+			"id": "crm.paidInFull",
+			"case": "full",
+			"params": {
+				"currency": "€",
+				"totalAmount": "5,000.00"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"crm.paidInFull\" data-order-tag=\"crm-payment\"><mark  style=\"background: #2E8B57;\"><strong>Paid in Full <span data-tpl-var=\"currency\">€</span>5,000.00 / <span data-tpl-var=\"currency\">€</span><span data-tpl-var=\"totalAmount\">5,000.00</span></strong></mark></span>"
+		},
+		{
+			"id": "crm.paidInFull",
+			"case": "required-only",
+			"params": {
+				"currency": "€",
+				"totalAmount": "5,000.00"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"crm.paidInFull\" data-order-tag=\"crm-payment\"><mark  style=\"background: #2E8B57;\"><strong>Paid in Full <span data-tpl-var=\"currency\">€</span>5,000.00 / <span data-tpl-var=\"currency\">€</span><span data-tpl-var=\"totalAmount\">5,000.00</span></strong></mark></span>"
+		},
+		{
+			"id": "crm.partiallyPaid",
+			"case": "full",
+			"params": {
+				"currency": "€",
+				"paidAmount": "1,250.00",
+				"totalAmount": "5,000.00"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"crm.partiallyPaid\" data-order-tag=\"crm-payment\"><mark  style=\"background: #FFB86CA6;\"><strong>Paid <span data-tpl-var=\"currency\">€</span><span data-tpl-var=\"paidAmount\">1,250.00</span> / <span data-tpl-var=\"currency\">€</span><span data-tpl-var=\"totalAmount\">5,000.00</span></strong></mark></span>"
+		},
+		{
+			"id": "crm.partiallyPaid",
+			"case": "required-only",
+			"params": {
+				"currency": "€",
+				"paidAmount": "1,250.00",
+				"totalAmount": "5,000.00"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"crm.partiallyPaid\" data-order-tag=\"crm-payment\"><mark  style=\"background: #FFB86CA6;\"><strong>Paid <span data-tpl-var=\"currency\">€</span><span data-tpl-var=\"paidAmount\">1,250.00</span> / <span data-tpl-var=\"currency\">€</span><span data-tpl-var=\"totalAmount\">5,000.00</span></strong></mark></span>"
+		},
+		{
+			"id": "crm.paymentPlan",
+			"case": "full",
+			"params": {
+				"months": "6",
+				"endDate": "2026-06-30",
+				"currency": "€",
+				"paidAmount": "1,250.00",
+				"totalAmount": "5,000.00"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"crm.paymentPlan\" data-order-tag=\"crm-payment\"><mark  style=\"background: #4169E1;\"><strong>Payment Plan - <span data-tpl-var=\"months\">6</span> Months → <span data-tpl-var=\"endDate\">2026-06-30</span> - Paid <span data-tpl-var=\"currency\">€</span><span data-tpl-var=\"paidAmount\">1,250.00</span> / <span data-tpl-var=\"currency\">€</span><span data-tpl-var=\"totalAmount\">5,000.00</span></strong></mark></span>"
+		},
+		{
+			"id": "crm.paymentPlan",
+			"case": "required-only",
+			"params": {
+				"months": "6",
+				"endDate": "2026-06-30",
+				"currency": "€",
+				"paidAmount": "1,250.00",
+				"totalAmount": "5,000.00"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"crm.paymentPlan\" data-order-tag=\"crm-payment\"><mark  style=\"background: #4169E1;\"><strong>Payment Plan - <span data-tpl-var=\"months\">6</span> Months → <span data-tpl-var=\"endDate\">2026-06-30</span> - Paid <span data-tpl-var=\"currency\">€</span><span data-tpl-var=\"paidAmount\">1,250.00</span> / <span data-tpl-var=\"currency\">€</span><span data-tpl-var=\"totalAmount\">5,000.00</span></strong></mark></span>"
+		},
+		{
+			"id": "prio.kano.dissatisfier",
+			"case": "full",
+			"params": {
+				"details": "Sample details"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"prio.kano.dissatisfier\" data-order-tag=\"priority\"><mark  style=\"background: #FF5582A6;\"><strong>⬅️ Kano - Dissatisfier:</strong></mark> <span data-tpl-var=\"details\">Sample details</span></span>"
+		},
+		{
+			"id": "prio.kano.dissatisfier",
+			"case": "required-only",
+			"params": {},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"prio.kano.dissatisfier\" data-order-tag=\"priority\"><mark  style=\"background: #FF5582A6;\"><strong>⬅️ Kano - Dissatisfier</strong></mark></span>"
+		},
+		{
+			"id": "prio.kano.indifferent",
+			"case": "full",
+			"params": {
+				"details": "Sample details"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"prio.kano.indifferent\"><mark  style=\"background: #FFB8EBA6;\"><strong>🔄 Kano - Indifferent:</strong></mark> <span data-tpl-var=\"details\">Sample details</span></span>"
+		},
+		{
+			"id": "prio.kano.indifferent",
+			"case": "required-only",
+			"params": {},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"prio.kano.indifferent\"><mark  style=\"background: #FFB8EBA6;\"><strong>🔄 Kano - Indifferent</strong></mark></span>"
+		},
+		{
+			"id": "prio.kano.basic",
+			"case": "full",
+			"params": {
+				"details": "Sample details"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"prio.kano.basic\"><mark  style=\"background: #CACFD9A6;\"><strong>📦 Kano - Basic:</strong></mark> <span data-tpl-var=\"details\">Sample details</span></span>"
+		},
+		{
+			"id": "prio.kano.basic",
+			"case": "required-only",
+			"params": {},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"prio.kano.basic\"><mark  style=\"background: #CACFD9A6;\"><strong>📦 Kano - Basic</strong></mark></span>"
+		},
+		{
+			"id": "prio.kano.performantHeader",
+			"case": "full",
+			"params": {
+				"details": "Sample details"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"prio.kano.performantHeader\"><mark  style=\"background: #FFF3A3A6;\"><strong>⚡ Kano - Performant:</strong></mark> <span data-tpl-var=\"details\">Sample details</span></span>"
+		},
+		{
+			"id": "prio.kano.performantHeader",
+			"case": "required-only",
+			"params": {},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"prio.kano.performantHeader\"><mark  style=\"background: #FFF3A3A6;\"><strong>⚡ Kano - Performant</strong></mark></span>"
+		},
+		{
+			"id": "prio.kano.delighter",
+			"case": "full",
+			"params": {
+				"details": "Sample details"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"prio.kano.delighter\"><mark  style=\"background: #00A86B;\"><strong>💝 Kano - Delighter:</strong></mark> <span data-tpl-var=\"details\">Sample details</span></span>"
+		},
+		{
+			"id": "prio.kano.delighter",
+			"case": "required-only",
+			"params": {},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"prio.kano.delighter\"><mark  style=\"background: #00A86B;\"><strong>💝 Kano - Delighter</strong></mark></span>"
+		},
+		{
+			"id": "prio.moscow.could",
+			"case": "full",
+			"params": {
+				"details": "Sample details"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"prio.moscow.could\"><mark  style=\"background: #1E90FF;\"><strong>❓ Could Have:</strong></mark> <span data-tpl-var=\"details\">Sample details</span></span>"
+		},
+		{
+			"id": "prio.moscow.could",
+			"case": "required-only",
+			"params": {},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"prio.moscow.could\"><mark  style=\"background: #1E90FF;\"><strong>❓ Could Have</strong></mark></span>"
+		},
+		{
+			"id": "prio.moscow.must",
+			"case": "full",
+			"params": {
+				"details": "Sample details"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"prio.moscow.must\"><mark  style=\"background: #00A86B;\"><strong>❗Must-Have:</strong></mark> <span data-tpl-var=\"details\">Sample details</span></span>"
+		},
+		{
+			"id": "prio.moscow.must",
+			"case": "required-only",
+			"params": {},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"prio.moscow.must\"><mark  style=\"background: #00A86B;\"><strong>❗Must-Have</strong></mark></span>"
+		},
+		{
+			"id": "prio.moscow.should",
+			"case": "full",
+			"params": {
+				"details": "Sample details"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"prio.moscow.should\"><mark  style=\"background: #FEE12B;\"><strong>🎁 Should Have:</strong></mark> <span data-tpl-var=\"details\">Sample details</span></span>"
+		},
+		{
+			"id": "prio.moscow.should",
+			"case": "required-only",
+			"params": {},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"prio.moscow.should\"><mark  style=\"background: #FEE12B;\"><strong>🎁 Should Have</strong></mark></span>"
+		},
+		{
+			"id": "prio.moscow.wont",
+			"case": "full",
+			"params": {
+				"details": "Sample details"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"prio.moscow.wont\"><mark  style=\"background: #ED2939;\"><strong>❌ Won’t Have:</strong></mark> <span data-tpl-var=\"details\">Sample details</span></span>"
+		},
+		{
+			"id": "prio.moscow.wont",
+			"case": "required-only",
+			"params": {},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"prio.moscow.wont\"><mark  style=\"background: #ED2939;\"><strong>❌ Won’t Have</strong></mark></span>"
+		},
+		{
+			"id": "prio.nalap.adhoc",
+			"case": "no-params",
+			"params": null,
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"prio.nalap.adhoc\">📂 <strong>Adhoc</strong></span>"
+		},
+		{
+			"id": "prio.nalap.always",
+			"case": "no-params",
+			"params": null,
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"prio.nalap.always\">📍 <strong>Always</strong></span>"
+		},
+		{
+			"id": "prio.nalap.done",
+			"case": "no-params",
+			"params": null,
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"prio.nalap.done\">✅ <strong>Done</strong></span>"
+		},
+		{
+			"id": "prio.nalap.dropped",
+			"case": "no-params",
+			"params": null,
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"prio.nalap.dropped\">❌ <strong>Dropped</strong></span>"
+		},
+		{
+			"id": "prio.nalap.later",
+			"case": "no-params",
+			"params": null,
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"prio.nalap.later\">🛠️ <strong>Later</strong></span>"
+		},
+		{
+			"id": "prio.nalap.now",
+			"case": "no-params",
+			"params": null,
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"prio.nalap.now\">🚀 <strong>Now</strong></span>"
+		},
+		{
+			"id": "workflows.metadata.pr",
+			"case": "with-href",
+			"params": {
+				"href": "https://example.com/x/1"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"workflows.metadata.pr\" data-order-tag=\"metadata\"><mark  style=\"background: #000000; color: #878787;\"><strong><a href=\"https://example.com/x/1\">↔️ </a></strong></mark></span>"
+		},
+		{
+			"id": "workflows.metadata.pr",
+			"case": "no-params",
+			"params": null,
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"workflows.metadata.pr\" data-order-tag=\"metadata\"><mark  style=\"background: #000000; color: #878787;\"><strong><a href=\"\">↔️ </a></strong></mark></span>"
+		},
+		{
+			"id": "workflows.metadata.branch",
+			"case": "with-href",
+			"params": {
+				"href": "https://example.com/x/1"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"workflows.metadata.branch\" data-order-tag=\"metadata\"><mark  style=\"background: #000000; color: #878787;\"><strong><a href=\"https://example.com/x/1\">🪵 </a></strong></mark></span>"
+		},
+		{
+			"id": "workflows.metadata.branch",
+			"case": "no-params",
+			"params": null,
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"workflows.metadata.branch\" data-order-tag=\"metadata\"><mark  style=\"background: #000000; color: #878787;\"><strong><a href=\"\">🪵 </a></strong></mark></span>"
+		},
+		{
+			"id": "workflows.metadata.linkToArtifact",
+			"case": "epic-type",
+			"params": {
+				"blockRef": "Projects/Plan.md#^abc123",
+				"linkedArtifactType": "epic"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"workflows.metadata.linkToArtifact\" data-order-tag=\"metadata\" data-linked-artifact-type=\"epic\"><mark  style=\"background: #000000; color: #878787;\"><strong><a class=\"internal-link\" href=\"Projects/Plan.md#^abc123\" data-tpl-attr-var-href=\"blockRef\">🔗🏆</a></strong></mark></span>"
+		},
+		{
+			"id": "workflows.metadata.linkToArtifact",
+			"case": "learning-initiative-type",
+			"params": {
+				"blockRef": "Projects/Plan.md#^abc123",
+				"linkedArtifactType": "learning-initiative"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"workflows.metadata.linkToArtifact\" data-order-tag=\"metadata\" data-linked-artifact-type=\"learning-initiative\"><mark  style=\"background: #000000; color: #878787;\"><strong><a class=\"internal-link\" href=\"Projects/Plan.md#^abc123\" data-tpl-attr-var-href=\"blockRef\">🔗🎓</a></strong></mark></span>"
+		},
+		{
+			"id": "workflows.metadata.linkToArtifact",
+			"case": "task-type",
+			"params": {
+				"blockRef": "Projects/Plan.md#^abc123",
+				"linkedArtifactType": "task"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"workflows.metadata.linkToArtifact\" data-order-tag=\"metadata\" data-linked-artifact-type=\"task\"><mark  style=\"background: #000000; color: #878787;\"><strong><a class=\"internal-link\" href=\"Projects/Plan.md#^abc123\" data-tpl-attr-var-href=\"blockRef\">🔗</a></strong></mark></span>"
+		},
+		{
+			"id": "workflows.metadata.linkToArtifact",
+			"case": "no-type",
+			"params": {
+				"blockRef": "Projects/Plan.md#^abc123"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"workflows.metadata.linkToArtifact\" data-order-tag=\"metadata\"><mark  style=\"background: #000000; color: #878787;\"><strong><a class=\"internal-link\" href=\"Projects/Plan.md#^abc123\" data-tpl-attr-var-href=\"blockRef\">🔗</a></strong></mark></span>"
+		},
+		{
+			"id": "workflows.metadata.version",
+			"case": "full",
+			"params": {
+				"version": "1.2.3"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"workflows.metadata.version\" data-order-tag=\"metadata\"><mark  style=\"background: linear-gradient(to right, #dd5e89, #f7bb97);\"><strong>🌟 <span data-tpl-var=\"version\">1.2.3</span></strong></mark></span>"
+		},
+		{
+			"id": "workflows.metadata.version",
+			"case": "required-only",
+			"params": {
+				"version": "1.2.3"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"workflows.metadata.version\" data-order-tag=\"metadata\"><mark  style=\"background: linear-gradient(to right, #dd5e89, #f7bb97);\"><strong>🌟 <span data-tpl-var=\"version\">1.2.3</span></strong></mark></span>"
+		},
+		{
+			"id": "workflows.states.blocked",
+			"case": "full",
+			"params": {
+				"href": "Projects/Plan.md#^blk9",
+				"details": "Sample details"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"workflows.states.blocked\" data-order-tag=\"state\"><mark  style=\"background: #FF5582A6;\">⛔ <strong>Requires: <a class=\"internal-link\" href=\"Projects/Plan.md#^blk9\" data-tpl-attr-var-href=\"href\"><span data-tpl-var=\"details\">Sample details</span></a></strong></mark></span>"
+		},
+		{
+			"id": "workflows.states.blocked",
+			"case": "required-only",
+			"params": {
+				"href": "Projects/Plan.md#^blk9",
+				"details": "Sample details"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"workflows.states.blocked\" data-order-tag=\"state\"><mark  style=\"background: #FF5582A6;\">⛔ <strong>Requires: <a class=\"internal-link\" href=\"Projects/Plan.md#^blk9\" data-tpl-attr-var-href=\"href\"><span data-tpl-var=\"details\">Sample details</span></a></strong></mark></span>"
+		},
+		{
+			"id": "workflows.states.pending",
+			"case": "full",
+			"params": {
+				"resumes": "2026-03-01"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"workflows.states.pending\" data-order-tag=\"state\"><mark  style=\"background: #FEE12B;\">🕒 Resumes: <strong>2026-03-01</strong></mark></span>"
+		},
+		{
+			"id": "workflows.states.pending",
+			"case": "no-params",
+			"params": null,
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"workflows.states.pending\" data-order-tag=\"state\"><mark  style=\"background: #FEE12B;\">🕒 Resumes: <strong></strong></mark></span>"
+		},
+		{
+			"id": "workflows.states.waiting",
+			"case": "full",
+			"params": {
+				"for": "vendor reply"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"workflows.states.waiting\" data-order-tag=\"state\"><mark  style=\"background: #D2B3FFA6;\">⌛ <strong>For: <span data-tpl-var=\"for\">vendor reply</span></strong></mark></span>"
+		},
+		{
+			"id": "workflows.states.waiting",
+			"case": "required-only",
+			"params": {
+				"for": "vendor reply"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"workflows.states.waiting\" data-order-tag=\"state\"><mark  style=\"background: #D2B3FFA6;\">⌛ <strong>For: <span data-tpl-var=\"for\">vendor reply</span></strong></mark></span>"
+		},
+		{
+			"id": "workflows.states.review",
+			"case": "full",
+			"params": {
+				"teamMember": "Alice"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"workflows.states.review\" data-order-tag=\"state\"><mark  style=\"background: linear-gradient(to right, #1488cc, #2b32b2); color: #FFFFFF;\">Awaiting Review from <span data-tpl-var=\"teamMember\">Alice</span></mark></span>"
+		},
+		{
+			"id": "workflows.states.review",
+			"case": "required-only",
+			"params": {
+				"teamMember": "Alice"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"workflows.states.review\" data-order-tag=\"state\"><mark  style=\"background: linear-gradient(to right, #1488cc, #2b32b2); color: #FFFFFF;\">Awaiting Review from <span data-tpl-var=\"teamMember\">Alice</span></mark></span>"
+		},
+		{
+			"id": "obsidian.internalInlineLink",
+			"case": "full",
+			"params": {
+				"href": "Projects/Plan.md#^blk9",
+				"linkContent": "Open Roadmap"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"obsidian.internalInlineLink\" data-order-tag=\"internal-link\"><mark  style=\"background: #CACFD9A6;\"><a class=\"internal-link\" href=\"Projects/Plan.md#^blk9\" data-tpl-attr-var-href=\"href\"><span data-tpl-var=\"linkContent\">Open Roadmap</span></a></mark></span>"
+		},
+		{
+			"id": "obsidian.internalInlineLink",
+			"case": "required-only",
+			"params": {
+				"href": "Projects/Plan.md#^blk9",
+				"linkContent": "Open Roadmap"
+			},
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"obsidian.internalInlineLink\" data-order-tag=\"internal-link\"><mark  style=\"background: #CACFD9A6;\"><a class=\"internal-link\" href=\"Projects/Plan.md#^blk9\" data-tpl-attr-var-href=\"href\"><span data-tpl-var=\"linkContent\">Open Roadmap</span></a></mark></span>"
+		},
+		{
+			"id": "obsidian.timestamp",
+			"case": "no-params",
+			"params": null,
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"obsidian.timestamp\" data-order-tag=\"timestamp\"><mark  style=\"background: #CACFD9A6;\"><strong>🕔 {{date:YYYY-MM-DD HH:MM:SS}}</strong></mark></span>"
+		},
+		{
+			"id": "obsidian.datestamp",
+			"case": "no-params",
+			"params": null,
+			"html": "<span data-template-wrapper=\"tpl-ID\" data-template-key=\"obsidian.datestamp\" data-order-tag=\"datestamp\"><mark  style=\"background: #CACFD9A6;\"><strong>🕔 {{date:YYYY-MM-DD}}</strong></mark></span>"
+		}
+	]
+}

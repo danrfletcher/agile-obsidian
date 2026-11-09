@@ -16,7 +16,7 @@
 import type { TemplateDefinition } from "./types";
 import type { TaskIndexPort } from "../app/templating-ports";
 import type { TaskItem } from "@features/task-index";
-import { getAgileArtifactType } from "@features/task-filter";
+import { getAgileArtifactType } from "./artifact-type";
 
 // Optional typing hint only; not required at runtime
 export type AgileArtifactType =

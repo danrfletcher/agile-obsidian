@@ -20,8 +20,8 @@ import {
 // Workflows and type inference
 import { runTemplateWorkflows } from "../domain/template-workflows";
 import type { ParamsSchema } from "../domain/types";
-import { getAgileArtifactType } from "@features/task-filter";
-import type { AgileArtifactType } from "@features/task-filter";
+import { getAgileArtifactType } from "../domain/artifact-type";
+import type { AgileArtifactType } from "../domain/artifact-type";
 
 type WorkflowAugmentedParams = Record<string, unknown> & {
 	blockRef?: unknown;
@@ -274,7 +274,8 @@ export function wireTemplatingDomHandlers(
 	};
 
 	// Determine file path and line hint resolver for the current view
-	const filePath = view.file?.path || "";
+	// Resolved at click time: the same view can navigate to another note.
+	const filePath = () => view.file?.path || "";
 	const getLineHint0 = (): number | null => {
 		try {
 			const ln = view.editor?.getCursor?.().line;

@@ -4,8 +4,8 @@
  * Templating Sequencer - Editor Click Handler
  *
  * Wires a click handler (capture=true) to show the sequencing menu when clicking on any
- * template wrapper that participates in at least one sequence. This mirrors the behavior
- * of task-assignment's floating menu: suppress Obsidian's default behavior and avoid modals.
+ * template wrapper that participates in at least one sequence. This is a floating
+ * menu: suppress Obsidian's default behavior and avoid modals.
  *
  * Update:
  * - Defer opening the menu for a short window (CLICK_DEFER_MS).
@@ -126,5 +126,7 @@ export function wireTemplatingSequencerDomHandlers(
 	// Capture=true to beat default behaviors (memory-leak safe via registerDomEvent)
 	plugin.registerDomEvent(targetEl, "click", onClick, { capture: true });
 
-	// No explicit cleanup needed; Obsidian will detach registered DOM events with the plugin lifecycle.
+	// Obsidian detaches the DOM event with the plugin lifecycle; also cancel a pending
+	// deferred menu open so nothing fires after unload.
+	plugin.register(clearPending);
 }

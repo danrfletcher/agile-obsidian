@@ -12,5 +12,4 @@ export * from "./vault/vault-mutations";
 
 // Adapters for feature ports (structurally compatible; reusable across features)
 export * from "./adapters/port-adapters";
-export * from "./adapters/token-ops-adapter"
 export { ObsidianLineClassifier } from "./adapters/line-classifier-adapter";

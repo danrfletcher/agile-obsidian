@@ -6,4 +6,3 @@ export * from "./container";
 export * from "./register-commands";
 export * from "./register-events";
 export * from "./register-settings";
-export * from "./register-styles";

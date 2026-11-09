@@ -2,9 +2,6 @@ import type { Plugin, App } from "obsidian";
 import type { AgileObsidianSettings } from "@settings";
 import type { SettingsService } from "@settings";
 import { createSettingsService } from "@settings";
-import type { OrgStructurePort } from "@features/org-structure";
-import type { TeamInfo } from "@features/org-structure";
-import type { OrgStructureResult } from "@features/org-structure";
 import type { TaskIndexService } from "@features/task-index";
 
 /**
@@ -28,16 +25,6 @@ export interface Container {
 
 	// Wiring ports (optional) to keep features decoupled from composition
 	taskIndexService?: TaskIndexService;
-
-	orgStructureService?: {
-		getOrgStructure: () => OrgStructureResult;
-		getTeamMembersForPath: (path: string) => {
-			members: TeamInfo["members"];
-			buckets: unknown;
-			team: TeamInfo | null;
-		};
-	};
-	orgStructurePorts?: { orgStructure: OrgStructurePort };
 }
 
 /**

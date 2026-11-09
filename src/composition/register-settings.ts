@@ -1,34 +1,31 @@
-import { createDefaultSettings, createSettingsTab } from "@settings";
+import { createSettingsTab, loadStoredSettings } from "@settings";
 import type { AgileObsidianSettings } from "@settings";
 import type { Plugin, PluginSettingTab } from "obsidian";
 import type { Container } from "./container";
-import { registerOrgStructureSettings } from "@features/org-structure";
-import { registerCustomCheckboxesSettings } from "@styles/custom-checkboxes";
-import { applyCheckboxStylesSetting } from "./register-styles";
 
 /**
  * Initializes settings by loading persisted data (if available) and applying defaults.
+ * Only known keys are copied from stored data. If any stored keys were dropped,
+ * the cleaned settings are saved once; a second load finds nothing to drop and does not save.
  */
 export async function initSettings(
 	plugin: Plugin & {
 		settings?: AgileObsidianSettings;
-		loadData?: () => Promise<Partial<AgileObsidianSettings> | null>;
+		loadData?: () => Promise<unknown>;
 		saveData?: (data: AgileObsidianSettings) => Promise<void>;
-		saveSettings?: () => Promise<void>;
 	}
 ): Promise<AgileObsidianSettings> {
-	const stored = (await plugin.loadData?.()) as
-		| Partial<AgileObsidianSettings>
-		| null;
-	const settings: AgileObsidianSettings = createDefaultSettings(
-		stored ?? null
-	);
+	const stored: unknown = await plugin.loadData?.();
+	const { settings, needsSave } = loadStoredSettings(stored);
 	plugin.settings = settings;
+	if (needsSave) {
+		await plugin.saveData?.(settings);
+	}
 	return settings;
 }
 
 /**
- * Registers the plugin settings tab and hooks feature-specific settings sub-systems.
+ * Registers the plugin settings tab.
  */
 export async function registerSettings(container: Container): Promise<void> {
 	const { app, plugin, settings } = container;
@@ -59,30 +56,12 @@ export async function registerSettings(container: Container): Promise<void> {
 		}
 	};
 
-	const orgActions = registerOrgStructureSettings({
-		app,
-		plugin,
-		settings,
-		saveSettings: saveSettingsLocal,
-	});
-
-	const checkbox = registerCustomCheckboxesSettings({
-		app,
-		plugin,
-		settings,
-		applyCheckboxStyles: () => {
-			applyCheckboxStylesSetting(container);
-		},
-	});
-
 	p.addSettingTab(
 		createSettingsTab({
 			app,
 			plugin: p,
 			settings,
-			orgActions,
 			saveSettings: saveSettingsLocal,
-			applyCheckboxStyles: () => checkbox.applyCheckboxStyles(),
 		}) as PluginSettingTab
 	);
 }
