@@ -5,6 +5,7 @@ import {
 	reloadCustomTemplates,
 	setCustomTemplateSource,
 	setDefaultTemplatesEnabled,
+	validateCustomTemplateCard,
 } from "@features/templating-engine";
 import type { Container } from "./container";
 
@@ -58,8 +59,8 @@ export async function registerSettings(container: Container): Promise<void> {
 		// sequence menus and repeat follow it immediately, no reload. A no-op when the
 		// flag did not change.
 		setDefaultTemplatesEnabled(container.settings.enableDefaultTemplates);
-		// Rebuild the custom templates from the saved cards (a no-op when nothing changed).
-		reloadCustomTemplates();
+		// Custom templates are not rebuilt here: the settings cards rebuild them themselves
+		// (once, after their own save), so a toggle's save never reloads them.
 
 		try {
 			interface WorkspaceWithTrigger {
@@ -82,6 +83,12 @@ export async function registerSettings(container: Container): Promise<void> {
 			plugin: p,
 			settings,
 			saveSettings: saveSettingsLocal,
+			// The "Custom templates" cards: PR-5's validator for the status under each box, and
+			// its registry rebuild, called after a card's text is saved (no plugin reload).
+			validateCustomTemplate: validateCustomTemplateCard,
+			rebuildCustomTemplates: () => {
+				reloadCustomTemplates();
+			},
 		}) as PluginSettingTab
 	);
 }

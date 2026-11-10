@@ -94,6 +94,22 @@ export function getOtherTemplateIdsForCard(
 	return [...builtInIds, ...earlier.specs.map((s) => s.id)];
 }
 
+/**
+ * Live feedback for settings card `index` of `texts`: exactly what the loader would say
+ * about it (`ok` and the validator's own messages, unaltered). Empty text gives the
+ * parser's message, not a silent pass.
+ */
+export function validateCustomTemplateCard(
+	texts: readonly string[],
+	index: number
+): { ok: boolean; messages: string[] } {
+	const v = validateCustomTemplateText(
+		texts[index] ?? "",
+		getOtherTemplateIdsForCard(texts, index)
+	);
+	return { ok: v.ok, messages: v.messages };
+}
+
 type Source = () => readonly unknown[];
 let source: Source | null = null;
 

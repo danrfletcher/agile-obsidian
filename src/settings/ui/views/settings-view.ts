@@ -5,22 +5,45 @@
  */
 import { App, Notice, Plugin, PluginSettingTab, Setting } from "obsidian";
 import type { AgileObsidianSettings } from "@settings";
+import {
+	createCustomTemplatesController,
+	type CustomTemplatesController,
+} from "../../app/custom-templates-controller";
+import type {
+	CardStatus,
+	CardValidation,
+} from "../../app/custom-templates-settings";
+
+import { handleLargeInsert } from "./large-insert";
 
 // Import the asset so the bundler emits a correct public URL.
 import coffeeGifUrl from "../assets/coffee.gif";
 
+/** What the "Custom templates" section needs from the template engine (wired in composition). */
+export interface CustomTemplatesSectionDeps {
+	validate: (texts: readonly string[], index: number) => CardValidation;
+	rebuild: () => void;
+}
+
 export class AgileSettingTab extends PluginSettingTab {
+	// The live "Custom templates" section, if the tab is showing. Owns the debounce timers.
+	private customTemplates: CustomTemplatesController | null = null;
+
 	constructor(
 		app: App,
 		private plugin: Plugin,
 		private settings: AgileObsidianSettings,
-		private saveSettings: () => Promise<void>
+		private saveSettings: () => Promise<void>,
+		private customTemplateDeps: CustomTemplatesSectionDeps
 	) {
 		super(app, plugin);
 	}
 
 	display(): void {
 		const { containerEl } = this;
+		// Re-rendering (or reopening) replaces the section: save any box still being typed
+		// in, then drop its timers before the old DOM goes.
+		this.disposeCustomTemplates();
 		containerEl.empty();
 
 		// Ensure our settings-specific styles are present once.
@@ -80,6 +103,128 @@ export class AgileSettingTab extends PluginSettingTab {
 			}
 		);
 		this.renderAgileTaskFormattingSection(fmt.contentEl);
+
+		// CUSTOM TEMPLATES SECTION (foldable; open by default, fold state is not saved)
+		const custom = this.createFoldableSection(
+			containerEl,
+			"Custom templates",
+			"Define your own templates as JSON, one card each. A card is checked as you type and saved when you click out of its box; saved templates work straight away, with no reload.",
+			false,
+			async () => {}
+		);
+		this.renderCustomTemplatesSection(custom.contentEl);
+	}
+
+	/** Called by Obsidian when the settings tab is closed. */
+	hide(): void {
+		this.disposeCustomTemplates();
+		this.containerEl.empty();
+	}
+
+	/** Save anything typed but not yet blurred, then stop the section's timers. */
+	private disposeCustomTemplates(): void {
+		const section = this.customTemplates;
+		this.customTemplates = null;
+		if (!section) return;
+		// Closing can remove a focused box without a blur event, so save explicitly.
+		void section.flushAll();
+		section.dispose();
+	}
+
+	/**
+	 * Renders one card per saved custom template (a monospace JSON box, its status and a
+	 * Delete button) and the "Add template" button. All behaviour (debounce, save on
+	 * blur, rebuild) is in the controller; this only draws.
+	 */
+	private renderCustomTemplatesSection(containerEl: HTMLElement): void {
+		containerEl.empty();
+
+		const listEl = containerEl.createDiv({ cls: "agile-ct-list" });
+		const statusEls = new Map<number, HTMLElement>();
+
+		const drawStatus = (index: number, status: CardStatus) => {
+			const el = statusEls.get(index);
+			if (!el) return;
+			el.empty();
+			el.toggleClass("agile-ct-status-valid", status.valid);
+			el.toggleClass("agile-ct-status-invalid", !status.valid);
+			for (const line of status.lines) {
+				el.createDiv({ cls: "agile-ct-status-line", text: line });
+			}
+		};
+
+		const controller = createCustomTemplatesController({
+			getTexts: () => this.settings.customTemplates,
+			setTexts: (texts) => {
+				this.settings.customTemplates = texts;
+			},
+			saveSettings: () => this.saveSettings(),
+			rebuildRegistry: () => this.customTemplateDeps.rebuild(),
+			validate: (texts, index) =>
+				this.customTemplateDeps.validate(texts, index),
+			onStatus: drawStatus,
+			onListChange: () => drawCards(),
+			onError: () => {
+				new Notice(
+					"Could not save your custom templates. Please try again."
+				);
+			},
+		});
+		this.customTemplates = controller;
+
+		const drawCards = () => {
+			listEl.empty();
+			statusEls.clear();
+			this.settings.customTemplates.forEach((text, index) => {
+				const cardEl = listEl.createDiv({ cls: "agile-ct-card" });
+				const box = cardEl.createEl("textarea", {
+					cls: "agile-ct-box",
+					attr: {
+						rows: "8",
+						spellcheck: "false",
+						autocapitalize: "off",
+						"aria-label": `Custom template ${index + 1} (JSON)`,
+					},
+				});
+				box.value = text;
+				// A big paste would otherwise freeze the window (the browser inserts a
+				// textarea's text line by line); see large-insert.ts.
+				box.addEventListener("beforeinput", (ev) => {
+					handleLargeInsert(box, ev);
+				});
+				box.addEventListener("input", () =>
+					controller.input(index, box.value)
+				);
+				box.addEventListener("blur", () => {
+					void controller.blur(index, box.value);
+				});
+
+				const footerEl = cardEl.createDiv({ cls: "agile-ct-footer" });
+				const statusEl = footerEl.createDiv({
+					cls: "agile-ct-status",
+					attr: { "aria-live": "polite" },
+				});
+				statusEls.set(index, statusEl);
+				drawStatus(index, controller.status(index));
+
+				const deleteBtn = footerEl.createEl("button", {
+					cls: "agile-ct-delete",
+					text: "Delete",
+				});
+				deleteBtn.addEventListener("click", () => {
+					void controller.remove(index);
+				});
+			});
+		};
+		drawCards();
+
+		const addBtn = containerEl.createEl("button", {
+			cls: "mod-cta agile-ct-add",
+			text: "Add template",
+		});
+		addBtn.addEventListener("click", () => {
+			void controller.add();
+		});
 	}
 
 	/**

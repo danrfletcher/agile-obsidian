@@ -6,3 +6,57 @@
 }
 
 /* Indentation is handled by Obsidian's default .contains-task-list styles */
+
+
+/* Settings > Custom templates: one card per template definition */
+.agile-ct-card {
+  margin: 0 0 12px 0;
+  padding: 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+}
+
+.agile-ct-box {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 120px;
+  resize: vertical;
+  font-family: var(--font-monospace);
+  font-size: var(--font-smaller);
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agile-ct-footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.agile-ct-status {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--font-smaller);
+}
+
+.agile-ct-status-line {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agile-ct-status-valid {
+  color: var(--text-success);
+}
+
+.agile-ct-status-invalid {
+  color: var(--text-error);
+}
+
+.agile-ct-delete {
+  flex: 0 0 auto;
+}

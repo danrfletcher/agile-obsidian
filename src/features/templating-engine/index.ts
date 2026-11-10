@@ -27,6 +27,7 @@ export {
 	setCustomTemplateSource,
 	disposeCustomTemplates,
 	getOtherTemplateIdsForCard,
+	validateCustomTemplateCard,
 	loadCustomTemplates,
 } from "./app/custom-templates";
 export type {

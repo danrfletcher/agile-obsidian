@@ -7,6 +7,7 @@ import type { AgileObsidianSettings } from "../domain/settings-types";
 import type { App, Plugin } from "obsidian";
 import { loadSettings } from "./settings-load";
 import type { LoadedSettings } from "./settings-load";
+import type { CardValidation } from "./custom-templates-settings";
 
 /**
  * Produce a complete settings object from stored data, copying only known keys.
@@ -35,6 +36,13 @@ export type SettingsTabDeps = {
 	plugin: Plugin;
 	settings: AgileObsidianSettings;
 	saveSettings: () => Promise<void> | void;
+	/** Validate card `index` of the saved custom template texts (the template engine's validator). */
+	validateCustomTemplate: (
+		texts: readonly string[],
+		index: number
+	) => CardValidation;
+	/** Rebuild the live template registry, commands and sequences from the saved cards. */
+	rebuildCustomTemplates: () => void;
 };
 
 /**
@@ -43,7 +51,16 @@ export type SettingsTabDeps = {
  */
 export function createSettingsTab(deps: SettingsTabDeps) {
 	const { app, plugin, settings, saveSettings } = deps;
-	return new AgileSettingTab(app, plugin, settings, async () => {
-		await saveSettings();
-	});
+	return new AgileSettingTab(
+		app,
+		plugin,
+		settings,
+		async () => {
+			await saveSettings();
+		},
+		{
+			validate: deps.validateCustomTemplate,
+			rebuild: deps.rebuildCustomTemplates,
+		}
+	);
 }
