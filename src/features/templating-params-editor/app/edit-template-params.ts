@@ -171,6 +171,10 @@ export async function editTemplateParamsOnDashboard(
 	}
 	if (!params) return; // user cancelled
 
+	// The template may have become inactive while the dialog was open (e.g. the
+	// "Default templates" set was switched off): cancel quietly, leave the chip as is.
+	if (!templating.findTemplateById(templateKey)) return;
+
 	// Validate/sanitize params
 	const validation = validateAndSanitizeParams(params, def.paramsSchema);
 	if (!validation.ok) {
@@ -182,7 +186,13 @@ export async function editTemplateParamsOnDashboard(
 	const cleanParams = validation.value!;
 
 	// Render and preserve instance id
-	let newHtml = templating.renderTemplateOnly(templateKey, cleanParams);
+	// Awaited: the render may resolve data on demand from the params the user just
+	// saved (e.g. the new blockRef's artefact type), never from the prefilled ones.
+	let newHtml = await templating.renderTemplateOnly(
+		templateKey,
+		cleanParams,
+		{ sourcePath: filePath }
+	);
 	newHtml = preserveInstanceIdInHtml(newHtml, instanceId);
 
 	// Optimistic UI update (avoid outerHTML to satisfy no-inner-html rule)

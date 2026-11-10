@@ -1,30 +1,20 @@
-import { TeamInfo } from "@features/org-structure";
-
 export interface AgileObsidianSettings {
-	showObjectives: boolean;
-	showTasks: boolean;
-	showStories: boolean;
-	showEpics: boolean;
-	showInitiatives: boolean;
-	showResponsibilities: boolean;
-	showPriorities: boolean;
-	useBundledCheckboxes: boolean;
-	currentUserAlias: string | null;
-	teamsFolder: string;
-	teams: TeamInfo[];
+	/**
+	 * Default templates: the 44 built-in templates are available (insert commands,
+	 * sequence menus, double-Enter repeat). When off, the built-in insert commands are
+	 * removed and built-ins drop out of sequence menus and repeat; chips already in
+	 * notes are never touched and Remove Template keeps working.
+	 * Default: true
+	 */
+	enableDefaultTemplates: boolean;
 
 	/**
-	 * UI fold state for Settings sections (persisted).
-	 * Default: true (minimized)
+	 * Custom templates: one raw JSON text per card, in card order. The text is saved as
+	 * typed (valid or not); invalid cards are kept but not loaded. Nothing in it is ever
+	 * executed.
+	 * Default: [] (no custom templates)
 	 */
-	uiFoldOrgStructure: boolean;
-	uiFoldAgileDashboard: boolean;
-
-	/**
-	 * UI fold state for Styles section (persisted).
-	 * Default: true (minimized)
-	 */
-	uiFoldStyles: boolean;
+	customTemplates: string[];
 
 	/**
 	 * UI fold state for UX Shortcuts section (persisted).
@@ -51,11 +41,4 @@ export interface AgileObsidianSettings {
 	enableTaskCanonicalFormatter: boolean; // Master enable/disable
 	enableCanonicalOnLineCommit: boolean; // Format last line when cursor changes line
 	enableCanonicalOnLeafChange: boolean; // Format entire file on leaf/file change
-
-	/**
-	 * Metadata Cleanup controls
-	 */
-	enableMetadataCleanup: boolean; // Master enable/disable for automated cleanup
-	enableMetadataCleanupOnStart: boolean; // Run once on Obsidian start/plugin load
-	enableMetadataCleanupAtMidnight: boolean; // Schedule daily at local midnight
 }

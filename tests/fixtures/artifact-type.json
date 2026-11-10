@@ -1,0 +1,155 @@
+{
+	"epic": {
+		"input": {
+			"text": "<span data-template-wrapper=\"tpl-x\" data-template-key=\"agile.epic\" data-order-tag=\"artifact-item-type\"><mark>x</mark></span> Login flow",
+			"status": " "
+		},
+		"result": "epic"
+	},
+	"story": {
+		"input": {
+			"text": "<span data-template-wrapper=\"tpl-x\" data-template-key=\"agile.userStory\" data-order-tag=\"artifact-item-type\"><mark>x</mark></span> Login",
+			"status": " "
+		},
+		"result": "story"
+	},
+	"initiative": {
+		"input": {
+			"text": "<span data-template-wrapper=\"tpl-x\" data-template-key=\"agile.initiative\" data-order-tag=\"artifact-item-type\"><mark>x</mark></span> Billing",
+			"status": " "
+		},
+		"result": "initiative"
+	},
+	"okr": {
+		"input": {
+			"text": "<span data-template-wrapper=\"tpl-x\" data-template-key=\"agile.okr\" data-order-tag=\"artifact-item-type\"><mark>x</mark></span> Activation",
+			"status": " "
+		},
+		"result": "okr"
+	},
+	"personalEpic": {
+		"input": {
+			"text": "<span data-template-wrapper=\"tpl-x\" data-template-key=\"agile.personalLearningEpic\" data-order-tag=\"artifact-item-type\"><mark>x</mark></span> Learn",
+			"status": " "
+		},
+		"result": "epic"
+	},
+	"personalInitiative": {
+		"input": {
+			"text": "<span data-template-wrapper=\"tpl-x\" data-template-key=\"agile.personalLearningInitiative\" data-order-tag=\"artifact-item-type\"><mark>x</mark></span> Learn",
+			"status": " "
+		},
+		"result": "initiative"
+	},
+	"recurring": {
+		"input": {
+			"text": "<span data-template-wrapper=\"tpl-x\" data-template-key=\"agile.recurringRes\" data-order-tag=\"artifact-item-type\"><mark>x</mark></span> Weekly post",
+			"status": " "
+		},
+		"result": "recurring-responsibility"
+	},
+	"product": {
+		"input": {
+			"text": "<span data-template-wrapper=\"tpl-x\" data-template-key=\"agile.product\" data-order-tag=\"artifact-item-type\"><mark>x</mark></span> Bot",
+			"status": " "
+		},
+		"result": "product"
+	},
+	"feature": {
+		"input": {
+			"text": "<span data-template-wrapper=\"tpl-x\" data-template-key=\"agile.feature\" data-order-tag=\"artifact-item-type\"><mark>x</mark></span> SSO",
+			"status": " "
+		},
+		"result": "feature"
+	},
+	"kano": {
+		"input": {
+			"text": "<span data-template-wrapper=\"tpl-x\" data-template-key=\"prio.kano.basic\" data-order-tag=\"artifact-item-type\"><mark>x</mark></span> Basic",
+			"status": " "
+		},
+		"result": "kano-header"
+	},
+	"moscow": {
+		"input": {
+			"text": "<span data-template-wrapper=\"tpl-x\" data-template-key=\"prio.moscow.must\" data-order-tag=\"artifact-item-type\"><mark>x</mark></span> Must",
+			"status": " "
+		},
+		"result": "moscow-header"
+	},
+	"nonArtefactChipOpen": {
+		"input": {
+			"text": "<span data-template-wrapper=\"tpl-x\" data-template-key=\"crm.abandoned\" data-order-tag=\"artifact-item-type\"><mark>x</mark></span> Lost",
+			"status": "O"
+		},
+		"result": null
+	},
+	"nonArtefactChipSpace": {
+		"input": {
+			"text": "<span data-template-wrapper=\"tpl-x\" data-template-key=\"crm.abandoned\" data-order-tag=\"artifact-item-type\"><mark>x</mark></span> Lost",
+			"status": " "
+		},
+		"result": "task"
+	},
+	"plainSpace": {
+		"input": {
+			"text": "Just a plain task",
+			"status": " "
+		},
+		"result": "task"
+	},
+	"plainOpen": {
+		"input": {
+			"text": "Just a plain task",
+			"status": "O"
+		},
+		"result": null
+	},
+	"plainDone": {
+		"input": {
+			"text": "Just a plain task",
+			"status": "d"
+		},
+		"result": null
+	},
+	"plainCategory": {
+		"input": {
+			"text": "Just a plain task",
+			"status": "A"
+		},
+		"result": null
+	},
+	"plainNoStatus": {
+		"input": {
+			"text": "Just a plain task"
+		},
+		"result": "task"
+	},
+	"emptyText": {
+		"input": {
+			"text": "",
+			"status": " "
+		},
+		"result": "task"
+	},
+	"assigneeLoop": {
+		"input": {
+			"text": "<span data-template-key=\"members.assignee\">x</span> 🔁 weekly",
+			"status": "O"
+		},
+		"result": "recurring-responsibility"
+	},
+	"assigneeLoopWithEpicWord": {
+		"input": {
+			"text": "<span data-template-key=\"members.assignee\">x</span> 🔁 epic",
+			"status": "O"
+		},
+		"result": null
+	},
+	"customKeyContainingEpic": {
+		"input": {
+			"text": "<span data-template-key=\"custom.epic-lite\">x</span>",
+			"status": "O"
+		},
+		"result": null
+	}
+}

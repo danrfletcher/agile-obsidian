@@ -1,0 +1,773 @@
+{
+	"capturedFrom": "agile-obsidian 5a90994",
+	"sequences": [
+		{
+			"id": "crm:awaiting->depositPaid",
+			"startTemplate": "crm.awaitingDeposit",
+			"targetTemplate": "crm.depositPaid",
+			"direction": "both"
+		},
+		{
+			"id": "crm:awaiting->paymentPlan",
+			"startTemplate": "crm.awaitingDeposit",
+			"targetTemplate": "crm.paymentPlan",
+			"direction": "both"
+		},
+		{
+			"id": "crm:awaiting->paidInFull",
+			"startTemplate": "crm.awaitingDeposit",
+			"targetTemplate": "crm.paidInFull",
+			"direction": "both"
+		},
+		{
+			"id": "crm:depositPaid->paymentPlan",
+			"startTemplate": "crm.depositPaid",
+			"targetTemplate": "crm.paymentPlan",
+			"direction": "both"
+		},
+		{
+			"id": "crm:depositPaid->paidInFull",
+			"startTemplate": "crm.depositPaid",
+			"targetTemplate": "crm.paidInFull",
+			"direction": "both"
+		},
+		{
+			"id": "crm:paymentPlan->paidInFull",
+			"startTemplate": "crm.paymentPlan",
+			"targetTemplate": "crm.paidInFull",
+			"direction": "both"
+		},
+		{
+			"id": "auto:agile.initiative->agile.epic",
+			"startTemplate": "agile.initiative",
+			"targetTemplate": "agile.epic",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.initiative->agile.feature",
+			"startTemplate": "agile.initiative",
+			"targetTemplate": "agile.feature",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.initiative->agile.product",
+			"startTemplate": "agile.initiative",
+			"targetTemplate": "agile.product",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.initiative->agile.acceptanceCriteria",
+			"startTemplate": "agile.initiative",
+			"targetTemplate": "agile.acceptanceCriteria",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.initiative->agile.recurringRes",
+			"startTemplate": "agile.initiative",
+			"targetTemplate": "agile.recurringRes",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.initiative->agile.okr",
+			"startTemplate": "agile.initiative",
+			"targetTemplate": "agile.okr",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.epic->agile.initiative",
+			"startTemplate": "agile.epic",
+			"targetTemplate": "agile.initiative",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.epic->agile.feature",
+			"startTemplate": "agile.epic",
+			"targetTemplate": "agile.feature",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.epic->agile.product",
+			"startTemplate": "agile.epic",
+			"targetTemplate": "agile.product",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.epic->agile.acceptanceCriteria",
+			"startTemplate": "agile.epic",
+			"targetTemplate": "agile.acceptanceCriteria",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.epic->agile.recurringRes",
+			"startTemplate": "agile.epic",
+			"targetTemplate": "agile.recurringRes",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.epic->agile.okr",
+			"startTemplate": "agile.epic",
+			"targetTemplate": "agile.okr",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.feature->agile.initiative",
+			"startTemplate": "agile.feature",
+			"targetTemplate": "agile.initiative",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.feature->agile.epic",
+			"startTemplate": "agile.feature",
+			"targetTemplate": "agile.epic",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.feature->agile.product",
+			"startTemplate": "agile.feature",
+			"targetTemplate": "agile.product",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.feature->agile.acceptanceCriteria",
+			"startTemplate": "agile.feature",
+			"targetTemplate": "agile.acceptanceCriteria",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.feature->agile.recurringRes",
+			"startTemplate": "agile.feature",
+			"targetTemplate": "agile.recurringRes",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.feature->agile.okr",
+			"startTemplate": "agile.feature",
+			"targetTemplate": "agile.okr",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.product->agile.initiative",
+			"startTemplate": "agile.product",
+			"targetTemplate": "agile.initiative",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.product->agile.epic",
+			"startTemplate": "agile.product",
+			"targetTemplate": "agile.epic",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.product->agile.feature",
+			"startTemplate": "agile.product",
+			"targetTemplate": "agile.feature",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.product->agile.acceptanceCriteria",
+			"startTemplate": "agile.product",
+			"targetTemplate": "agile.acceptanceCriteria",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.product->agile.recurringRes",
+			"startTemplate": "agile.product",
+			"targetTemplate": "agile.recurringRes",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.product->agile.okr",
+			"startTemplate": "agile.product",
+			"targetTemplate": "agile.okr",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.acceptanceCriteria->agile.initiative",
+			"startTemplate": "agile.acceptanceCriteria",
+			"targetTemplate": "agile.initiative",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.acceptanceCriteria->agile.epic",
+			"startTemplate": "agile.acceptanceCriteria",
+			"targetTemplate": "agile.epic",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.acceptanceCriteria->agile.feature",
+			"startTemplate": "agile.acceptanceCriteria",
+			"targetTemplate": "agile.feature",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.acceptanceCriteria->agile.product",
+			"startTemplate": "agile.acceptanceCriteria",
+			"targetTemplate": "agile.product",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.acceptanceCriteria->agile.recurringRes",
+			"startTemplate": "agile.acceptanceCriteria",
+			"targetTemplate": "agile.recurringRes",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.acceptanceCriteria->agile.okr",
+			"startTemplate": "agile.acceptanceCriteria",
+			"targetTemplate": "agile.okr",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.recurringRes->agile.initiative",
+			"startTemplate": "agile.recurringRes",
+			"targetTemplate": "agile.initiative",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.recurringRes->agile.epic",
+			"startTemplate": "agile.recurringRes",
+			"targetTemplate": "agile.epic",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.recurringRes->agile.feature",
+			"startTemplate": "agile.recurringRes",
+			"targetTemplate": "agile.feature",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.recurringRes->agile.product",
+			"startTemplate": "agile.recurringRes",
+			"targetTemplate": "agile.product",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.recurringRes->agile.acceptanceCriteria",
+			"startTemplate": "agile.recurringRes",
+			"targetTemplate": "agile.acceptanceCriteria",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.recurringRes->agile.okr",
+			"startTemplate": "agile.recurringRes",
+			"targetTemplate": "agile.okr",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.okr->agile.initiative",
+			"startTemplate": "agile.okr",
+			"targetTemplate": "agile.initiative",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.okr->agile.epic",
+			"startTemplate": "agile.okr",
+			"targetTemplate": "agile.epic",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.okr->agile.feature",
+			"startTemplate": "agile.okr",
+			"targetTemplate": "agile.feature",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.okr->agile.product",
+			"startTemplate": "agile.okr",
+			"targetTemplate": "agile.product",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.okr->agile.acceptanceCriteria",
+			"startTemplate": "agile.okr",
+			"targetTemplate": "agile.acceptanceCriteria",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.okr->agile.recurringRes",
+			"startTemplate": "agile.okr",
+			"targetTemplate": "agile.recurringRes",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:agile.parentLink->workflows.metadata.linkToArtifact",
+			"startTemplate": "agile.parentLink",
+			"targetTemplate": "workflows.metadata.linkToArtifact",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:workflows.metadata.linkToArtifact->agile.parentLink",
+			"startTemplate": "workflows.metadata.linkToArtifact",
+			"targetTemplate": "agile.parentLink",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:crm.commission->crm.depositPaid",
+			"startTemplate": "crm.commission",
+			"targetTemplate": "crm.depositPaid",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:crm.commission->crm.partiallyPaid",
+			"startTemplate": "crm.commission",
+			"targetTemplate": "crm.partiallyPaid",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:crm.depositPaid->crm.commission",
+			"startTemplate": "crm.depositPaid",
+			"targetTemplate": "crm.commission",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:crm.depositPaid->crm.partiallyPaid",
+			"startTemplate": "crm.depositPaid",
+			"targetTemplate": "crm.partiallyPaid",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:crm.partiallyPaid->crm.commission",
+			"startTemplate": "crm.partiallyPaid",
+			"targetTemplate": "crm.commission",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:crm.partiallyPaid->crm.depositPaid",
+			"startTemplate": "crm.partiallyPaid",
+			"targetTemplate": "crm.depositPaid",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.dissatisfier->prio.kano.indifferent",
+			"startTemplate": "prio.kano.dissatisfier",
+			"targetTemplate": "prio.kano.indifferent",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.dissatisfier->prio.kano.basic",
+			"startTemplate": "prio.kano.dissatisfier",
+			"targetTemplate": "prio.kano.basic",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.dissatisfier->prio.kano.performantHeader",
+			"startTemplate": "prio.kano.dissatisfier",
+			"targetTemplate": "prio.kano.performantHeader",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.dissatisfier->prio.kano.delighter",
+			"startTemplate": "prio.kano.dissatisfier",
+			"targetTemplate": "prio.kano.delighter",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.dissatisfier->prio.moscow.could",
+			"startTemplate": "prio.kano.dissatisfier",
+			"targetTemplate": "prio.moscow.could",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.dissatisfier->prio.moscow.must",
+			"startTemplate": "prio.kano.dissatisfier",
+			"targetTemplate": "prio.moscow.must",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.dissatisfier->prio.moscow.should",
+			"startTemplate": "prio.kano.dissatisfier",
+			"targetTemplate": "prio.moscow.should",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.dissatisfier->prio.moscow.wont",
+			"startTemplate": "prio.kano.dissatisfier",
+			"targetTemplate": "prio.moscow.wont",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.indifferent->prio.kano.dissatisfier",
+			"startTemplate": "prio.kano.indifferent",
+			"targetTemplate": "prio.kano.dissatisfier",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.indifferent->prio.kano.basic",
+			"startTemplate": "prio.kano.indifferent",
+			"targetTemplate": "prio.kano.basic",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.indifferent->prio.kano.performantHeader",
+			"startTemplate": "prio.kano.indifferent",
+			"targetTemplate": "prio.kano.performantHeader",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.indifferent->prio.kano.delighter",
+			"startTemplate": "prio.kano.indifferent",
+			"targetTemplate": "prio.kano.delighter",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.indifferent->prio.moscow.could",
+			"startTemplate": "prio.kano.indifferent",
+			"targetTemplate": "prio.moscow.could",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.indifferent->prio.moscow.must",
+			"startTemplate": "prio.kano.indifferent",
+			"targetTemplate": "prio.moscow.must",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.indifferent->prio.moscow.should",
+			"startTemplate": "prio.kano.indifferent",
+			"targetTemplate": "prio.moscow.should",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.indifferent->prio.moscow.wont",
+			"startTemplate": "prio.kano.indifferent",
+			"targetTemplate": "prio.moscow.wont",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.basic->prio.kano.dissatisfier",
+			"startTemplate": "prio.kano.basic",
+			"targetTemplate": "prio.kano.dissatisfier",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.basic->prio.kano.indifferent",
+			"startTemplate": "prio.kano.basic",
+			"targetTemplate": "prio.kano.indifferent",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.basic->prio.kano.performantHeader",
+			"startTemplate": "prio.kano.basic",
+			"targetTemplate": "prio.kano.performantHeader",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.basic->prio.kano.delighter",
+			"startTemplate": "prio.kano.basic",
+			"targetTemplate": "prio.kano.delighter",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.basic->prio.moscow.could",
+			"startTemplate": "prio.kano.basic",
+			"targetTemplate": "prio.moscow.could",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.basic->prio.moscow.must",
+			"startTemplate": "prio.kano.basic",
+			"targetTemplate": "prio.moscow.must",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.basic->prio.moscow.should",
+			"startTemplate": "prio.kano.basic",
+			"targetTemplate": "prio.moscow.should",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.basic->prio.moscow.wont",
+			"startTemplate": "prio.kano.basic",
+			"targetTemplate": "prio.moscow.wont",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.performantHeader->prio.kano.dissatisfier",
+			"startTemplate": "prio.kano.performantHeader",
+			"targetTemplate": "prio.kano.dissatisfier",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.performantHeader->prio.kano.indifferent",
+			"startTemplate": "prio.kano.performantHeader",
+			"targetTemplate": "prio.kano.indifferent",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.performantHeader->prio.kano.basic",
+			"startTemplate": "prio.kano.performantHeader",
+			"targetTemplate": "prio.kano.basic",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.performantHeader->prio.kano.delighter",
+			"startTemplate": "prio.kano.performantHeader",
+			"targetTemplate": "prio.kano.delighter",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.performantHeader->prio.moscow.could",
+			"startTemplate": "prio.kano.performantHeader",
+			"targetTemplate": "prio.moscow.could",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.performantHeader->prio.moscow.must",
+			"startTemplate": "prio.kano.performantHeader",
+			"targetTemplate": "prio.moscow.must",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.performantHeader->prio.moscow.should",
+			"startTemplate": "prio.kano.performantHeader",
+			"targetTemplate": "prio.moscow.should",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.performantHeader->prio.moscow.wont",
+			"startTemplate": "prio.kano.performantHeader",
+			"targetTemplate": "prio.moscow.wont",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.delighter->prio.kano.dissatisfier",
+			"startTemplate": "prio.kano.delighter",
+			"targetTemplate": "prio.kano.dissatisfier",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.delighter->prio.kano.indifferent",
+			"startTemplate": "prio.kano.delighter",
+			"targetTemplate": "prio.kano.indifferent",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.delighter->prio.kano.basic",
+			"startTemplate": "prio.kano.delighter",
+			"targetTemplate": "prio.kano.basic",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.delighter->prio.kano.performantHeader",
+			"startTemplate": "prio.kano.delighter",
+			"targetTemplate": "prio.kano.performantHeader",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.delighter->prio.moscow.could",
+			"startTemplate": "prio.kano.delighter",
+			"targetTemplate": "prio.moscow.could",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.delighter->prio.moscow.must",
+			"startTemplate": "prio.kano.delighter",
+			"targetTemplate": "prio.moscow.must",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.delighter->prio.moscow.should",
+			"startTemplate": "prio.kano.delighter",
+			"targetTemplate": "prio.moscow.should",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.kano.delighter->prio.moscow.wont",
+			"startTemplate": "prio.kano.delighter",
+			"targetTemplate": "prio.moscow.wont",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.could->prio.kano.dissatisfier",
+			"startTemplate": "prio.moscow.could",
+			"targetTemplate": "prio.kano.dissatisfier",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.could->prio.kano.indifferent",
+			"startTemplate": "prio.moscow.could",
+			"targetTemplate": "prio.kano.indifferent",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.could->prio.kano.basic",
+			"startTemplate": "prio.moscow.could",
+			"targetTemplate": "prio.kano.basic",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.could->prio.kano.performantHeader",
+			"startTemplate": "prio.moscow.could",
+			"targetTemplate": "prio.kano.performantHeader",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.could->prio.kano.delighter",
+			"startTemplate": "prio.moscow.could",
+			"targetTemplate": "prio.kano.delighter",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.could->prio.moscow.must",
+			"startTemplate": "prio.moscow.could",
+			"targetTemplate": "prio.moscow.must",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.could->prio.moscow.should",
+			"startTemplate": "prio.moscow.could",
+			"targetTemplate": "prio.moscow.should",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.could->prio.moscow.wont",
+			"startTemplate": "prio.moscow.could",
+			"targetTemplate": "prio.moscow.wont",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.must->prio.kano.dissatisfier",
+			"startTemplate": "prio.moscow.must",
+			"targetTemplate": "prio.kano.dissatisfier",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.must->prio.kano.indifferent",
+			"startTemplate": "prio.moscow.must",
+			"targetTemplate": "prio.kano.indifferent",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.must->prio.kano.basic",
+			"startTemplate": "prio.moscow.must",
+			"targetTemplate": "prio.kano.basic",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.must->prio.kano.performantHeader",
+			"startTemplate": "prio.moscow.must",
+			"targetTemplate": "prio.kano.performantHeader",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.must->prio.kano.delighter",
+			"startTemplate": "prio.moscow.must",
+			"targetTemplate": "prio.kano.delighter",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.must->prio.moscow.could",
+			"startTemplate": "prio.moscow.must",
+			"targetTemplate": "prio.moscow.could",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.must->prio.moscow.should",
+			"startTemplate": "prio.moscow.must",
+			"targetTemplate": "prio.moscow.should",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.must->prio.moscow.wont",
+			"startTemplate": "prio.moscow.must",
+			"targetTemplate": "prio.moscow.wont",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.should->prio.kano.dissatisfier",
+			"startTemplate": "prio.moscow.should",
+			"targetTemplate": "prio.kano.dissatisfier",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.should->prio.kano.indifferent",
+			"startTemplate": "prio.moscow.should",
+			"targetTemplate": "prio.kano.indifferent",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.should->prio.kano.basic",
+			"startTemplate": "prio.moscow.should",
+			"targetTemplate": "prio.kano.basic",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.should->prio.kano.performantHeader",
+			"startTemplate": "prio.moscow.should",
+			"targetTemplate": "prio.kano.performantHeader",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.should->prio.kano.delighter",
+			"startTemplate": "prio.moscow.should",
+			"targetTemplate": "prio.kano.delighter",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.should->prio.moscow.could",
+			"startTemplate": "prio.moscow.should",
+			"targetTemplate": "prio.moscow.could",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.should->prio.moscow.must",
+			"startTemplate": "prio.moscow.should",
+			"targetTemplate": "prio.moscow.must",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.should->prio.moscow.wont",
+			"startTemplate": "prio.moscow.should",
+			"targetTemplate": "prio.moscow.wont",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.wont->prio.kano.dissatisfier",
+			"startTemplate": "prio.moscow.wont",
+			"targetTemplate": "prio.kano.dissatisfier",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.wont->prio.kano.indifferent",
+			"startTemplate": "prio.moscow.wont",
+			"targetTemplate": "prio.kano.indifferent",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.wont->prio.kano.basic",
+			"startTemplate": "prio.moscow.wont",
+			"targetTemplate": "prio.kano.basic",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.wont->prio.kano.performantHeader",
+			"startTemplate": "prio.moscow.wont",
+			"targetTemplate": "prio.kano.performantHeader",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.wont->prio.kano.delighter",
+			"startTemplate": "prio.moscow.wont",
+			"targetTemplate": "prio.kano.delighter",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.wont->prio.moscow.could",
+			"startTemplate": "prio.moscow.wont",
+			"targetTemplate": "prio.moscow.could",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.wont->prio.moscow.must",
+			"startTemplate": "prio.moscow.wont",
+			"targetTemplate": "prio.moscow.must",
+			"direction": "forwards"
+		},
+		{
+			"id": "auto:prio.moscow.wont->prio.moscow.should",
+			"startTemplate": "prio.moscow.wont",
+			"targetTemplate": "prio.moscow.should",
+			"direction": "forwards"
+		}
+	]
+}

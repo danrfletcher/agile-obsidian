@@ -18,12 +18,9 @@ import {
 import type { Extracted, ParsedLine, TagInstance } from "./canonical-types";
 import {
 	findAllWrappers,
+	hasBalancedWrappers,
 	removeWrappersByTemplate,
 } from "./html/canonical-html-scanner";
-
-// Assignee/delegate detection relies on Members.assignee template with props:
-//  - data-assign-type="assignee" | "delegate"
-//  - data-member-type, data-assignment-state, etc.
 
 export function parseLine(line: string): ParsedLine | null {
 	const { prefix, rest } = extractPrefix(line);
@@ -40,70 +37,41 @@ function parseTag(wrapperHtml: string): TagInstance {
 	return { wrapperHtml, templateKey, orderTag, props, markInnerHtml };
 }
 
+/**
+ * Splits wrappers by order tag. Every wrapper lands in exactly one bucket, in its
+ * original relative order: nothing is dropped, whatever the tag (including unknown
+ * tags and the old `assignment` / members.assignee chips).
+ */
 function classifyTags(wrappers: string[]) {
-	const parentLink: TagInstance[] = [];
-	const artifactItemType: TagInstance[] = [];
+	const parentLinks: TagInstance[] = [];
+	const artifactItemTypes: TagInstance[] = [];
 	const state: TagInstance[] = [];
 	const metadata: TagInstance[] = [];
 	const other: TagInstance[] = [];
-
-	const assignments: { assignee?: TagInstance; delegate?: TagInstance } = {};
 
 	for (const w of wrappers) {
 		const tag = parseTag(w);
 		const ot = (tag.orderTag ?? tag.props["order-tag"]) || undefined;
 
-		// Detect assignments based on template and assignType
-		if (
-			tag.templateKey === "members.assignee" ||
-			tag.props["template-key"] === "members.assignee"
-		) {
-			const assignType =
-				tag.props["assign-type"] || tag.props["assigntype"];
-			if (assignType === "assignee" || assignType === "special") {
-				if (!assignments.assignee) assignments.assignee = tag;
-				continue;
-			}
-			if (assignType === "delegate") {
-				if (!assignments.delegate) assignments.delegate = tag;
-				continue;
-			}
-		}
-
-		// Split based on order tag
-		if (ot === "parent-link") {
-			if (parentLink.length === 0) parentLink.push(tag);
-			continue;
-		}
-		if (ot === "artifact-item-type") {
-			if (artifactItemType.length === 0) artifactItemType.push(tag);
-			continue;
-		}
-		if (ot === "state") {
-			state.push(tag);
-			continue;
-		}
-		if (ot === "metadata") {
-			metadata.push(tag);
-			continue;
-		}
-
-		other.push(tag);
+		if (ot === "parent-link") parentLinks.push(tag);
+		else if (ot === "artifact-item-type") artifactItemTypes.push(tag);
+		else if (ot === "state") state.push(tag);
+		else if (ot === "metadata") metadata.push(tag);
+		else other.push(tag);
 	}
 
-	return {
-		parentLink: parentLink[0],
-		artifactItemType: artifactItemType[0],
-		state: state,
-		other,
-		metadata,
-		assignments,
-	};
+	return { parentLinks, artifactItemTypes, state, other, metadata };
 }
 
+/**
+ * Returns null when the line is not a task line, or when a chip wrapper on it is not
+ * closed (the scanner would take "the rest of the line" as the chip). In both cases the
+ * caller must leave the line exactly as it is.
+ */
 export function extractAll(line: string): Extracted | null {
 	const parsed = parseLine(line);
 	if (!parsed) return null;
+	if (!hasBalancedWrappers(parsed.restSansBlockId)) return null;
 
 	// Gather wrappers using a balanced scanner (handles nested spans safely)
 	const wrappers = findAllWrappers(parsed.restSansBlockId);
@@ -123,10 +91,9 @@ export function extractAll(line: string): Extracted | null {
 	const classes = classifyTags(wrappers);
 
 	return {
-		parentLink: classes.parentLink,
-		artifactItemType: classes.artifactItemType,
+		parentLinks: classes.parentLinks,
+		artifactItemTypes: classes.artifactItemTypes,
 		states: classes.state,
-		assignments: classes.assignments,
 		metadata: classes.metadata,
 		otherTags: classes.other,
 		dateTokens,

@@ -2,7 +2,6 @@ import tsParser from "@typescript-eslint/parser";
 import tsPlugin from "@typescript-eslint/eslint-plugin";
 import boundariesPlugin from "eslint-plugin-boundaries";
 import obsidianmd from "eslint-plugin-obsidianmd";
-import dependPlugin from "eslint-plugin-depend";
 import { defineConfig } from "eslint/config";
 
 export default defineConfig([
@@ -59,7 +58,6 @@ export default defineConfig([
     plugins: {
       "@typescript-eslint": tsPlugin,
       boundaries: boundariesPlugin,
-      depend: dependPlugin,
       // "obsidianmd" already enabled via configs.recommended
     },
 
@@ -68,11 +66,6 @@ export default defineConfig([
         // Global default: disallow cross-boundary imports unless a rule allows it
         default: "disallow",
         rules: [
-          // Shared: only index can be imported from outside; index can reach inside its own module
-          {
-            from: "src/shared/*/index.*",
-            allow: ["src/shared/*/**"],
-          },
           // Features: feature code can reach inside its own tree
           {
             from: "src/features/*/**",
@@ -114,7 +107,6 @@ export default defineConfig([
               "src/features/**",
               "src/platform/**",
               "src/settings/**",
-              "src/shared/**",
               "src/composition/**",
             ],
           },
@@ -125,7 +117,6 @@ export default defineConfig([
               "src/features/**",
               "src/platform/**",
               "src/settings/**",
-              "src/shared/**",
               "src/composition/**",
             ],
           },
@@ -140,7 +131,7 @@ export default defineConfig([
       "no-prototype-builtins": "off",
       "@typescript-eslint/no-empty-function": "off",
 
-      // You can leave this off globally if you want
+      // Registered by obsidianmd's recommended config; this plugin is not imported here.
       "depend/ban-dependencies": "off",
 
       "no-restricted-imports": [
@@ -177,12 +168,6 @@ export default defineConfig([
     },
   },
   {
-    files: ["src/shared/**"],
-    rules: {
-      // additional shared-specific rules could go here
-    },
-  },
-  {
     files: ["src/platform/**"],
     rules: {
       // additional platform-specific rules could go here
@@ -195,7 +180,15 @@ export default defineConfig([
     },
   },
 
-  // 3.5. Turn off depend/ban-dependencies specifically for package.json
+  // 3.5. Tests and tooling run in node, not in Obsidian
+  {
+    files: ["tests/**/*.ts", "vitest.config.ts"],
+    rules: {
+      "import/no-nodejs-modules": "off",
+    },
+  },
+
+  // 3.6. Turn off depend/ban-dependencies specifically for package.json
   {
     files: ["package.json"],
     rules: {

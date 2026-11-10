@@ -1,34 +1,45 @@
-import { createDefaultSettings, createSettingsTab } from "@settings";
+import { createSettingsTab, loadStoredSettings } from "@settings";
 import type { AgileObsidianSettings } from "@settings";
 import type { Plugin, PluginSettingTab } from "obsidian";
+import {
+	reloadCustomTemplates,
+	setCustomTemplateSource,
+	setDefaultTemplatesEnabled,
+	validateCustomTemplateCard,
+} from "@features/templating-engine";
 import type { Container } from "./container";
-import { registerOrgStructureSettings } from "@features/org-structure";
-import { registerCustomCheckboxesSettings } from "@styles/custom-checkboxes";
-import { applyCheckboxStylesSetting } from "./register-styles";
 
 /**
  * Initializes settings by loading persisted data (if available) and applying defaults.
+ * Only known keys are copied from stored data. If any stored keys were dropped,
+ * the cleaned settings are saved once; a second load finds nothing to drop and does not save.
  */
 export async function initSettings(
 	plugin: Plugin & {
 		settings?: AgileObsidianSettings;
-		loadData?: () => Promise<Partial<AgileObsidianSettings> | null>;
+		loadData?: () => Promise<unknown>;
 		saveData?: (data: AgileObsidianSettings) => Promise<void>;
-		saveSettings?: () => Promise<void>;
 	}
 ): Promise<AgileObsidianSettings> {
-	const stored = (await plugin.loadData?.()) as
-		| Partial<AgileObsidianSettings>
-		| null;
-	const settings: AgileObsidianSettings = createDefaultSettings(
-		stored ?? null
-	);
+	const stored: unknown = await plugin.loadData?.();
+	const { settings, needsSave } = loadStoredSettings(stored);
 	plugin.settings = settings;
+	// Seed the live template registry before any command is registered, so a fresh
+	// enable (or restart) starts in the saved state with no add-then-remove churn.
+	setDefaultTemplatesEnabled(settings.enableDefaultTemplates);
+	// Same for custom templates: load the saved cards into the registry now. The source
+	// reads the live settings object, so `reloadCustomTemplates()` (called by the settings
+	// cards on blur) always sees the current texts.
+	setCustomTemplateSource(() => plugin.settings?.customTemplates ?? []);
+	reloadCustomTemplates();
+	if (needsSave) {
+		await plugin.saveData?.(settings);
+	}
 	return settings;
 }
 
 /**
- * Registers the plugin settings tab and hooks feature-specific settings sub-systems.
+ * Registers the plugin settings tab.
  */
 export async function registerSettings(container: Container): Promise<void> {
 	const { app, plugin, settings } = container;
@@ -43,6 +54,13 @@ export async function registerSettings(container: Container): Promise<void> {
 		} else if (typeof p.saveData === "function") {
 			await p.saveData(settings);
 		}
+
+		// Update the live template registry from the saved flag: the insert commands,
+		// sequence menus and repeat follow it immediately, no reload. A no-op when the
+		// flag did not change.
+		setDefaultTemplatesEnabled(container.settings.enableDefaultTemplates);
+		// Custom templates are not rebuilt here: the settings cards rebuild them themselves
+		// (once, after their own save), so a toggle's save never reloads them.
 
 		try {
 			interface WorkspaceWithTrigger {
@@ -59,30 +77,18 @@ export async function registerSettings(container: Container): Promise<void> {
 		}
 	};
 
-	const orgActions = registerOrgStructureSettings({
-		app,
-		plugin,
-		settings,
-		saveSettings: saveSettingsLocal,
-	});
-
-	const checkbox = registerCustomCheckboxesSettings({
-		app,
-		plugin,
-		settings,
-		applyCheckboxStyles: () => {
-			applyCheckboxStylesSetting(container);
-		},
-	});
-
 	p.addSettingTab(
 		createSettingsTab({
 			app,
 			plugin: p,
 			settings,
-			orgActions,
 			saveSettings: saveSettingsLocal,
-			applyCheckboxStyles: () => checkbox.applyCheckboxStyles(),
+			// The "Custom templates" cards: PR-5's validator for the status under each box, and
+			// its registry rebuild, called after a card's text is saved (no plugin reload).
+			validateCustomTemplate: validateCustomTemplateCard,
+			rebuildCustomTemplates: () => {
+				reloadCustomTemplates();
+			},
 		}) as PluginSettingTab
 	);
 }

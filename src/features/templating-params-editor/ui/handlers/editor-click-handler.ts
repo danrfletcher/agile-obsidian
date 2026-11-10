@@ -23,8 +23,9 @@ export interface AttachEditorHandlerOptions {
 	// Required ports
 	deps: AppDeps;
 
-	// File to update (current note path)
-	filePath: string;
+	// File to update (current note path). A function is resolved at click time so a view
+	// that navigates to another note never writes to the previously opened file.
+	filePath: string | (() => string);
 
 	// Optional hint: get a line number (0-based) at click time; will be used if instanceId is absent
 	getLineHint0?: () => number | null;
@@ -48,7 +49,7 @@ export function attachEditorTemplatingHandler(
 		viewContainer,
 		registerDomEvent,
 		deps,
-		filePath,
+		filePath: filePathOpt,
 		getLineHint0,
 		useObsidianNotice = true,
 	} = opts;
@@ -79,12 +80,15 @@ export function attachEditorTemplatingHandler(
 
 			// Resolve template def BEFORE cancelling the event so other handlers can run if we don't handle it
 			const def = deps.templating.findTemplateById(templateKey);
-			// Skip generic edit flow for hidden templates (e.g., members.assignee) or templates without params
+			// Skip generic edit flow for hidden templates (e.g., legacy members.assignee chips,
+			// which are no longer built in) or templates without params
 			if (!def || def.hiddenFromDynamicCommands || !def.hasParams) {
-				return; // allow task-assignment and other handlers to receive the click
+				return; // leave the click to other handlers
 			}
 
 			// Current file path is required to persist changes
+			const filePath =
+				typeof filePathOpt === "function" ? filePathOpt() : filePathOpt;
 			if (!filePath) return;
 
 			// We will handle this double-click: cancel default and stop propagation

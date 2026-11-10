@@ -6,13 +6,11 @@
 		"baseUrl": ".",
 		"paths": {
 			"@features/*": ["src/features/*"],
-			"@styles/*": ["src/styles/*"],
 			"@composition/*": ["src/composition/*"],
 			"@platform/*": ["src/platform/*"],
 			"@types/*": ["src/types/*"],
 			"@settings/*": ["src/settings/*"],
 			"@settings": ["src/settings/index.ts"],
-			"@shared/*": ["src/shared/*"],
 			"@utils": ["src/utils/index.ts"]
 		},
 		"inlineSourceMap": true,

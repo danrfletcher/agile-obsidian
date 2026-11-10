@@ -7,38 +7,56 @@
 
 /* Indentation is handled by Obsidian's default .contains-task-list styles */
 
-/* Keep inline controls (e.g., snooze) within the line height so they don't increase line spacing */
-.agile-dashboard .task-list-item button,
-.agile-dashboard .task-list-item .snooze-button,
-.agile-dashboard .task-list-item .agile-snooze-btn,
-.agile-dashboard .task-list-item .clickable-icon {
-  box-sizing: border-box;
-  height: 1em;
-  max-height: 1em;       /* cap total box height (includes border/padding) to 1em */
-  min-height: 0;
-  line-height: 1;        /* keep the control's internal line height tight */
-  padding-top: 0;
-  padding-bottom: 0;
-  padding-left: 0;
-  padding-right: 0;
-  font-size: 1em;        /* match surrounding text size */
-  display: inline-flex;  /* align icon/text without affecting line metrics */
-  align-items: center;
-  vertical-align: text-bottom;
-  margin-left: 0.35em;   /* small gap from task text */
-  background: transparent;  /* icon-only look */
-  border: none;             /* remove button border */
-  box-shadow: none;         /* remove any theme shadows */
-  appearance: none;
-  -webkit-appearance: none;
-  cursor: pointer;
+
+/* Settings > Custom templates: one card per template definition */
+.agile-ct-card {
+  margin: 0 0 12px 0;
+  padding: 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
 }
 
-/* Ensure any SVG icons inside the control scale to the text size */
-.agile-dashboard .task-list-item button svg,
-.agile-dashboard .task-list-item .snooze-button svg,
-.agile-dashboard .task-list-item .agile-snooze-btn svg,
-.agile-dashboard .task-list-item .clickable-icon svg {
-  width: 1em;
-  height: 1em;
+.agile-ct-box {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 120px;
+  resize: vertical;
+  font-family: var(--font-monospace);
+  font-size: var(--font-smaller);
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agile-ct-footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.agile-ct-status {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--font-smaller);
+}
+
+.agile-ct-status-line {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agile-ct-status-valid {
+  color: var(--text-success);
+}
+
+.agile-ct-status-invalid {
+  color: var(--text-error);
+}
+
+.agile-ct-delete {
+  flex: 0 0 auto;
 }
