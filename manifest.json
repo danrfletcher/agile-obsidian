@@ -1,7 +1,7 @@
 {
 	"id": "agile-templates",
 	"name": "Agile Templates",
-	"version": "0.1.0",
+	"version": "1.2.0",
 	"minAppVersion": "1.7.2",
 	"description": "Insert, edit, sequence, repeat and remove structured Agile template chips (initiatives, epics, stories, OKRs, CRM stages, priorities and more) on task lines.",
 	"author": "danrfletcher",
