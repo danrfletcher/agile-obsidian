@@ -155,6 +155,16 @@ function pickArtifactItemTypeRightMost(s: string) {
 	return candidates[candidates.length - 1];
 }
 
+/**
+ * Rightmost artifact-item-type chip on the line, or null when there is none or its
+ * template is not active in the registry right now.
+ */
+function pickActiveArtifactItemType(s: string) {
+	const found = pickArtifactItemTypeRightMost(s);
+	if (!found?.templateKey) return null;
+	return findTemplateById(found.templateKey) ? found : null;
+}
+
 async function openTemplateModalFromContext(
 	app: App,
 	view: MarkdownView
@@ -178,8 +188,8 @@ async function openTemplateModalFromContext(
 	const prevLine = safeGetLine(prevLineNo);
 	const curLine = safeGetLine(curLineNo);
 
-	const prevFound = pickArtifactItemTypeRightMost(prevLine);
-	const curFound = pickArtifactItemTypeRightMost(curLine);
+	const prevFound = pickActiveArtifactItemType(prevLine);
+	const curFound = pickActiveArtifactItemType(curLine);
 	const found = prevFound ?? curFound;
 	if (!found?.templateKey) return;
 
@@ -191,8 +201,20 @@ async function openTemplateModalFromContext(
 	}
 
 	const def = findTemplateById(found.templateKey);
-	if (!def || !def.hasParams) return;
+	if (!def) return;
 	if (def.hiddenFromDynamicCommands) return;
+
+	// A template with no fields (e.g. a custom one with no `fields`) has nothing to
+	// ask: insert it straight away, with no dialog, as the insert command does.
+	if (!def.hasParams) {
+		enterSession = { key: causeKey, active: true };
+		try {
+			insertTemplateAtCursor(found.templateKey, editor, filePath, undefined);
+		} finally {
+			enterSession = null;
+		}
+		return;
+	}
 
 	const schema = def.paramsSchema
 		? {
@@ -224,6 +246,9 @@ async function openTemplateModalFromContext(
 			undefined
 		);
 		if (!params) return;
+
+		// The template may have become inactive while the dialog was open: cancel quietly.
+		if (!findTemplateById(found.templateKey)) return;
 
 		insertTemplateAtCursor(
 			found.templateKey,
@@ -265,8 +290,11 @@ export async function processEnter(
 		// Only proceed when an artifact-item-type wrapper is on current or previous line
 		const prevLine = ctx.prevLineText ?? "";
 		const curLine = lineText;
-		const prevFound = pickArtifactItemTypeRightMost(prevLine);
-		const curFound = pickArtifactItemTypeRightMost(curLine);
+		// The registry is read now, at event time. A chip whose template is not active
+		// (the "Default templates" set is off, or the template is unknown/deleted) is not
+		// our scenario: Enter behaves completely normally, no suppression, no dialog.
+		const prevFound = pickActiveArtifactItemType(prevLine);
+		const curFound = pickActiveArtifactItemType(curLine);
 		const haveArtifact = !!(prevFound ?? curFound);
 		if (!haveArtifact) {
 			return; // not our scenario

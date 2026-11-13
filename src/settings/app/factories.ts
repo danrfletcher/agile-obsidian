@@ -2,60 +2,65 @@
  * Application-level factories for the Settings feature.
  * Expose stable APIs that composition can call to construct UI and settings instances.
  */
-import { DEFAULT_SETTINGS } from "../infra/settings-store";
 import { AgileSettingTab } from "../ui/views/settings-view";
 import type { AgileObsidianSettings } from "../domain/settings-types";
 import type { App, Plugin } from "obsidian";
-import type { SettingsOrgActions } from "./contracts";
+import { loadSettings } from "./settings-load";
+import type { LoadedSettings } from "./settings-load";
+import type { CardValidation } from "./custom-templates-settings";
 
 /**
- * Merge stored partial settings over defaults to produce a complete settings object.
+ * Produce a complete settings object from stored data, copying only known keys.
  * Does not mutate inputs.
  */
 export function createDefaultSettings(
-	stored?: Partial<AgileObsidianSettings> | null
+	stored?: unknown
 ): AgileObsidianSettings {
-	return Object.assign({}, DEFAULT_SETTINGS, stored ?? {});
+	return loadSettings(stored).settings;
+}
+
+/**
+ * Like createDefaultSettings, but also reports whether stored data carried
+ * dropped keys (so callers can persist the cleaned object once).
+ */
+export function loadStoredSettings(stored?: unknown): LoadedSettings {
+	return loadSettings(stored);
 }
 
 /**
  * Dependencies needed to construct the settings tab.
- * - orgActions implements the team/org operations port.
- * - applyCheckboxStyles allows styling toggles to be re-applied after changes.
  * - saveSettings persists settings mutations.
  */
 export type SettingsTabDeps = {
 	app: App;
 	plugin: Plugin;
 	settings: AgileObsidianSettings;
-	orgActions: SettingsOrgActions;
-	applyCheckboxStyles: () => Promise<void> | void;
 	saveSettings: () => Promise<void> | void;
+	/** Validate card `index` of the saved custom template texts (the template engine's validator). */
+	validateCustomTemplate: (
+		texts: readonly string[],
+		index: number
+	) => CardValidation;
+	/** Rebuild the live template registry, commands and sequences from the saved cards. */
+	rebuildCustomTemplates: () => void;
 };
 
 /**
- * Factory that constructs the Obsidian settings tab for Agile Obsidian.
+ * Factory that constructs the Obsidian settings tab for Agile Templates.
  * Keeps the concrete class private to the Settings feature implementation details.
  */
 export function createSettingsTab(deps: SettingsTabDeps) {
-	const {
-		app,
-		plugin,
-		settings,
-		orgActions,
-		applyCheckboxStyles,
-		saveSettings,
-	} = deps;
+	const { app, plugin, settings, saveSettings } = deps;
 	return new AgileSettingTab(
 		app,
 		plugin,
 		settings,
-		orgActions,
 		async () => {
 			await saveSettings();
 		},
-		async () => {
-			await applyCheckboxStyles();
+		{
+			validate: deps.validateCustomTemplate,
+			rebuild: deps.rebuildCustomTemplates,
 		}
 	);
 }

@@ -17,7 +17,7 @@
 
 import type { App, Menu } from "obsidian";
 import { Notice, Menu as ObsidianMenu } from "obsidian";
-import { findTemplateById } from "@features/templating-engine/app/templating-service";
+import { findAnyTemplate } from "@features/templating-engine/app/template-registry";
 import {
 	computeAvailableMoves,
 	executeSequenceMoveOnFile,
@@ -44,7 +44,8 @@ type TemplateWithOptionalLabel = {
 };
 
 function getTemplateLabel(templateId: string): string {
-	const def = findTemplateById(templateId) as TemplateWithOptionalLabel | undefined;
+	// Label fallback only: any known template, active or not.
+	const def = findAnyTemplate(templateId) as TemplateWithOptionalLabel | undefined;
 	return def?.label ?? templateId;
 }
 

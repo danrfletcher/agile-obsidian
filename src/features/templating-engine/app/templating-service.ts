@@ -7,7 +7,7 @@ import type {
 	AllowedOn,
 } from "../domain/types";
 import { TemplateInsertError } from "../domain/types";
-import { presetTemplates } from "../domain/presets";
+import { findActiveTemplate } from "./template-registry";
 import {
 	evaluateRules,
 	normalizeRules,
@@ -39,62 +39,13 @@ type MinimalEditor = {
 };
 
 /**
- * Robust template resolver that supports:
- * - Canonical "group.key" lookups (fast-path).
- * - Multi-dot ids like "workflows.states.blocked" by matching against def.id.
- * - Fallback to using the last segment as the key within the group.
- * - As a final fallback, scans all groups for a def with a matching def.id.
+ * Resolve a template by id from the live registry. Only templates that are active
+ * right now resolve: while the "Default templates" set is off, built-in ids return
+ * undefined, so insert, edit, sequence and repeat all treat built-in chips as unknown.
+ * Chips already in notes are never touched by this lookup.
  */
 export function findTemplateById(id: string): TemplateDefinition | undefined {
-	if (!id) return undefined;
-
-	// Extract group (first segment)
-	const firstDot = id.indexOf(".");
-	const group = firstDot >= 0 ? id.slice(0, firstDot) : id;
-
-	const groups = presetTemplates as unknown as Record<
-		string,
-		Record<string, TemplateDefinition>
-	>;
-	const groupObj = groups[group];
-
-	// If group exists, attempt a series of targeted resolutions
-	if (groupObj) {
-		// 1) Try exact "group.remainder" where remainder may contain dots (e.g., "states.blocked")
-		const remainder =
-			firstDot >= 0 && firstDot + 1 < id.length
-				? id.slice(firstDot + 1)
-				: "";
-		if (remainder && groupObj[remainder]) {
-			return groupObj[remainder];
-		}
-
-		// 2) Try last segment within the group (e.g., key "blocked")
-		const parts = id.split(".");
-		const last = parts[parts.length - 1];
-		if (last && groupObj[last]) {
-			return groupObj[last];
-		}
-
-		// 3) Search the group's definitions by exact def.id match
-		for (const def of Object.values(groupObj)) {
-			if (def?.id === id) return def;
-		}
-	}
-
-	// 4) As a final fallback, scan all groups by def.id
-	for (const defs of Object.values(
-		presetTemplates as unknown as Record<
-			string,
-			Record<string, TemplateDefinition>
-		>
-	)) {
-		for (const def of Object.values(defs)) {
-			if (def?.id === id) return def;
-		}
-	}
-
-	return undefined;
+	return findActiveTemplate(id);
 }
 
 function coerceRuleObject(rule: Rule | undefined): RuleObject | undefined {

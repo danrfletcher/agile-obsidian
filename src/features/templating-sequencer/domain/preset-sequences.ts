@@ -1,6 +1,12 @@
 /**
  * Templating Sequencer - Preset + Dynamic Sequences
  *
+ * Everything here is a pure function of a template list. The live registry decides which
+ * templates are active and calls `buildSequences(activeTemplates)` whenever that list
+ * changes (see sequencer-service `getSequences`); nothing is computed at module load.
+ * A manual sequence is dropped when either end is not in the list, so with the
+ * "Default templates" set off no sequence has a built-in endpoint.
+ *
  * Defaults in the sequencer-service automatically:
  *  - pass through shared-named variables,
  *  - prompt for missing target-only fields,
@@ -19,8 +25,6 @@
  */
 
 import type { Sequence } from "./types";
-// Import the full preset templates registry to inspect params and flags for auto-generation
-import { presetTemplates } from "@features/templating-engine/domain/presets";
 
 // CRM template keys (must match templating-engine presets)
 const CRM = {
@@ -34,7 +38,7 @@ const CRM = {
  * Manually defined sequences (overrides and CRM presets).
  * To disable an auto-generated sequence, define it here with disabled: true.
  */
-const manualSequences: Sequence[] = [
+export const manualSequences: Sequence[] = [
 	// awaitingDeposit <-> depositPaid
 	{
 		id: "crm:awaiting->depositPaid",
@@ -94,9 +98,9 @@ const manualSequences: Sequence[] = [
 ];
 
 /**
- * Helpers to inspect template definitions from presetTemplates.
+ * Minimal view of a template definition that sequence generation inspects.
  */
-type AnyTemplateDef = {
+export type AnyTemplateDef = {
 	id: string;
 	label?: string;
 	hasParams?: boolean;
@@ -105,19 +109,6 @@ type AnyTemplateDef = {
 	};
 	hiddenFromDynamicCommands?: boolean;
 };
-
-// Flatten groups (agile, crm, members, prioritization, workflows, obsidian)
-function collectAllTemplateDefs(): AnyTemplateDef[] {
-	const out: AnyTemplateDef[] = [];
-	if (!presetTemplates) return out;
-
-	for (const group of Object.values(presetTemplates)) {
-		for (const def of Object.values(group)) {
-			out.push(def);
-		}
-	}
-	return out;
-}
 
 function getParamNames(def: AnyTemplateDef): string[] {
 	const fields = def?.paramsSchema?.fields;
@@ -139,10 +130,11 @@ function isEligibleForDynamic(def: AnyTemplateDef): boolean {
 
 /**
  * Generate forward-only dynamic sequences between any two eligible templates
- * sharing identical param name sets.
+ * sharing identical param name sets, from the given template list (in list order).
  */
-function generateDynamicSequences(): Sequence[] {
-	const defs = collectAllTemplateDefs();
+export function generateDynamicSequences(
+	defs: readonly AnyTemplateDef[]
+): Sequence[] {
 	const eligible = defs.filter(isEligibleForDynamic).map((d) => ({
 		id: d.id,
 		paramNames: getParamNames(d),
@@ -186,7 +178,7 @@ function generateDynamicSequences(): Sequence[] {
  * - If a manual sequence exists with disabled: true, we exclude both the manual (disabled) and the dynamic one for that pair.
  * - Otherwise we include the dynamic sequence.
  */
-function mergeSequences(
+export function mergeSequences(
 	manual: Sequence[],
 	autoGen: Sequence[]
 ): Sequence[] {
@@ -223,8 +215,18 @@ function mergeSequences(
 	return out;
 }
 
-const dynamicSequences = generateDynamicSequences();
-export const presetSequences: Sequence[] = mergeSequences(
-	manualSequences,
-	dynamicSequences
-);
+/**
+ * Build the full sequence list for a list of active templates:
+ * manual sequences whose two ends are both in the list, merged with the auto-generated
+ * ones. A disabled manual sequence still blocks its auto pair.
+ */
+export function buildSequences(
+	templates: readonly AnyTemplateDef[],
+	manual: readonly Sequence[] = manualSequences
+): Sequence[] {
+	const activeIds = new Set(templates.map((t) => t.id));
+	const manualActive = manual.filter(
+		(m) => activeIds.has(m.startTemplate) && activeIds.has(m.targetTemplate)
+	);
+	return mergeSequences(manualActive, generateDynamicSequences(templates));
+}

@@ -35,8 +35,16 @@ export interface TemplatingPorts {
 
 	/**
 	 * Render only the template body (wrapper included) with the given params.
+	 * Async so implementations can resolve data on demand (e.g. the linked artefact's
+	 * type for "Link to Artifact") before rendering. `ctx.sourcePath` is the note the
+	 * chip lives in. Implementations must resolve to HTML and not reject for lookup
+	 * failures.
 	 */
-	renderTemplateOnly: (templateId: string, params: TemplateParams) => string;
+	renderTemplateOnly: (
+		templateId: string,
+		params: TemplateParams,
+		ctx?: { sourcePath?: string }
+	) => Promise<string>;
 
 	/**
 	 * Show a schema-driven modal using the rich templating-engine ParamsSchema.

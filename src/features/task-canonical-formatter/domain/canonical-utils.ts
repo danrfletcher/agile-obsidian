@@ -2,6 +2,8 @@
  * Low-level helpers for parsing and safe whitespace/HTML handling.
  */
 
+import { splitByWrappers } from "./html/canonical-html-scanner";
+
 // Precompiled regex constants
 const PREFIX_RE = /^(\s*[-*]\s*\[\s*.\s*\]\s*)([\s\S]*)$/;
 const LEGACY_EOL_BLOCKID_RE = /\s*\^([A-Za-z0-9-]+)\s*$/g;
@@ -74,6 +76,17 @@ export function normalizeWhitespacePreserveTrailing(s: string): string {
 		out += " ";
 	}
 	return out;
+}
+
+// Same as normalizeWhitespacePreserveTrailing, but leaves template wrapper (chip) HTML
+// byte-identical: runs of whitespace inside a chip (e.g. `<mark  style=...>` or a user
+// value with two spaces) are part of the chip and the formatter must only reorder chips.
+export function normalizeWhitespaceOutsideWrappers(s: string): string {
+	return splitByWrappers(s)
+		.map((seg) =>
+			seg.wrapper ? seg.text : normalizeWhitespacePreserveTrailing(seg.text)
+		)
+		.join("");
 }
 
 // When line ends with a closing HTML tag or </mark>, ensure a trailing space.

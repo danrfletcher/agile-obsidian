@@ -1,10 +1,10 @@
 import { Plugin } from "obsidian";
 import { createContainer, type Container } from "@composition/container";
-import { registerStyles } from "@composition/register-styles";
 import { initSettings, registerSettings } from "@composition/register-settings";
 import { registerAllCommands } from "@composition/register-commands";
 import { registerEvents } from "@composition/register-events";
 import { AgileObsidianSettings } from "@settings";
+import { disposeCustomTemplates } from "@features/templating-engine";
 
 export default class AgileObsidian extends Plugin {
 	settings: AgileObsidianSettings;
@@ -17,19 +17,21 @@ export default class AgileObsidian extends Plugin {
 		const container = createContainer(this);
 		this.container = container;
 
-		registerStyles(container);
-
 		// Register settings via composition
 		await registerSettings(container);
 
-		// Register task/vault events (build task index + subscribe to changes)
+		// Register editor/view events (no vault scan or index at load)
 		await registerEvents(container);
 
 		// Register commands and views for features
 		if (container) await registerAllCommands(container);
 	}
 
-	onunload() {}
+	onunload() {
+		// Remove the custom templates from the live registry: their insert commands go with
+		// them, and a re-enable starts clean.
+		disposeCustomTemplates();
+	}
 
 	async saveSettings() {
 		await this.saveData(this.settings);
